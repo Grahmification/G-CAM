@@ -13,6 +13,7 @@
     <Window.Resources>
         <views:ToolTypeNameConverter x:Key="ToolTypeName" />
         <views:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+        <views:ToolTypeIconConverter x:Key="ToolTypeIcon" />
 
         <!-- Folders and library files share one tree, so the template is chosen by type. -->
         <HierarchicalDataTemplate DataType="{x:Type vm:FolderNode}" ItemsSource="{Binding Children}">
@@ -189,7 +190,24 @@
                 </ListView.ContextMenu>
                 <ListView.View>
                     <GridView ColumnHeaderContainerStyle="{StaticResource {x:Type GridViewColumnHeader}}">
-                        <GridViewColumn Header="Tool" Width="200"
+                        <!-- Icon column. A Viewbox around a fixed 10x16 canvas rather
+                             than a stretching Path, so every icon shares one scale and a
+                             drill still looks narrower than an end mill. -->
+                        <GridViewColumn Header="" Width="28">
+                            <GridViewColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Viewbox Width="10" Height="16" HorizontalAlignment="Center"
+                                             ToolTip="{Binding Type, Converter={StaticResource ToolTypeName}}">
+                                        <Canvas Width="10" Height="16">
+                                            <Path Data="{Binding Type, Converter={StaticResource ToolTypeIcon}}"
+                                                  Fill="#552D7DD2" Stroke="#2D7DD2" StrokeThickness="0.8" />
+                                        </Canvas>
+                                    </Viewbox>
+                                </DataTemplate>
+                            </GridViewColumn.CellTemplate>
+                        </GridViewColumn>
+
+                        <GridViewColumn Header="Tool" Width="190"
                                         DisplayMemberBinding="{Binding DisplayName}" />
                         <GridViewColumn Header="T#" Width="42"
                                         DisplayMemberBinding="{Binding Number}" />
