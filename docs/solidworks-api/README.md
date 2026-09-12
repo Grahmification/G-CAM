@@ -8,4 +8,4 @@ Official reference: the SolidWorks API Help installed alongside SolidWorks, and 
 
 ## Index
 
-_(nothing yet)_
+- [CodeStack](codestack.md) — third-party task-oriented resource; what it covers that the official help doesn't, and how to clone it offline.
