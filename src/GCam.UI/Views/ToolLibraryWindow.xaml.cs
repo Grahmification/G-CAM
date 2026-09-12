@@ -17,6 +17,9 @@ namespace GCam.UI.Views
     {
         private readonly ToolLibraryBrowserViewModel _model;
 
+        /// <summary>Set once OK or Cancel has decided what happens; stops OnClosing re-asking.</summary>
+        private bool _closing;
+
         private GridViewColumnHeader _sortedHeader;
         private ListSortDirection _sortDirection = ListSortDirection.Ascending;
 
@@ -88,10 +91,59 @@ namespace GCam.UI.Views
         private void OnToolDoubleClick(object sender, MouseButtonEventArgs e)
         {
             Tool tool = _model.SelectedTool;
-            if (tool != null)
+            if (tool == null)
             {
-                ToolActivated?.Invoke(this, tool);
+                return;
             }
+
+            // When used as a picker, double-click chooses. Otherwise it edits, which is
+            // what double-click means everywhere else in a list of editable things.
+            if (ToolActivated != null)
+            {
+                ToolActivated.Invoke(this, tool);
+                return;
+            }
+
+            EditSelectedTool();
+        }
+
+        /// <summary>
+        /// Escape closes, as the Cancel button would.
+        /// </summary>
+        /// <remarks>
+        /// Bubbling rather than preview, so a control that wants Escape for itself - a
+        /// dropdown closing, an edit being abandoned - gets it first.
+        /// </remarks>
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (!e.Handled && e.Key == Key.Escape)
+            {
+                e.Handled = true;
+                Close();
+                return;
+            }
+
+            base.OnKeyDown(e);
+        }
+
+        /// <summary>
+        /// The single exit path: the Cancel button, the title-bar cross and Escape all
+        /// arrive here, so the unsaved-changes question is asked exactly once.
+        /// </summary>
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (!_closing && !ConfirmDiscard())
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            if (!_closing)
+            {
+                _model.Session.DiscardAll();
+            }
+
+            base.OnClosing(e);
         }
 
         /// <summary>
@@ -127,9 +179,5 @@ namespace GCam.UI.Views
             view.Refresh();
         }
 
-        private void OnClose(object sender, RoutedEventArgs e)
-        {
-            Close();
-        }
     }
 }

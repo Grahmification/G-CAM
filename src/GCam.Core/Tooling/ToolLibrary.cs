@@ -68,6 +68,25 @@ namespace GCam.Core.Tooling
         }
 
         /// <summary>
+        /// The lowest tool number not already used, starting at 1.
+        /// </summary>
+        /// <remarks>
+        /// Fills gaps rather than always appending: a shop that has retired T7 wants the
+        /// next tool to take it, not to climb forever.
+        /// </remarks>
+        public int NextToolNumber()
+        {
+            var used = new HashSet<int>(Tools.Select(t => t.Number));
+            int candidate = 1;
+            while (used.Contains(candidate))
+            {
+                candidate++;
+            }
+
+            return candidate;
+        }
+
+        /// <summary>
         /// Problems across the whole library, each prefixed with the tool it came from.
         /// </summary>
         public IReadOnlyList<string> Validate()

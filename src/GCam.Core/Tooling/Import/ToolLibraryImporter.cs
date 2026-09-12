@@ -89,6 +89,21 @@ namespace GCam.Core.Tooling.Import
             return reader;
         }
 
+        /// <summary>
+        /// Whether G-CAM can write this path, as opposed to only read it.
+        /// </summary>
+        /// <remarks>
+        /// Only the native format. There is no HSMWorks writer, so an imported .hsmlib
+        /// is read-only and has to be saved as a G-CAM library before it can be edited.
+        /// </remarks>
+        public bool CanWrite(string path)
+        {
+            return string.Equals(
+                Path.GetExtension(path ?? string.Empty),
+                GcamXmlLibrary.FileExtension,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>Reads <paramref name="path"/> and merges it into <paramref name="target"/>.</summary>
         public ImportSummary ImportFile(ToolLibrary target, string path)
         {

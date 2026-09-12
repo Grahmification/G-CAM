@@ -8,4 +8,4 @@ Where a choice is a tradeoff rather than a fact — tolerance versus toolpath si
 
 ## Index
 
-_(nothing yet)_
+- [The HSMWorks tool library format](hsm-tool-library-format.md) — .hsmlib field meanings, verified against a real library, and the traps in it.

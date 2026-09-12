@@ -242,6 +242,21 @@ namespace GCam.Core.Tooling
             return copy;
         }
 
+        /// <summary>
+        /// A copy with a fresh identity, for duplicating a tool within a library.
+        /// </summary>
+        /// <remarks>
+        /// A new Id matters: two tools sharing one would break re-linking an embedded
+        /// job copy back to its library entry, and ToolLibrary.Validate reports it.
+        /// </remarks>
+        public Tool CloneAsNew()
+        {
+            Tool copy = Clone();
+            copy.Id = Guid.NewGuid().ToString("D");
+            copy.SourceLibraryId = null;
+            return copy;
+        }
+
         public Tool Clone()
         {
             return new Tool

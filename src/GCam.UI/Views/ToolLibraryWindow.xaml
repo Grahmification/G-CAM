@@ -12,6 +12,7 @@
 
     <Window.Resources>
         <views:ToolTypeNameConverter x:Key="ToolTypeName" />
+        <views:BoolToVisibilityConverter x:Key="BoolToVisibility" />
 
         <!-- Folders and library files share one tree, so the template is chosen by type. -->
         <HierarchicalDataTemplate DataType="{x:Type vm:FolderNode}" ItemsSource="{Binding Children}">
@@ -36,9 +37,28 @@
         <DataTemplate DataType="{x:Type vm:LibraryFileNode}">
             <StackPanel Orientation="Horizontal" Margin="0,1">
                 <TextBlock Text="🔧" Margin="0,0,5,0" />
-                <TextBlock Text="{Binding Name}" />
+                <TextBlock Text="{Binding Name}">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsDirty}" Value="True">
+                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <!-- Unsaved marker, so a modified library is visible without selecting it. -->
+                <TextBlock Text=" *" FontWeight="Bold" Foreground="#C0392B"
+                           Visibility="{Binding IsDirty, Converter={StaticResource BoolToVisibility}}" />
+
                 <Border Background="#E4E8EC" CornerRadius="2" Margin="6,0,0,0" Padding="3,0">
                     <TextBlock Text="{Binding Format}" FontSize="9" Foreground="#5A6570" />
+                </Border>
+                <Border Background="#F2E8D8" CornerRadius="2" Margin="4,0,0,0" Padding="3,0"
+                        Visibility="{Binding IsReadOnly, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Text="read-only" FontSize="9" Foreground="#8A6D3B" />
                 </Border>
             </StackPanel>
         </DataTemplate>
@@ -151,6 +171,22 @@
                       SelectedItem="{Binding SelectedTool, Mode=TwoWay}"
                       BorderThickness="0"
                       MouseDoubleClick="OnToolDoubleClick">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <!-- Right-clicking selects the row first, so the menu acts on
+                             what was clicked rather than on the previous selection. -->
+                        <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnRowRightClick" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ContextMenu>
+                    <ContextMenu x:Name="ToolContextMenu" Opened="OnContextMenuOpened">
+                        <MenuItem x:Name="EditToolItem" Header="Edit tool…" Click="OnEditTool" />
+                        <MenuItem x:Name="DuplicateToolItem" Header="Duplicate" Click="OnDuplicateTool" />
+                        <MenuItem x:Name="CopyToLibraryItem" Header="Copy to library" />
+                        <Separator />
+                        <MenuItem x:Name="DeleteToolItem" Header="Delete" Click="OnDeleteTool" />
+                    </ContextMenu>
+                </ListView.ContextMenu>
                 <ListView.View>
                     <GridView ColumnHeaderContainerStyle="{StaticResource {x:Type GridViewColumnHeader}}">
                         <GridViewColumn Header="Tool" Width="200"
@@ -176,20 +212,45 @@
             </ListView>
         </Border>
 
-        <!-- ── Status strip and close ─────────────────────────────────── -->
+        <!-- ── Status strip, actions, commit ──────────────────────────── -->
         <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,8,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Column="0" Text="{Binding Status}" VerticalAlignment="Center"
+            <TextBlock Grid.Row="0" Grid.ColumnSpan="3" Text="{Binding Status}" Margin="0,0,0,6"
                        Foreground="#5A6570" TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="1" Text="{Binding ToolCountSummary}" VerticalAlignment="Center"
-                       Foreground="#8A939C" Margin="12,0" />
-            <Button Grid.Column="2" Content="Close" Width="86" Height="26"
-                    IsCancel="True" Click="OnClose" />
+
+            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal">
+                <Button x:Name="NewToolButton" Content="New tool ▾" Width="92" Height="26"
+                        Margin="0,0,6,0" Click="OnNewTool" />
+                <Button x:Name="NewLibraryButton" Content="New library…" Width="98" Height="26"
+                        Margin="0,0,6,0" Click="OnNewLibrary" />
+                <Button x:Name="SaveAsButton" Content="Save as G-CAM library…" Height="26"
+                        Padding="10,0" Click="OnSaveAsGcamLibrary" />
+            </StackPanel>
+
+            <TextBlock Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="12,0"
+                       Foreground="#8A939C">
+                <Run Text="{Binding ToolCountSummary, Mode=OneWay}" />
+                <Run Text="  " />
+                <Run Text="{Binding UnsavedSummary, Mode=OneWay}" Foreground="#C0392B" />
+            </TextBlock>
+
+            <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal">
+                <Button Content="OK" Width="86" Height="26" Margin="0,0,8,0"
+                        IsDefault="True" Click="OnOk" />
+                <!-- Deliberately NOT IsCancel: that runs its own close after the Click
+                     handler, which would ask about unsaved changes a second time.
+                     Escape is handled in OnKeyDown instead. -->
+                <Button Content="Cancel" Width="86" Height="26" Click="OnCancel" />
+            </StackPanel>
         </Grid>
     </Grid>
 </Window>

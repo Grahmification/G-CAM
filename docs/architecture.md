@@ -9,8 +9,8 @@ The project structure for G-CAM and the rules that keep it intact.
 | Solution, seven projects, build and test | Done |
 | `Core/Diagnostics` — logging, error policy, user exceptions | Done |
 | `Core/Settings` — XML settings store | Done |
-| `Core/Tooling` — tools, holders, cutter profiles, libraries, HSM import | Done |
-| `UI` — error dialog, tool library browser, profile preview | Done |
+| `Core/Tooling` — tools, holders, cutter profiles, libraries, HSM import, edit sessions | Done |
+| `UI` — error dialog, tool library browser and editor, profile preview | Done |
 | `AddIn` — CommandManager, FeatureManager tab, COM registration | Done |
 | `Core/Geometry`, `Strategies`, `Simulation`, `Commands`, `Posting` | Not started |
 | `SolidWorks/Extraction`, `Rendering`, `PropertyPages`, `Persistence` | Not started |
@@ -50,7 +50,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   ├── GCam.Core/                     ★ netstandard2.0 — NO SolidWorks references. Ever.
 │   │   ├── Model/                     Job, Setup, Operation, Toolpath, Move, Stock
 │   │   ├── Tooling/                   Tool, Holder, CuttingData, MachineData,
-│   │   │                              CutterProfile, ToolSearch, IToolLibrary
+│   │   │                              CutterProfile, ToolSearch, IToolLibrary,
+│   │   │                              LibrarySession (open libraries + dirty state)
 │   │   │   └── Import/                native XML + HSMWorks (.hsmlib) readers
 │   │   ├── Geometry/
 │   │   │   ├── Primitives/            Vec3, Plane, Bounds, Matrix4, Polyline
@@ -87,7 +88,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   └── Com/                       ComRelease helpers
 │   │
 │   ├── GCam.UI/                       WPF; references Core, never SolidWorks
-│   │   ├── Views/                     JobTreeView, ToolLibraryWindow, dialogs
+│   │   ├── Views/                     JobTreeView, ToolLibraryWindow (+ .Editing),
+│   │   │                              ToolEditorWindow, dialogs, converters
 │   │   ├── Diagnostics/               ErrorDialog.xaml, WpfErrorPresenter
 │   │   ├── ViewModels/                testable, INotifyPropertyChanged
 │   │   ├── Controls/                  ToolProfileView — owner-drawn silhouette
@@ -168,6 +170,35 @@ This is convention, not enforced by the build. A test scanning source for magic 
 **Settings are a convenience, never a prerequisite.** User preferences live in `%LOCALAPPDATA%\G-CAM\settings.xml`, beside the logs — per-user, always writable, and trivially deleted when something goes wrong. `IGCamSettings` is declared in Core with `XmlSettingsStore` implementing it there too, because nothing about a preferences file touches SOLIDWORKS and keeping it in Core means the tests exercise it.
 
 Nothing in the settings path throws. A missing, corrupt, or foreign file yields empty defaults and a log line; an unwritable location loses the save and logs it. Losing preferences is an annoyance — failing to load the add-in over one is not acceptable, and that is exactly the failure mode that already cost an afternoon once.
+
+**Edits are held in memory and committed once; creating a library is not an edit.**
+`LibrarySession` owns every tool library open for editing and which of them are dirty.
+Changing a library's *contents* — adding, editing or deleting tools — waits for the
+browser's OK, which saves them all; Cancel discards them all. That is what makes it safe
+to edit one library, navigate to another, and still have both committed.
+
+*Creating* a library is different and writes immediately. `CreateNew` and `SaveAsCopy`
+put the file on disk before returning, and leave it clean. Two reasons: the user has just
+chosen a path in a save dialog, which is an explicit act rather than an edit to be
+weighed up; and a library existing only in memory cannot appear in the folder tree, which
+is exactly where they will look for what they just made. Tools added to it afterwards are
+ordinary edits and wait for the commit like any other.
+
+Because creation writes at once, it can also fail at once — a read-only share, a path
+without permission. `CreateNew` and `SaveAsCopy` throw `GCamUserException` rather than
+returning a half-made library, and the browser reports it.
+
+Two details that are easy to get wrong and are already handled: a save writes to a
+temporary file and swaps, so a failure part-way through cannot leave a half-written
+library where a good one was; and if one library in a batch fails, the ones that
+succeeded stay saved and the failures are reported by name rather than the whole commit
+being rolled back.
+
+**Only G-CAM's own format is writable.** `ToolLibraryImporter.CanWrite` is the single
+test, true only for `.gcamtools`. An imported `.hsmlib` is read-only, marked as such in
+the browser, and converted by an explicit action — see
+[0002](decisions/0002-imported-libraries-are-read-only.md). Nothing else should compare
+file extensions to decide whether editing is allowed.
 
 **Logic worth testing goes in Core, even when it looks like UI.** `ToolSearch` — which tools match what the user typed — lives in `Core/Tooling` rather than the browser's viewmodel. Search rules quietly stop matching what people expect, and Core is the only place a headless test can reach. The same reasoning puts tool-type display names there: the browser shows "Bull nose end mill", so search has to match that string, and having one source for it keeps the two from drifting.
 

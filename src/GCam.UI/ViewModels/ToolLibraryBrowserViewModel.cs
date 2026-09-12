@@ -21,6 +21,7 @@ namespace GCam.UI.ViewModels
         private readonly IGCamSettings _settings;
         private readonly ToolLibraryImporter _importer;
         private readonly IGCamLog _log;
+        private readonly LibrarySession _session;
 
         private readonly ObservableCollection<Tool> _tools = new ObservableCollection<Tool>();
         private readonly ICollectionView _toolsView;
@@ -36,6 +37,7 @@ namespace GCam.UI.ViewModels
             _settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _importer = importer ?? new ToolLibraryImporter();
             _log = log ?? NullLog.Instance;
+            _session = new LibrarySession(_importer, _log);
 
             _toolsView = CollectionViewSource.GetDefaultView(_tools);
             _toolsView.Filter = o => ToolSearch.Matches(o as Tool, _searchText);
@@ -49,6 +51,29 @@ namespace GCam.UI.ViewModels
 
         /// <summary>Tools in the selected library, filtered by <see cref="SearchText"/>.</summary>
         public ICollectionView Tools => _toolsView;
+
+        /// <summary>The open libraries and their unsaved changes.</summary>
+        public LibrarySession Session => _session;
+
+        /// <summary>The library currently loaded, or null.</summary>
+        public ToolLibrary CurrentLibrary { get; private set; }
+
+        /// <summary>True when the selected library can be edited in place.</summary>
+        public bool CanEditCurrent =>
+            CurrentLibrary != null && _session.CanEdit(_selectedLibrary?.FullPath);
+
+        public bool HasUnsavedChanges => _session.HasUnsavedChanges;
+
+        public string UnsavedSummary
+        {
+            get
+            {
+                int count = _session.DirtyPaths.Count;
+                return count == 0 ? string.Empty
+                    : count == 1 ? "1 library modified"
+                    : count + " libraries modified";
+            }
+        }
 
         /// <summary>File extensions the browser can open, for the folder-picker hint.</summary>
         public string SupportedFormats =>
@@ -108,6 +133,9 @@ namespace GCam.UI.ViewModels
             }
         }
 
+        /// <summary>Replaces the status line. Used by the window for one-off messages.</summary>
+        public void SetStatus(string text) => Status = text;
+
         /// <summary>Adds a folder to watch and saves the list.</summary>
         public void AddFolder(string path)
         {
@@ -159,6 +187,33 @@ namespace GCam.UI.ViewModels
             Status = "Removed " + node.FullPath;
         }
 
+        /// <summary>
+        /// Re-scans the folders and selects the library at <paramref name="path"/>.
+        /// Used after creating one, so you land on what you just made.
+        /// </summary>
+        public void RefreshAndSelect(string path)
+        {
+            LoadFolders();
+
+            LibraryFileNode node = AllNodes(Folders)
+                .OfType<LibraryFileNode>()
+                .FirstOrDefault(n => string.Equals(n.FullPath, path, StringComparison.OrdinalIgnoreCase));
+
+            if (node != null)
+            {
+                // Expand the chain so the new node is actually visible in the tree.
+                foreach (LibraryTreeNode ancestor in Folders)
+                {
+                    ancestor.IsExpanded = true;
+                }
+
+                node.IsSelected = true;
+                SelectedLibrary = node;
+            }
+
+            RefreshDirtyMarkers();
+        }
+
         /// <summary>Re-scans every watched folder, picking up files added outside G-CAM.</summary>
         public void Refresh()
         {
@@ -197,6 +252,8 @@ namespace GCam.UI.ViewModels
             {
                 Status = "Add a folder to get started.";
             }
+
+            RefreshDirtyMarkers();
         }
 
         private void LoadSelectedLibrary()
@@ -206,20 +263,17 @@ namespace GCam.UI.ViewModels
 
             if (_selectedLibrary == null)
             {
+                CurrentLibrary = null;
                 Status = "No library selected.";
+                RaiseEditingState();
                 RaiseListSummary();
                 return;
             }
 
             try
             {
-                IToolLibraryReader reader = _importer.ReaderFor(_selectedLibrary.FullPath);
-                ToolLibraryReadResult result;
-
-                using (FileStream stream = File.OpenRead(_selectedLibrary.FullPath))
-                {
-                    result = reader.Read(stream, _selectedLibrary.FullPath);
-                }
+                ToolLibraryReadResult result = _session.Open(_selectedLibrary.FullPath);
+                CurrentLibrary = result.Library;
 
                 foreach (Tool tool in result.Library.Tools)
                 {
@@ -249,7 +303,60 @@ namespace GCam.UI.ViewModels
                 _log.Error(ex, "Unexpected failure opening {0}", _selectedLibrary.FullPath);
             }
 
+            RaiseEditingState();
             RaiseListSummary();
+        }
+
+        /// <summary>Re-reads the tool list from the library after an edit.</summary>
+        public void ReloadCurrentTools(Tool select = null)
+        {
+            _tools.Clear();
+
+            if (CurrentLibrary != null)
+            {
+                foreach (Tool tool in CurrentLibrary.Tools)
+                {
+                    _tools.Add(tool);
+                }
+            }
+
+            RaiseListSummary();
+
+            if (select != null)
+            {
+                SelectedTool = _tools.FirstOrDefault(t => t.Id == select.Id);
+            }
+        }
+
+        /// <summary>Records that the open library changed, and updates the tree marker.</summary>
+        public void MarkCurrentDirty()
+        {
+            if (_selectedLibrary == null)
+            {
+                return;
+            }
+
+            _session.MarkDirty(_selectedLibrary.FullPath);
+            RefreshDirtyMarkers();
+            RaiseEditingState();
+        }
+
+        /// <summary>Pushes session dirty state onto the tree nodes.</summary>
+        public void RefreshDirtyMarkers()
+        {
+            foreach (LibraryFileNode node in AllNodes(Folders).OfType<LibraryFileNode>())
+            {
+                node.IsDirty = _session.IsDirty(node.FullPath);
+                node.IsReadOnly = !_session.CanEdit(node.FullPath);
+            }
+        }
+
+        private void RaiseEditingState()
+        {
+            Raise(nameof(CurrentLibrary));
+            Raise(nameof(CanEditCurrent));
+            Raise(nameof(HasUnsavedChanges));
+            Raise(nameof(UnsavedSummary));
         }
 
         private void RaiseListSummary()

@@ -163,6 +163,21 @@ namespace GCam.UI.ViewModels
 
         public string FullPath { get; }
 
+        private bool _isDirty;
+
+        /// <summary>
+        /// True when this library has edits not yet written to disk. Shown as an
+        /// asterisk in the tree so an unsaved library is visible without selecting it.
+        /// </summary>
+        public bool IsDirty
+        {
+            get => _isDirty;
+            set => Set(ref _isDirty, value);
+        }
+
+        /// <summary>True when G-CAM cannot write this format, so it cannot be edited.</summary>
+        public bool IsReadOnly { get; set; }
+
         /// <summary>Extension without the dot, shown as a badge so formats are distinguishable.</summary>
         public string Format => Path.GetExtension(FullPath).TrimStart('.').ToUpperInvariant();
     }

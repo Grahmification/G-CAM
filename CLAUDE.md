@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 G-CAM is a SOLIDWORKS 2025 add-in (C#, .NET Framework 4.8) that generates CAM toolpaths, in the spirit of HSMWorks or Fusion 360's CAM workspace. Internal team tool, 3-axis milling only.
 
-Built so far: the add-in loads with a CommandManager tab and a FeatureManager tree tab, a tool library model with HSMWorks import, a tool library browser UI, and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet. `docs/architecture.md` has the full status table and the planned layout.
+Built so far: the add-in loads with a CommandManager tab and a FeatureManager tree tab; a tool library model with HSMWorks import; a tool library browser with create/edit/delete and a tabbed tool editor; and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet. `docs/architecture.md` has the full status table and the planned layout.
 
 ## Layout
 
@@ -28,7 +28,7 @@ tests/GCam.Integration.Tests    needs SOLIDWORKS (empty)
 
 ```bash
 dotnet build G-CAM.sln                                        # from the repo root
-dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj      # 87 tests, headless
+dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj      # 121 tests, headless
 ```
 
 **Close SOLIDWORKS before building** — it holds the output DLLs open and the build fails at the copy step with MSB3021/MSB3027. Those are file locks, not compile errors.
@@ -64,6 +64,8 @@ Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help
 **Logic worth testing goes in Core, even when it looks like UI** — `ToolSearch` is in `Core/Tooling`, not the browser viewmodel. Core owns rules; viewmodels own presentation state. There is no `GCam.UI.Tests` project, and moving the rule beats adding one.
 
 **Settings** live in `%LOCALAPPDATA%\G-CAM\settings.xml`, beside the logs, via `IGCamSettings`/`XmlSettingsStore` in Core. Nothing on that path throws — a corrupt or unwritable file yields defaults and a log line, never a failed load.
+
+**Tool library edits are held in memory until committed, but creating a library is not an edit.** `LibrarySession` owns the open libraries and their dirty state; adding, editing or deleting tools waits for the browser's OK, and Cancel discards it. `CreateNew` and `SaveAsCopy` write immediately and leave the library clean — the user chose a path, and it has to appear in the folder tree. Only `.gcamtools` is writable — ask `ToolLibraryImporter.CanWrite`, never compare extensions yourself. Imported `.hsmlib` files are read-only by decision, not by omission ([0002](docs/decisions/0002-imported-libraries-are-read-only.md)).
 
 **NuGet packages need no extra work, but only because of `AssemblyResolver`** in `GCam.AddIn/Composition`. An add-in gets no app.config, so binding redirects do not exist and version unification breaks at runtime. See `docs/solidworks-api/addin-dependencies.md` before debugging any "could not load file or assembly".
 
