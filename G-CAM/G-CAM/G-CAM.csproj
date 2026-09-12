@@ -57,4 +57,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>"%25windir%25\Microsoft.NET\Framework64\v4.0.30319\regasm" /codebase "$(TargetPath)"</PostBuildEvent>
+  </PropertyGroup>
 </Project>
