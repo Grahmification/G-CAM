@@ -1,0 +1,23 @@
+<UserControl x:Class="GCam.UI.Views.JobTreeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="White">
+
+    <!--
+        The jobs / setups / operations tree that appears as a tab in the
+        SOLIDWORKS FeatureManager pane. Empty placeholder for now; the real
+        TreeView binds to a JobTreeViewModel over GCam.Core's Job model.
+    -->
+    <Grid>
+        <TextBlock Text="G-CAM jobs"
+                   Margin="12"
+                   VerticalAlignment="Top"
+                   FontWeight="SemiBold"
+                   Foreground="#37475A" />
+        <TextBlock Text="No job in this document."
+                   Margin="12,34,12,12"
+                   VerticalAlignment="Top"
+                   TextWrapping="Wrap"
+                   Foreground="#888888" />
+    </Grid>
+</UserControl>

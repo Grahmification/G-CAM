@@ -8,4 +8,5 @@ Official reference: the SolidWorks API Help installed alongside SolidWorks, and 
 
 ## Index
 
+- [The add-in checkbox un-ticks itself](addin-wont-load.md) — diagnosing silent add-in load failures; stale CLSID version subkeys.
 - [CodeStack](codestack.md) — third-party task-oriented resource; what it covers that the official help doesn't, and how to clone it offline.

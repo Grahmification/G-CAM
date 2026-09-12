@@ -13,15 +13,29 @@
     <RootNamespace>GCam.AddIn</RootNamespace>
     <AssemblyName>GCam.AddIn</AssemblyName>
     <UseWindowsForms>true</UseWindowsForms>
-    <!-- AssemblyInfo.cs is hand-maintained here: the COM Guid must stay stable. -->
-    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
+
+  <!--
+    GenerateAssemblyInfo stays ON. It emits AssemblyVersion from $(Version), which
+    regasm writes into the CLSID registration as a version subkey. Turning it off
+    left this assembly at 0.0.0.0, which sorts BELOW any stale registration from an
+    older build and lets the stale one win activation.
+
+    Properties/AssemblyInfo.cs carries only [ComVisible] and [Guid], neither of which
+    the generator emits, so the two do not collide.
+  -->
 
   <ItemGroup>
     <ProjectReference Include="..\GCam.Core\GCam.Core.csproj" />
     <ProjectReference Include="..\GCam.Posts\GCam.Posts.csproj" />
     <ProjectReference Include="..\GCam.SolidWorks\GCam.SolidWorks.csproj" />
     <ProjectReference Include="..\GCam.UI\GCam.UI.csproj" />
+  </ItemGroup>
+
+  <!-- SOLIDWORKS reads icon files from disk at load time, so they must sit next to
+       the assembly rather than be embedded as resources. -->
+  <ItemGroup>
+    <None Include="Resources\icons\*.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,15 +56,25 @@
   <!--
     Registers the add-in with SOLIDWORKS after every build.
 
+    TWO assemblies need registering, not one:
+      GCam.AddIn.dll      the ISwAddin entry point SOLIDWORKS loads
+      GCam.SolidWorks.dll the ActiveX control hosting the FeatureManager tab,
+                          which CreateFeatureMgrControl4 activates by ProgID
+
     Writes to HKLM, so it needs an elevated shell. ContinueOnError keeps an
     ordinary unelevated build from failing outright - you get a warning and a
     compiled DLL that simply isn't registered yet. Run deploy/register.cmd from
-    an elevated prompt to register it.
+    an elevated prompt to register both.
 
     64-bit regasm specifically: SOLIDWORKS reads the 64-bit registry view.
   -->
   <Target Name="RegisterComAddin" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
-    <Exec Command="&quot;$(WINDIR)\Microsoft.NET\Framework64\v4.0.30319\regasm.exe&quot; /codebase &quot;$(TargetPath)&quot;"
+    <PropertyGroup>
+      <_RegAsm>$(WINDIR)\Microsoft.NET\Framework64\v4.0.30319\regasm.exe</_RegAsm>
+    </PropertyGroup>
+    <Exec Command="&quot;$(_RegAsm)&quot; /codebase &quot;$(TargetDir)GCam.SolidWorks.dll&quot;"
+          ContinueOnError="WarnAndContinue" />
+    <Exec Command="&quot;$(_RegAsm)&quot; /codebase &quot;$(TargetPath)&quot;"
           ContinueOnError="WarnAndContinue" />
   </Target>
 

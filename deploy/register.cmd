@@ -14,20 +14,67 @@ set CONFIG=%~1
 if "%CONFIG%"=="" set CONFIG=Debug
 
 set REGASM=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\regasm.exe
-set TARGET=%~dp0..\src\GCam.AddIn\bin\%CONFIG%\net48\GCam.AddIn.dll
+set OUTDIR=%~dp0..\src\GCam.AddIn\bin\%CONFIG%\net48
 
-if not exist "%TARGET%" (
-    echo ERROR: not found: %TARGET%
+REM Two assemblies: the add-in itself, and GCam.SolidWorks for the ActiveX control
+REM that SOLIDWORKS activates to host the FeatureManager tab. Registering only the
+REM first gives you a working toolbar and a silently missing tab.
+set ADDIN=%OUTDIR%\GCam.AddIn.dll
+set HOST=%OUTDIR%\GCam.SolidWorks.dll
+
+REM Double-clicking does NOT run elevated. If every regasm call reports
+REM "Administrator permissions are needed", that is why - right-click and choose
+REM "Run as administrator" instead.
+net session >nul 2>&1
+if errorlevel 1 (
+    echo WARNING: not running as administrator - registration will fail.
+    echo          Right-click this file and choose "Run as administrator".
+    echo.
+)
+
+if not exist "%ADDIN%" (
+    echo ERROR: not found: %ADDIN%
     echo Build the solution first.
+    echo.
+    pause
     exit /b 1
 )
 
+set FAILED=0
+
+REM --- Purge any previous registration of the add-in's CLSID -------------------
+REM regasm adds a version subkey per assembly version and leaves older ones behind.
+REM mscoree then activates the HIGHEST version it finds, so a stale entry pointing
+REM at a renamed or deleted DLL wins and SOLIDWORKS silently fails to load the
+REM add-in - the checkbox un-ticks itself with no error shown.
+REM
+REM Deleting the CLSID key first makes every registration a clean one. regasm
+REM recreates everything it needs immediately below.
+set CLSID={DF725BF7-4CEB-4425-8931-A072139DDD01}
+reg delete "HKLM\SOFTWARE\Classes\CLSID\%CLSID%" /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\Classes\Wow6432Node\CLSID\%CLSID%" /f >nul 2>&1
+
 if /i "%~2"=="/u" (
-    echo Unregistering %TARGET%
-    "%REGASM%" /unregister "%TARGET%"
+    echo Unregistering %ADDIN%
+    "%REGASM%" /unregister "%ADDIN%" || set FAILED=1
+    echo Unregistering %HOST%
+    "%REGASM%" /unregister "%HOST%" || set FAILED=1
 ) else (
-    echo Registering %TARGET%
-    "%REGASM%" /codebase "%TARGET%"
+    echo Registering %HOST%
+    "%REGASM%" /codebase "%HOST%" || set FAILED=1
+    echo Registering %ADDIN%
+    "%REGASM%" /codebase "%ADDIN%" || set FAILED=1
 )
 
+echo.
+if "%FAILED%"=="1" (
+    echo *** FAILED - see the messages above. ***
+) else (
+    echo Done.
+)
+
+REM Keeps the window open when launched by double-click.
+pause
+
 endlocal
+exit /b %FAILED%

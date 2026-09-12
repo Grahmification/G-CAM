@@ -6,14 +6,17 @@
     the STA dispatcher, and the COM-visible WinForms shell that hosts the
     WPF tree tab. Implements the interfaces Core declares in Abstractions/.
 
-    UseWindowsForms is for the FeatureManager tab shell, which SOLIDWORKS
-    activates as an ActiveX control by CLSID.
+    UseWindowsForms is for the FeatureManager tab shell, which SOLIDWORKS activates
+    as an ActiveX control by CLSID. UseWPF is needed alongside it because that shell
+    bridges to WPF through ElementHost, and WindowsFormsIntegration.dll is only
+    referenced when both are enabled.
   -->
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <RootNamespace>GCam.SolidWorks</RootNamespace>
     <AssemblyName>GCam.SolidWorks</AssemblyName>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
   <ItemGroup>
