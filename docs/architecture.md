@@ -18,7 +18,7 @@ The project structure for G-CAM and the rules that keep it intact. Decided and s
 | Posts | Data-driven XML templates now, script engine later behind the same interface |
 | Undo | Own command stack in Core, doubling as recompute dirty-tracking |
 | Threading | Core off-thread; all SW access marshalled to the main STA thread |
-| Errors | Boundary wrapper at every entry point — see [error-handling.md](error-handling.md) |
+| Errors | try/catch at every entry point, one `ErrorHandler` policy — see [error-handling.md](error-handling.md) |
 | Audience | Internal team tool |
 
 ## Layout
@@ -44,7 +44,7 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   ├── Simulation/                ISimulator, ZMap/, Verification/
 │   │   ├── Commands/                  ICommand, CommandStack, DirtyTracker
 │   │   ├── Posting/                   CLData — machine-neutral canonical toolpath
-│   │   ├── Diagnostics/               IGCamLog, IErrorPresenter, Boundary, FaultLatch
+│   │   ├── Diagnostics/               IGCamLog, IErrorPresenter, ErrorHandler
 │   │   └── Abstractions/              interfaces the outer layers implement
 │   │
 │   ├── GCam.Posts/                    netstandard2.0 — consumes CLData, emits G-code
@@ -117,7 +117,7 @@ The target is necessary because the framework targets alone do not stop it — *
 
 **Units.** SOLIDWORKS works in metres — the help states it plainly, and it is the classic source of toolpaths wrong by 1000×. *Core works in millimetres*, because that is what tool definitions, G-code and CAM convention use. Conversion happens in exactly one place: `Extraction/`. Nothing downstream of extraction should ever multiply by 1000. (Assumption: mm internally with display/post conversion for inch users. Revisit before the tool library schema is frozen.)
 
-**No exception leaves G-CAM code.** SOLIDWORKS calls us through COM by method name; an exception thrown back across that boundary is discarded at best and destabilises the host at worst — and an exception out of `ConnectToSW` silently unloads the add-in. Every method SOLIDWORKS, WPF or the task scheduler can call is wrapped in `Boundary`. Interior code throws freely; only entry points catch. The full entry-point list and per-callback policy is in [error-handling.md](error-handling.md).
+**No exception leaves G-CAM code.** SOLIDWORKS calls us through COM by method name; an exception thrown back across that boundary is discarded at best and destabilises the host at worst — and an exception out of `ConnectToSW` silently unloads the add-in. Every method SOLIDWORKS, WPF or the task scheduler can call gets a `try`/`catch` calling `ErrorHandler.Handle`. Interior code throws freely; only entry points catch. The full entry-point list and per-callback policy is in [error-handling.md](error-handling.md).
 
 **Threading.** Core touches no COM, so it runs freely on background threads with `IProgress<T>` and `CancellationToken`. Any SolidWorks call goes through `SwDispatcher` back to the main STA thread. Calling SW from a worker thread appears to work and then corrupts state later.
 
