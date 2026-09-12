@@ -9,6 +9,8 @@ description: Look up the SOLIDWORKS 2025 API offline - interfaces, methods, prop
 
 **Always look up a signature before writing a call.** This API has many near-identical overloads (`CreateCommandGroup` / `CreateCommandGroup2`), silently different units, and load-bearing Remarks.
 
+**Don't know which interface to look up?** Read `reference.md` in this directory — a map of how the API is organised: the accessor chain down from `ISldWorks`, the topology/geometry split, where temp bodies and booleans live, which book holds what, and the naming conventions. Read it before searching blind; skip it when you already have a name.
+
 ## Setup (once per machine)
 
 ```bash
@@ -39,7 +41,7 @@ python $SW grep "tessellat" --type IFace2             # full-text search across 
 
 **Signatures** come from the doc generator, so types print as `System.int` / `System.string` / `System.object`. Write plain `int`, `string`, `object` in C#. `out`/`ByRef` parameters are shown correctly.
 
-**`I`-prefixed twins** (`GetFaces` vs `IGetFaces`) are not versions. Verified in the 2025 help: the `I` variant returns a raw pointer for in-process unmanaged C++, the plain one returns a safe array. **From C#, always use the non-prefixed method.**
+**`I`-prefixed twins** (`ActiveDoc`/`IActiveDoc2`, `GetFaces`/`IGetFaces`) are not versions, and the right one depends on the return type: for a **single object** the `I` form is type-safe and saves a cast; for an **array** the `I` form is a C++-only raw pointer and its Return Value says "C#: Not supported". Check the Return Value line rather than assuming. See `reference.md`.
 
 **Remarks is the section that matters.** It carries the constraints that aren't in the signature — required call order, registry side effects, unit conventions, and accuracy caveats. For a CAM add-in these are often decisive: `IFace2.GetTessTriangles`, for example, documents that its tessellation is display-only and explicitly *not* suitable for machining, which is the kind of thing that costs days if discovered late.
 
