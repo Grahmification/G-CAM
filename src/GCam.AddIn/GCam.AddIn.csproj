@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The COM entry point and composition root. This is the only project that knows
+    every other project exists; it wires Core's interfaces to the SolidWorks
+    implementations and owns the CommandManager UI. Keep it thin - logic belongs
+    in Core, interop belongs in GCam.SolidWorks.
+
+    This assembly is what regasm registers and what SOLIDWORKS loads.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>GCam.AddIn</RootNamespace>
+    <AssemblyName>GCam.AddIn</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- AssemblyInfo.cs is hand-maintained here: the COM Guid must stay stable. -->
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GCam.Core\GCam.Core.csproj" />
+    <ProjectReference Include="..\GCam.Posts\GCam.Posts.csproj" />
+    <ProjectReference Include="..\GCam.SolidWorks\GCam.SolidWorks.csproj" />
+    <ProjectReference Include="..\GCam.UI\GCam.UI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="SolidWorks.Interop.sldworks">
+      <HintPath>$(SolidWorksApiDir)SolidWorks.Interop.sldworks.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swconst">
+      <HintPath>$(SolidWorksApiDir)SolidWorks.Interop.swconst.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swpublished">
+      <HintPath>$(SolidWorksApiDir)SolidWorks.Interop.swpublished.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    Registers the add-in with SOLIDWORKS after every build.
+
+    Writes to HKLM, so it needs an elevated shell. ContinueOnError keeps an
+    ordinary unelevated build from failing outright - you get a warning and a
+    compiled DLL that simply isn't registered yet. Run deploy/register.cmd from
+    an elevated prompt to register it.
+
+    64-bit regasm specifically: SOLIDWORKS reads the 64-bit registry view.
+  -->
+  <Target Name="RegisterComAddin" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec Command="&quot;$(WINDIR)\Microsoft.NET\Framework64\v4.0.30319\regasm.exe&quot; /codebase &quot;$(TargetPath)&quot;"
+          ContinueOnError="WarnAndContinue" />
+  </Target>
+
+</Project>

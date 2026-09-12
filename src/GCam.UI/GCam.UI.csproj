@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    WPF views and viewmodels: the jobs/toolpaths tree and the tool library window.
+    References Core only - never SolidWorks. Viewmodels bind to the Core model and
+    are testable without SOLIDWORKS or a message pump.
+
+    UseWindowsForms is required for ElementHost, which is how these controls get
+    hosted inside SOLIDWORKS panes.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>GCam.UI</RootNamespace>
+    <AssemblyName>GCam.UI</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GCam.Core\GCam.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Headless tests for the geometry kernel, toolpath strategies and Z-map simulator.
+    Runs anywhere - no SOLIDWORKS installation, no licence, no message pump.
+    This project must never gain a SolidWorks reference; if a test needs one it
+    belongs in GCam.Integration.Tests.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>GCam.Core.Tests</RootNamespace>
+    <AssemblyName>GCam.Core.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GCam.Core\GCam.Core.csproj" />
+    <ProjectReference Include="..\..\src\GCam.Posts\GCam.Posts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

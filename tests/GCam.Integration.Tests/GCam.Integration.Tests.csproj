@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tests that need a real SOLIDWORKS instance: geometry extraction against actual
+    parts, document persistence round-trips, PropertyManager page behaviour.
+    These will not run on a build agent without SOLIDWORKS installed - keep them
+    separate from GCam.Core.Tests so that project stays runnable everywhere.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>GCam.Integration.Tests</RootNamespace>
+    <AssemblyName>GCam.Integration.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\GCam.Core\GCam.Core.csproj" />
+    <ProjectReference Include="..\..\src\GCam.SolidWorks\GCam.SolidWorks.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

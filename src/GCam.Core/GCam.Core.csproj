@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The domain model, geometry kernel, toolpath strategies and simulation.
+
+    Targets netstandard2.0 rather than net48 so this assembly loads unchanged in a
+    .NET 8 worker process, which is the sanctioned escape hatch if toolpath
+    calculation ever turns out to be runtime-bound (see docs/decisions/0001).
+
+    Note that netstandard2.0 does NOT by itself prevent a SolidWorks reference:
+    a ProjectReference to a net48 project only warns (NU1702), and a raw Reference
+    with a HintPath is accepted silently. The guard target below is what actually
+    enforces the rule.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>GCam.Core</RootNamespace>
+    <AssemblyName>GCam.Core</AssemblyName>
+  </PropertyGroup>
+
+  <!--
+    Fails the build if anything drags a SOLIDWORKS assembly into Core, directly or
+    transitively. This rule is load-bearing: it keeps the toolpath maths testable
+    without a SOLIDWORKS licence, lets calculation run off the STA thread, and
+    preserves the out-of-process option above.
+
+    If you hit this: declare an interface in Core/Abstractions/ and implement it
+    in GCam.SolidWorks. See docs/architecture.md.
+  -->
+  <Target Name="EnsureCoreHasNoSolidWorksReference" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <_SolidWorksRefs Include="@(ReferencePath)"
+                       Condition="$([System.String]::new('%(Filename)').StartsWith('SolidWorks'))" />
+    </ItemGroup>
+    <Error Condition="'@(_SolidWorksRefs)' != ''"
+           Text="GCam.Core must not reference SOLIDWORKS. Found: @(_SolidWorksRefs->'%(Filename)', ', '). Declare an interface in Abstractions/ and implement it in GCam.SolidWorks instead - see docs/architecture.md." />
+  </Target>
+
+</Project>

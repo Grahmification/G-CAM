@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Every line of COM interop in the product lives here: geometry extraction,
+    the OpenGL overlay renderer, PropertyManager pages, document persistence,
+    the STA dispatcher, and the COM-visible WinForms shell that hosts the
+    WPF tree tab. Implements the interfaces Core declares in Abstractions/.
+
+    UseWindowsForms is for the FeatureManager tab shell, which SOLIDWORKS
+    activates as an ActiveX control by CLSID.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>GCam.SolidWorks</RootNamespace>
+    <AssemblyName>GCam.SolidWorks</AssemblyName>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\GCam.Core\GCam.Core.csproj" />
+    <ProjectReference Include="..\GCam.UI\GCam.UI.csproj" />
+  </ItemGroup>
+
+  <!-- EmbedInteropTypes must stay false: embedding breaks COM type identity and
+       ConnectToSW then fails in ways that are hard to diagnose. -->
+  <ItemGroup>
+    <Reference Include="SolidWorks.Interop.sldworks">
+      <HintPath>$(SolidWorksApiDir)SolidWorks.Interop.sldworks.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swconst">
+      <HintPath>$(SolidWorksApiDir)SolidWorks.Interop.swconst.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swpublished">
+      <HintPath>$(SolidWorksApiDir)SolidWorks.Interop.swpublished.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+  </ItemGroup>
+
+</Project>

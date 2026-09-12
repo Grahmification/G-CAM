@@ -1,0 +1,24 @@
+<Project>
+
+  <!-- Shared settings for every project in the solution. -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Product>G-CAM</Product>
+    <Company></Company>
+    <Version>0.1.0</Version>
+    <Copyright>Copyright © 2026</Copyright>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!--
+    Where the SOLIDWORKS interop assemblies live. Override on the command line or
+    via an environment variable if SOLIDWORKS is installed elsewhere:
+        msbuild /p:SolidWorksApiDir="D:\...\api\redist\"
+    Only GCam.SolidWorks and GCam.AddIn reference these.
+  -->
+  <PropertyGroup>
+    <SolidWorksApiDir Condition="'$(SolidWorksApiDir)' == ''">C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\</SolidWorksApiDir>
+  </PropertyGroup>
+
+</Project>

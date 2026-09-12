@@ -1,6 +1,6 @@
 # G-CAM architecture
 
-The target file structure for G-CAM, and the rules that keep it intact. Decided 2026-09-12; nothing here is built yet beyond the Hello World add-in.
+The project structure for G-CAM and the rules that keep it intact. Decided and scaffolded 2026-09-12: the solution and all seven projects exist and build; no product code yet beyond the original add-in entry point.
 
 ## Decisions this rests on
 
@@ -22,11 +22,15 @@ The target file structure for G-CAM, and the rules that keep it intact. Decided 
 
 ## Layout
 
+Folders inside each project are created as code lands; the projects and their
+references exist now.
+
 ```
-G-CAM.sln                              ← move to repo root; drop the current double nesting
+G-CAM.sln
+Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │
 ├── src/
-│   ├── GCam.Core/                     ★ NO SolidWorks references. Ever.
+│   ├── GCam.Core/                     ★ netstandard2.0 — NO SolidWorks references. Ever.
 │   │   ├── Model/                     Job, Setup, Operation, Toolpath, Move, Stock
 │   │   ├── Tooling/                   Tool, Holder, CuttingData, IToolLibrary
 │   │   ├── Geometry/
@@ -41,7 +45,7 @@ G-CAM.sln                              ← move to repo root; drop the current d
 │   │   ├── Posting/                   CLData — machine-neutral canonical toolpath
 │   │   └── Abstractions/              interfaces the outer layers implement
 │   │
-│   ├── GCam.Posts/                    consumes CLData, emits G-code
+│   ├── GCam.Posts/                    netstandard2.0 — consumes CLData, emits G-code
 │   │   ├── Engine/                    formatting, modal state, word ordering
 │   │   ├── TemplatePost.cs            ITemplatePost → XML-driven
 │   │   └── definitions/               grbl.xml, haas.xml, …
@@ -77,7 +81,8 @@ G-CAM.sln                              ← move to repo root; drop the current d
 │   └── GCam.Integration.Tests/        requires SOLIDWORKS
 │
 ├── docs/
-└── deploy/                            empty until the team rollout needs an installer
+└── deploy/
+    └── register.cmd                elevated regasm helper; installer comes later
 ```
 
 ## Dependency rules
@@ -99,7 +104,11 @@ GCam.Posts  │   GCam.UI    GCam.SolidWorks
 | `GCam.SolidWorks` | Core, SolidWorks interop |
 | `GCam.AddIn` | everything — it is the composition root, and the only project that knows all the others exist |
 
-**The one rule that matters: `GCam.Core` never references SolidWorks.** Everything else is convention; this one is load-bearing. It is what lets the toolpath math be tested on a build agent with no SOLIDWORKS licence, and it is what lets calculation run off-thread at all. Core declares interfaces in `Abstractions/`; `GCam.SolidWorks` implements them; `GCam.AddIn` wires the two together. If you ever find yourself wanting a `using SolidWorks.Interop` inside Core, the answer is a new interface in `Abstractions/`.
+**The one rule that matters: `GCam.Core` never references SolidWorks.** Everything else is convention; this one is load-bearing. It is what lets the toolpath math be tested on a build agent with no SOLIDWORKS licence, what lets calculation run off-thread at all, and what preserves the out-of-process escape hatch. Core declares interfaces in `Abstractions/`; `GCam.SolidWorks` implements them; `GCam.AddIn` wires the two together. If you ever find yourself wanting a `using SolidWorks.Interop` inside Core, the answer is a new interface in `Abstractions/`.
+
+This rule is **enforced by the build**, not left to discipline. `GCam.Core.csproj` carries an `EnsureCoreHasNoSolidWorksReference` target that inspects resolved references after RAR and fails with a pointer to this document. Verified 2026-09-12 by adding a SolidWorks reference and confirming the error fires.
+
+The target is necessary because the framework targets alone do not stop it — **both tested, both disappointing**: a `ProjectReference` from netstandard2.0 to a net48 project only raises warning NU1702, and a raw `<Reference>` with a `HintPath` is accepted with no diagnostic at all. `Core` and `Posts` target `netstandard2.0` for a different reason: so they load unchanged in a .NET 8 worker process if that escape hatch is ever needed.
 
 ## Rules with teeth
 
@@ -136,15 +145,17 @@ One 2D contour operation, all the way through, before breadth:
 
 Each step crosses a project boundary, so a wrong boundary shows up while it is still cheap to move.
 
-## Housekeeping worth doing first
+## Scaffolding — done 2026-09-12
 
-**Flatten the nesting.** The solution currently sits at `G-CAM/G-CAM.sln` with the project at `G-CAM/G-CAM/`. Put the `.sln` at the repo root with projects under `src/`.
+The solution is set up and all seven projects build. No product code yet beyond the original add-in entry point.
 
-**Namespaces.** `G-CAM` as an assembly name yields the namespace `G_CAM`, which gets ugly fast across six projects. Use `GCam.Core`, `GCam.SolidWorks` and so on for assemblies and namespaces; keep "G-CAM" as the product name users see.
+- Solution flattened: `G-CAM.sln` at the repo root, projects under `src/` and `tests/`. The old `G-CAM/G-CAM/` nesting is gone.
+- Renamed to `GCam.*` for assemblies and namespaces — `G-CAM` as an assembly name forces the namespace `G_CAM`, which reads badly across seven projects. "G-CAM" remains the product name.
+- All projects are SDK-style. **Verified:** `<UseWPF>true</UseWPF>` does work with `net48` under the SDK, XAML compilation included — this was flagged as an assumption and is now tested.
+- `Directory.Build.props` holds shared settings and `$(SolidWorksApiDir)`, so the interop `HintPath`s are no longer the brittle `..\..\..\..\..\..` relative paths. Override it on the command line if SOLIDWORKS lives elsewhere.
+- Test stack is xUnit. FluentAssertions is deliberately absent: v8+ moved to a paid Xceed licence in January 2025. Pin `[7.0.0]` or use the AwesomeAssertions fork if you want it.
 
-**SDK-style project files.** Old-style `.csproj` means no `PackageReference`, which you will want for Clipper2 and the test stack. SDK-style projects support `net48` and are dramatically shorter. *Assumed:* `<UseWPF>true</UseWPF>` works with `net48` under SDK-style — verify when setting up `GCam.UI` rather than trusting it.
-
-**Test stack.** xUnit or NUnit. Avoid FluentAssertions v8+, which moved to a paid Xceed licence in January 2025 — pin `[7.0.0]` or use the AwesomeAssertions fork. Clipper2 is Boost-licensed and targets netstandard2.0, so it is fine on net48.
+**Registration is now non-fatal.** The post-build `regasm` step uses `ContinueOnError`, so an ordinary unelevated build warns instead of failing and still produces a DLL. Run `deploy/register.cmd` from an elevated prompt to actually register. This matters more than it sounds: the old setup made every unelevated build look broken.
 
 ## Known gaps and where this breaks
 

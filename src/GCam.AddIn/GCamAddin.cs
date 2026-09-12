@@ -3,7 +3,7 @@ using SolidWorks.Interop.swpublished;
 using System;
 using System.Runtime.InteropServices;
 
-namespace G_CAM
+namespace GCam.AddIn
 {
     public partial class GCamAddin : ISwAddin
     {

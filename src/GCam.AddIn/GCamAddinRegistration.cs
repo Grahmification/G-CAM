@@ -4,7 +4,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.InteropServices;
 
-namespace G_CAM
+namespace GCam.AddIn
 {
     /// <summary>
     /// Portion of the class for registering the addin with SolidWorks
