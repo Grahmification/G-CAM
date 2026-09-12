@@ -11,32 +11,55 @@ namespace GCam.AddIn
     /// </summary>
     public partial class GCamAddin
     {
-        /// <summary>Invoked when a G-CAM toolbar or menu item is clicked.</summary>
+        /// <summary>
+        /// Entry point 4. Invoked when a G-CAM toolbar or menu item is clicked - the
+        /// main user-facing path, so failures are reported in full.
+        /// </summary>
         public void OnCommand(int commandId)
         {
-            switch ((GCamCommand)commandId)
+            try
             {
-                case GCamCommand.ToolLibrary:
-                    ToolLibraryDialog.Show(MainWindowHandle());
-                    break;
+                switch ((GCamCommand)commandId)
+                {
+                    case GCamCommand.ToolLibrary:
+                        ToolLibraryDialog.Show(MainWindowHandle());
+                        break;
 
-                // Deliberately empty: the UI exists so the wiring can be verified,
-                // the behaviour arrives with the first vertical slice.
-                case GCamCommand.NewJob:
-                case GCamCommand.PostProcess:
-                case GCamCommand.Simulate:
-                default:
-                    break;
+                    // Deliberately empty: the UI exists so the wiring can be verified,
+                    // the behaviour arrives with the first vertical slice.
+                    case GCamCommand.NewJob:
+                    case GCamCommand.PostProcess:
+                    case GCamCommand.Simulate:
+                    default:
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _errors.Handle(ex, nameof(OnCommand) + "(" + commandId + ")");
             }
         }
 
         /// <summary>
-        /// Controls whether each item is enabled. SOLIDWORKS calls this before
-        /// displaying the item: 1 enables, 0 disables (greyed).
+        /// Entry point 5. Controls whether each item is enabled: 1 enables, 0 disables.
         /// </summary>
+        /// <remarks>
+        /// SOLIDWORKS calls this before displaying the item, so it runs constantly.
+        /// Never show UI from here - a dialog would reappear on every repaint. On
+        /// failure the item is greyed out and the problem is logged once; a greyed
+        /// button with a log line beats an unusable SOLIDWORKS.
+        /// </remarks>
         public int OnCommandEnable(int commandId)
         {
-            return 1;
+            try
+            {
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                _errors.Handle(ex, nameof(OnCommandEnable) + "(" + commandId + ")", quiet: true);
+                return 0;
+            }
         }
 
         /// <summary>
@@ -46,7 +69,7 @@ namespace GCam.AddIn
         {
             // GetHWndx64 rather than GetHWnd: SOLIDWORKS is 64-bit, and the 32-bit
             // variant truncates the handle.
-            var frame = _swApp.Frame() as IFrame;
+            var frame = _swApp?.Frame() as IFrame;
             return frame == null ? IntPtr.Zero : new IntPtr(frame.GetHWndx64());
         }
     }

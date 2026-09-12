@@ -1,6 +1,7 @@
 ﻿using SolidWorks.Interop.swpublished;
 using System;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 
@@ -70,7 +71,7 @@ namespace GCam.AddIn
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Error while registering the addin: " + ex.Message);
+                ReportRegistrationFailure("register", ex);
             }
         }
 
@@ -89,9 +90,35 @@ namespace GCam.AddIn
                 Microsoft.Win32.Registry.CurrentUser.DeleteSubKey(
                     string.Format(ADDIN_STARTUP_KEY_TEMPLATE, t.GUID));
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                Console.WriteLine("Error while unregistering the addin: " + e.Message);
+                ReportRegistrationFailure("unregister", ex);
+            }
+        }
+
+        /// <summary>
+        /// Entry point 3 reporting. These run inside regasm.exe, not SOLIDWORKS, so
+        /// there is no Serilog and no WPF here - only the console regasm is showing
+        /// and a file to read afterwards.
+        /// </summary>
+        private static void ReportRegistrationFailure(string action, Exception ex)
+        {
+            Console.WriteLine("G-CAM: failed to " + action + " the add-in: " + ex.Message);
+
+            try
+            {
+                string dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "G-CAM", "logs");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(
+                    Path.Combine(dir, "registration.log"),
+                    DateTime.Now.ToString("u") + "  " + action + Environment.NewLine +
+                    ex + Environment.NewLine + Environment.NewLine);
+            }
+            catch (Exception)
+            {
+                // The console message above is all we can offer.
             }
         }
     }

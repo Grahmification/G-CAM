@@ -53,6 +53,11 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Serilog" Version="4.4.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+  </ItemGroup>
+
   <!--
     Registers the add-in with SOLIDWORKS after every build.
 
@@ -72,10 +77,8 @@
     <PropertyGroup>
       <_RegAsm>$(WINDIR)\Microsoft.NET\Framework64\v4.0.30319\regasm.exe</_RegAsm>
     </PropertyGroup>
-    <Exec Command="&quot;$(_RegAsm)&quot; /codebase &quot;$(TargetDir)GCam.SolidWorks.dll&quot;"
-          ContinueOnError="WarnAndContinue" />
-    <Exec Command="&quot;$(_RegAsm)&quot; /codebase &quot;$(TargetPath)&quot;"
-          ContinueOnError="WarnAndContinue" />
+    <Exec Command="&quot;$(_RegAsm)&quot; /codebase &quot;$(TargetDir)GCam.SolidWorks.dll&quot;" ContinueOnError="WarnAndContinue" />
+    <Exec Command="&quot;$(_RegAsm)&quot; /codebase &quot;$(TargetPath)&quot;" ContinueOnError="WarnAndContinue" />
   </Target>
 
 </Project>

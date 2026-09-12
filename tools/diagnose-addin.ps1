@@ -89,7 +89,13 @@ try {
     $obj = [Activator]::CreateInstance($type)
     Write-Host "  OK - activated $($obj.GetType().FullName)" -ForegroundColor Green
     Write-Host "  from $($obj.GetType().Assembly.Location)"
-    [Runtime.InteropServices.Marshal]::ReleaseComObject($obj) | Out-Null
+
+    # Activating a managed COM class in-process hands back the managed object itself,
+    # not an RCW, so ReleaseComObject throws ArgumentException on it. Guard, or a
+    # successful activation gets reported as a failure.
+    if ([Runtime.InteropServices.Marshal]::IsComObject($obj)) {
+        [Runtime.InteropServices.Marshal]::ReleaseComObject($obj) | Out-Null
+    }
 } catch {
     Write-Host '  FAILED' -ForegroundColor Red
     $e = $_.Exception

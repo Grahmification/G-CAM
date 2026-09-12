@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using System.Windows.Forms.Integration;
@@ -34,17 +35,33 @@ namespace GCam.SolidWorks.Hosting
         /// <summary>ProgID SOLIDWORKS activates. Must match the [ProgId] attribute.</summary>
         public const string ProgIdValue = "GCam.SolidWorks.JobTreeTabHost";
 
-        private readonly ElementHost _host;
-
+        /// <summary>
+        /// Entry point 6. SOLIDWORKS activates this through COM, so an exception here
+        /// would surface as "the tab simply did not appear" with nothing explaining why.
+        /// On failure the tab still opens, showing the error instead of the tree.
+        /// </summary>
         public JobTreeTabHost()
         {
-            _host = new ElementHost
+            try
             {
-                Dock = DockStyle.Fill,
-                Child = new JobTreeView(),
-            };
-
-            Controls.Add(_host);
+                Controls.Add(new ElementHost
+                {
+                    Dock = DockStyle.Fill,
+                    Child = new JobTreeView(),
+                });
+            }
+            catch (Exception ex)
+            {
+                // No ErrorHandler here: this object is constructed by COM, not by the
+                // composition root, so it has no injected dependencies.
+                Controls.Add(new Label
+                {
+                    Dock = DockStyle.Fill,
+                    Padding = new Padding(10),
+                    Text = "G-CAM could not load this panel." + Environment.NewLine +
+                           Environment.NewLine + ex.Message,
+                });
+            }
         }
     }
 }
