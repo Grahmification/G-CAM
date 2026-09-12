@@ -16,6 +16,10 @@ The solution lives one level down from the repo root: `G-CAM/G-CAM.sln` → `G-C
 
 Keep that split: add-in behaviour goes in new partial files or new types, not into the registration file.
 
+## API reference
+
+Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help offline from the local CHM files — use it to check any signature, enum value, or Remarks before writing a call, rather than guessing or fetching help.solidworks.com.
+
 ## Knowledge base
 
 `docs/` is the project's working notebook — `docs/solidworks-api/` for API behaviour, `docs/cam/` for CAM domain knowledge, `docs/decisions/` for architecture decision records. See `docs/README.md` for conventions.
