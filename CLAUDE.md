@@ -20,6 +20,14 @@ Keep that split: add-in behaviour goes in new partial files or new types, not in
 
 Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help offline from the local CHM files — use it to check any signature, enum value, or Remarks before writing a call, rather than guessing or fetching help.solidworks.com.
 
+## Architecture
+
+`docs/architecture.md` defines the target project layout and the rules that hold it together. Read it before adding projects or moving code across them.
+
+The rule that matters most: **`GCam.Core` never references SolidWorks.** It is what keeps the toolpath math testable without a SOLIDWORKS licence, lets calculation run off the STA thread, and preserves the out-of-process escape hatch. Core declares interfaces in `Abstractions/`; `GCam.SolidWorks` implements them; `GCam.AddIn` wires them together.
+
+Scope is 3-axis milling only, and that assumption is baked into the model, the Z-map simulator and the posts.
+
 ## Knowledge base
 
 `docs/` is the project's working notebook — `docs/solidworks-api/` for API behaviour, `docs/cam/` for CAM domain knowledge, `docs/decisions/` for architecture decision records. See `docs/README.md` for conventions.

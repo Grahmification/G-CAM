@@ -8,4 +8,4 @@ Number files in order: `0001-short-title.md`. Copy `TEMPLATE.md` to start. Decis
 
 ## Index
 
-_(nothing yet)_
+- [0001. Target .NET Framework 4.8 for the add-in](0001-target-net-framework-48.md) — why not .NET 8, and the one-runtime-per-process constraint that decides it.

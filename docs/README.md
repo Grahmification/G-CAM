@@ -6,6 +6,8 @@ This is a notebook, not a manual. Half-finished notes are fine and better than n
 
 ## Where things go
 
+Start with **[architecture.md](architecture.md)** — the target project layout, the dependency rules, and the constraints that shape them.
+
 | Folder | Contents |
 | --- | --- |
 | `solidworks-api/` | How the SolidWorks API actually behaves: interfaces, COM quirks, units, event and lifetime gotchas, working snippets. |
