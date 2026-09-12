@@ -22,7 +22,7 @@ namespace GCam.AddIn
                 switch ((GCamCommand)commandId)
                 {
                     case GCamCommand.ToolLibrary:
-                        ToolLibraryDialog.Show(MainWindowHandle());
+                        ToolLibraryDialog.ShowBrowser(MainWindowHandle(), _settings, _log);
                         break;
 
                     // Deliberately empty: the UI exists so the wiring can be verified,

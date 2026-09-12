@@ -1,6 +1,22 @@
 # G-CAM architecture
 
-The project structure for G-CAM and the rules that keep it intact. Decided and scaffolded 2026-09-12: the solution and all seven projects exist and build; no product code yet beyond the original add-in entry point.
+The project structure for G-CAM and the rules that keep it intact.
+
+**The tree below is the target layout, not a description of the repository.** Most of it does not exist yet. What is built as of 2026-09-12:
+
+| Area | State |
+| --- | --- |
+| Solution, seven projects, build and test | Done |
+| `Core/Diagnostics` — logging, error policy, user exceptions | Done |
+| `Core/Settings` — XML settings store | Done |
+| `Core/Tooling` — tools, holders, cutter profiles, libraries, HSM import | Done |
+| `UI` — error dialog, tool library browser, profile preview | Done |
+| `AddIn` — CommandManager, FeatureManager tab, COM registration | Done |
+| `Core/Geometry`, `Strategies`, `Simulation`, `Commands`, `Posting` | Not started |
+| `SolidWorks/Extraction`, `Rendering`, `PropertyPages`, `Persistence` | Not started |
+| `Posts` | Empty project |
+
+No toolpath has been computed and nothing has been posted. The vertical slice at the end of this document is still the plan.
 
 ## Decisions this rests on
 
@@ -33,7 +49,9 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 ├── src/
 │   ├── GCam.Core/                     ★ netstandard2.0 — NO SolidWorks references. Ever.
 │   │   ├── Model/                     Job, Setup, Operation, Toolpath, Move, Stock
-│   │   ├── Tooling/                   Tool, Holder, CuttingData, IToolLibrary
+│   │   ├── Tooling/                   Tool, Holder, CuttingData, MachineData,
+│   │   │                              CutterProfile, ToolSearch, IToolLibrary
+│   │   │   └── Import/                native XML + HSMWorks (.hsmlib) readers
 │   │   ├── Geometry/
 │   │   │   ├── Primitives/            Vec3, Plane, Bounds, Matrix4, Polyline
 │   │   │   ├── Brep/                  own face/edge/loop model, SW-independent
@@ -45,6 +63,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   ├── Commands/                  ICommand, CommandStack, DirtyTracker
 │   │   ├── Posting/                   CLData — machine-neutral canonical toolpath
 │   │   ├── Diagnostics/               IGCamLog, IErrorPresenter, ErrorHandler
+│   │   ├── Settings/                  IGCamSettings + XmlSettingsStore
+│   │   ├── Units.cs / Precision.cs    shared constants — see the rule below
 │   │   └── Abstractions/              interfaces the outer layers implement
 │   │
 │   ├── GCam.Posts/                    netstandard2.0 — consumes CLData, emits G-code
@@ -67,10 +87,10 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   └── Com/                       ComRelease helpers
 │   │
 │   ├── GCam.UI/                       WPF; references Core, never SolidWorks
-│   │   ├── Views/                     JobTreeView.xaml, ToolLibraryWindow.xaml
+│   │   ├── Views/                     JobTreeView, ToolLibraryWindow, dialogs
 │   │   ├── Diagnostics/               ErrorDialog.xaml, WpfErrorPresenter
 │   │   ├── ViewModels/                testable, INotifyPropertyChanged
-│   │   ├── Controls/
+│   │   ├── Controls/                  ToolProfileView — owner-drawn silhouette
 │   │   └── Hosting/                   ElementHost wrappers
 │   │
 │   └── GCam.AddIn/                    thin: entry point + wiring only
@@ -144,6 +164,14 @@ Three things that make this a rule rather than a preference:
 **Watch the vocabulary.** `Precision.Epsilon` is deliberately not called "tolerance": in CAM that word means a *machining* tolerance, and those are passed explicitly per operation rather than kept as globals (see `CutterProfile.ChordTolerance`). A shared constant with an overloaded name is worse than a duplicated literal.
 
 This is convention, not enforced by the build. A test scanning source for magic numbers was considered and rejected as brittle — it would flag legitimate literals like `2.0` in `radius = diameter / 2.0` and need constant suppression.
+
+**Settings are a convenience, never a prerequisite.** User preferences live in `%LOCALAPPDATA%\G-CAM\settings.xml`, beside the logs — per-user, always writable, and trivially deleted when something goes wrong. `IGCamSettings` is declared in Core with `XmlSettingsStore` implementing it there too, because nothing about a preferences file touches SOLIDWORKS and keeping it in Core means the tests exercise it.
+
+Nothing in the settings path throws. A missing, corrupt, or foreign file yields empty defaults and a log line; an unwritable location loses the save and logs it. Losing preferences is an annoyance — failing to load the add-in over one is not acceptable, and that is exactly the failure mode that already cost an afternoon once.
+
+**Logic worth testing goes in Core, even when it looks like UI.** `ToolSearch` — which tools match what the user typed — lives in `Core/Tooling` rather than the browser's viewmodel. Search rules quietly stop matching what people expect, and Core is the only place a headless test can reach. The same reasoning puts tool-type display names there: the browser shows "Bull nose end mill", so search has to match that string, and having one source for it keeps the two from drifting.
+
+The line to hold: Core owns *rules*, the viewmodel owns *presentation state* (what is selected, what is expanded, what the status strip says). If a viewmodel grows logic worth asserting, that logic belongs in Core — there is no `GCam.UI.Tests` project, and adding one is a poorer answer than moving the rule.
 
 **No exception leaves G-CAM code.** SOLIDWORKS calls us through COM by method name; an exception thrown back across that boundary is discarded at best and destabilises the host at worst — and an exception out of `ConnectToSW` silently unloads the add-in. Every method SOLIDWORKS, WPF or the task scheduler can call gets a `try`/`catch` calling `ErrorHandler.Handle`. Interior code throws freely; only entry points catch. The full entry-point list and per-callback policy is in [error-handling.md](error-handling.md).
 

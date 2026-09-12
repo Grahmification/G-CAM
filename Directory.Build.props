@@ -19,6 +19,9 @@
   -->
   <PropertyGroup>
     <SolidWorksApiDir Condition="'$(SolidWorksApiDir)' == ''">C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\</SolidWorksApiDir>
+
+    <!-- The executable F5 launches for debugging the add-in. -->
+    <SolidWorksExe Condition="'$(SolidWorksExe)' == ''">C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\SLDWORKS.exe</SolidWorksExe>
   </PropertyGroup>
 
 </Project>

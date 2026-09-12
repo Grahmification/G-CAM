@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using GCam.AddIn.Composition;
 using GCam.Core.Diagnostics;
+using GCam.Core.Settings;
 using GCam.SolidWorks.Hosting;
 using GCam.UI.Diagnostics;
 using SolidWorks.Interop.sldworks;
@@ -29,6 +30,7 @@ namespace GCam.AddIn
 
         private IGCamLog _log = NullLog.Instance;
         private ErrorHandler _errors;
+        private IGCamSettings _settings;
 
         /// <summary>
         /// Installs the dependency resolver before anything else can run.
@@ -158,6 +160,10 @@ namespace GCam.AddIn
             // dispatcher to marshal back to.
             var presenter = new WpfErrorPresenter(MainWindowHandle, LoggingSetup.LogDirectory);
             _errors = new ErrorHandler(_log, presenter);
+
+            // Load never throws: missing or corrupt settings fall back to defaults
+            // rather than stopping the add-in.
+            _settings = XmlSettingsStore.Load(log: _log);
         }
 
         private string SafeSolidWorksVersion()

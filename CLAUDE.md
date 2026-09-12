@@ -4,58 +4,80 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-G-CAM is a SolidWorks add-in (C# class library, .NET Framework 4.8, `AnyCPU`) that aims to generate CAM toolpaths from SolidWorks models, in the spirit of Fusion 360's CAM workspace. It is currently at the "Hello World" stage: the add-in loads, grabs a `CommandManager`, and shows a message box.
+G-CAM is a SOLIDWORKS 2025 add-in (C#, .NET Framework 4.8) that generates CAM toolpaths, in the spirit of HSMWorks or Fusion 360's CAM workspace. Internal team tool, 3-axis milling only.
+
+Built so far: the add-in loads with a CommandManager tab and a FeatureManager tree tab, a tool library model with HSMWorks import, a tool library browser UI, and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet. `docs/architecture.md` has the full status table and the planned layout.
 
 ## Layout
 
-The solution lives one level down from the repo root: `G-CAM/G-CAM.sln` → `G-CAM/G-CAM/G-CAM.csproj`. Source files are in `G-CAM/G-CAM/`.
+Solution at the repo root, seven projects:
 
-`GCamAddin` is a `partial` class deliberately split by concern:
-- `GCamAddin.cs` — the `ISwAddin` lifetime (`ConnectToSW` / `DisconnectFromSW`), holds `SldWorks` and `ICommandManager`.
-- `GCamAddinRegistration.cs` — COM attributes and the `[ComRegisterFunction]` / `[ComUnregisterFunction]` registry plumbing.
+```
+src/GCam.Core          netstandard2.0 — domain, geometry, tooling. NO SolidWorks refs.
+src/GCam.Posts         netstandard2.0 — CLData → G-code (empty)
+src/GCam.SolidWorks    net48 — all COM interop
+src/GCam.UI            net48 — WPF views and viewmodels
+src/GCam.AddIn         net48 — ISwAddin entry point + composition root
+tests/GCam.Core.Tests           headless, no SOLIDWORKS needed
+tests/GCam.Integration.Tests    needs SOLIDWORKS (empty)
+```
 
-Keep that split: add-in behaviour goes in new partial files or new types, not into the registration file.
+`GCamAddin` is a `partial` class split by concern — `.cs` (lifetime), `.CommandManager.cs` (toolbar/tab construction), `.Callbacks.cs` (toolbar callbacks), `GCamAddinRegistration.cs` (COM registration). Keep that split.
+
+## Build, test, register
+
+```bash
+dotnet build G-CAM.sln                                        # from the repo root
+dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj      # 87 tests, headless
+```
+
+**Close SOLIDWORKS before building** — it holds the output DLLs open and the build fails at the copy step with MSB3021/MSB3027. Those are file locks, not compile errors.
+
+Registration writes to HKLM and needs elevation. The post-build `regasm` step uses `ContinueOnError`, so an unelevated build *warns* and still produces DLLs. To actually register, run `deploy/register.cmd` from an elevated prompt — or run Visual Studio as administrator and the post-build step keeps registration in sync automatically.
+
+**Two assemblies get registered**, not one: `GCam.AddIn.dll` (the add-in) and `GCam.SolidWorks.dll` (the ActiveX control hosting the FeatureManager tab). Registering only the first gives a working toolbar and a silently missing tab.
+
+Re-register when the assembly version, name, output path (including Debug↔Release), or COM GUID changes — not for ordinary code changes.
+
+F5 launches SOLIDWORKS with the debugger attached; the launch target is in `GCam.AddIn.csproj`, not a gitignored `.user` file.
+
+## When the add-in will not load
+
+SOLIDWORKS reports nothing — the checkbox just un-ticks. Run `tools/diagnose-addin.ps1`; it checks registration, flags stale CLSID entries, and reproduces the activation outside SOLIDWORKS. Start-up failures also land in `%LOCALAPPDATA%\G-CAM\logs\startup-failure.log`. See `docs/solidworks-api/addin-wont-load.md`.
 
 ## API reference
 
 Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help offline from the local CHM files — use it to check any signature, enum value, or Remarks before writing a call, rather than guessing or fetching help.solidworks.com.
 
-## Architecture
+## Architecture rules
 
-`docs/architecture.md` defines the target project layout and the rules that hold it together. Read it before adding projects or moving code across them.
+`docs/architecture.md` is authoritative. The ones that bite most often:
 
-The rule that matters most: **`GCam.Core` never references SolidWorks.** It is what keeps the toolpath math testable without a SOLIDWORKS licence, lets calculation run off the STA thread, and preserves the out-of-process escape hatch. Core declares interfaces in `Abstractions/`; `GCam.SolidWorks` implements them; `GCam.AddIn` wires them together.
+**`GCam.Core` never references SolidWorks.** Enforced by an MSBuild target in `GCam.Core.csproj`, not left to discipline. It keeps the toolpath math testable without a licence, lets calculation run off the STA thread, and preserves the out-of-process escape hatch. Core declares interfaces; `GCam.SolidWorks` implements them; `GCam.AddIn` wires them together.
 
-Scope is 3-axis milling only, and that assumption is baked into the model, the Z-map simulator and the posts.
+**No exception leaves G-CAM code.** Every method SOLIDWORKS, WPF or the task scheduler can call wraps its body in try/catch and calls `ErrorHandler.Handle`. Interior code throws freely. An exception escaping `ConnectToSW` unloads the add-in silently. See `docs/error-handling.md` for the entry-point list.
 
-**Shared constants have one home.** Unit conversions live in `GCam.Core.Units` (`MillimetresPerInch`, `MillimetresPerMetre`, angle helpers); the floating-point comparison threshold is `GCam.Core.Precision.Epsilon`. Never write a bare `25.4`, `1000`, or `1e-9` — both of the first two had already been duplicated across files before being centralised. New shared constants go in a class named for their purpose, never a `Constants` junk drawer; a value used in only one file stays private there until a second caller appears.
+**Units: Core works in millimetres**, SOLIDWORKS in metres. Convert only at the edges. Conversion factors live in `GCam.Core.Units`; never write a bare `25.4` or `1000`.
+
+**Shared constants have one home**, named for their purpose — `GCam.Core.Units`, `GCam.Core.Precision.Epsilon`. Never a `Constants` junk drawer. A value used in one file stays private until a second caller appears.
+
+**Logic worth testing goes in Core, even when it looks like UI** — `ToolSearch` is in `Core/Tooling`, not the browser viewmodel. Core owns rules; viewmodels own presentation state. There is no `GCam.UI.Tests` project, and moving the rule beats adding one.
+
+**Settings** live in `%LOCALAPPDATA%\G-CAM\settings.xml`, beside the logs, via `IGCamSettings`/`XmlSettingsStore` in Core. Nothing on that path throws — a corrupt or unwritable file yields defaults and a log line, never a failed load.
+
+**NuGet packages need no extra work, but only because of `AssemblyResolver`** in `GCam.AddIn/Composition`. An add-in gets no app.config, so binding redirects do not exist and version unification breaks at runtime. See `docs/solidworks-api/addin-dependencies.md` before debugging any "could not load file or assembly".
 
 ## Knowledge base
 
 `docs/` is the project's working notebook — `docs/solidworks-api/` for API behaviour, `docs/cam/` for CAM domain knowledge, `docs/decisions/` for architecture decision records. See `docs/README.md` for conventions.
 
-Check it before researching a SolidWorks API question; much of what's there was learned by experiment and won't be in the official help. When you work something out that took real effort — an API quirk, a units or coordinate-frame convention, a snippet that finally worked — write it down there, and tag whether it was **Verified** (say on which SolidWorks version), **From docs**, or **Assumed**.
+Check it before researching a SOLIDWORKS API question; much of what is there was learned by experiment and is not in the official help. When you work something out that took real effort — an API quirk, a units convention, a snippet that finally worked — write it down there, tagged **Verified** (say on which SOLIDWORKS version), **From docs**, or **Assumed**.
 
-## Build
+## SOLIDWORKS API constraints
 
-```bash
-# from the repo root
-"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe" G-CAM/G-CAM.sln -p:Configuration=Debug
-```
-
-The project has a post-build event that runs `regasm /codebase` on the output DLL. This writes to `HKLM\SOFTWARE\SolidWorks\Addins\{...}` and `HKCU\Software\SolidWorks\AddInsStartup\{...}`, so **builds need an elevated shell** or the post-build step fails (the compile itself still succeeds). Registration is how SolidWorks discovers the add-in — there is no separate install step.
-
-Because `regasm /codebase` points the registry at the build output path, SolidWorks loads the DLL straight out of `bin\Debug\`. Moving or renaming the repo invalidates the registration; rebuild to fix it.
-
-There are no tests and no lint setup in the repo yet.
-
-## Running and debugging
-
-`G-CAM.csproj.user` sets the debug start program to `C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\SLDWORKS.exe`, so F5 in Visual Studio launches SolidWorks with the debugger attached to it. SolidWorks holds the DLL open while running — close it before rebuilding or the build fails with a file lock.
-
-## SolidWorks API constraints
-
-- The SolidWorks interop assemblies are referenced by absolute-ish `HintPath` into `C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\api\redist\`, with `EmbedInteropTypes=False`. They are not on NuGet here; a machine without SolidWorks installed cannot build. Other interops (`swcommands`, `swdocumentmgr`, …) are available in that same folder if needed.
-- Everything crossing into SolidWorks is COM. Release COM objects (`Marshal.ReleaseComObject`) rather than relying on the GC — `DisconnectFromSW` already does this and forces a collection, which is the required pattern for SolidWorks add-ins to unload cleanly.
-- The add-in's `Guid` in `GCamAddinRegistration.cs` (`df725bf7-…`) is the identity SolidWorks keys off. Changing it orphans the existing registry entries — unregister first (`regasm /unregister`) if it ever has to change.
-- `AssemblyInfo.cs` has `[assembly: ComVisible(false)]`; visibility is opted into per-type via `[ComVisible(true)]`. New types SolidWorks must see need that attribute.
+- Interop assemblies are referenced via `$(SolidWorksApiDir)` from `Directory.Build.props`, with `EmbedInteropTypes=false`. A machine without SOLIDWORKS cannot build.
+- Release COM objects with `Marshal.ReleaseComObject` rather than relying on the GC.
+- Use `IFrame.GetHWndx64`, not `GetHWnd` — SOLIDWORKS is 64-bit and the 32-bit variant truncates the handle.
+- `SolidWorks.Interop.sldworks` declares its own `Environment` type, which collides with `System.Environment`. Alias it.
+- The add-in's `Guid` in `GCamAddinRegistration.cs` (`df725bf7-…`) is SOLIDWORKS' identity for it. Unregister before changing it.
+- `[assembly: ComVisible(false)]` — visibility is opted into per type.

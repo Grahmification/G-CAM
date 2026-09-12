@@ -16,6 +16,19 @@
   </PropertyGroup>
 
   <!--
+    F5 launches SOLIDWORKS with the debugger attached.
+
+    Deliberately here rather than in GCam.AddIn.csproj.user, which is where Visual
+    Studio would normally put it: .user files are gitignored, so that setting only
+    ever worked on the machine it was created on. The original project had exactly
+    that problem, and the setting was silently lost in the move to src/.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <StartAction>Program</StartAction>
+    <StartProgram>$(SolidWorksExe)</StartProgram>
+  </PropertyGroup>
+
+  <!--
     GenerateAssemblyInfo stays ON. It emits AssemblyVersion from $(Version), which
     regasm writes into the CLSID registration as a version subkey. Turning it off
     left this assembly at 0.0.0.0, which sorts BELOW any stale registration from an
