@@ -6,7 +6,7 @@ This is a notebook, not a manual. Half-finished notes are fine and better than n
 
 ## Where things go
 
-Start with **[architecture.md](architecture.md)** — the target project layout, the dependency rules, and the constraints that shape them.
+Start with **[architecture.md](architecture.md)** — the project layout, the dependency rules, and the constraints that shape them. **[error-handling.md](error-handling.md)** covers the boundary/logging/reporting plan.
 
 | Folder | Contents |
 | --- | --- |
