@@ -77,6 +77,125 @@ namespace GCam.Core.Tooling
         /// </summary>
         public string SourceLibraryId { get; set; }
 
+        /// <summary>
+        /// How far the tool protrudes from the holder face, mm.
+        /// </summary>
+        /// <remarks>
+        /// Drives where the holder sits in a preview, and eventually how deep a cut can
+        /// go before the holder fouls the work.
+        ///
+        /// Taken from <see cref="ToolGeometry.BodyLength"/>. *Assumed*, from arithmetic
+        /// on a real HSMWorks library: overall length minus body length gives 22.5, 14.6,
+        /// 43.0 and 22.3mm across four tools - all plausible collet grips, which only
+        /// works if body length is the exposed portion. Verify against a measured tool
+        /// before trusting it for collision checking.
+        ///
+        /// Falls back to overall length, then flute length, and never reports less than
+        /// the cutting length - a holder overlapping the flutes would be nonsense.
+        /// </remarks>
+        public double Stickout
+        {
+            get
+            {
+                ToolGeometry g = Geometry ?? new ToolGeometry();
+
+                double exposed = g.BodyLength > 0 ? g.BodyLength
+                    : g.OverallLength > 0 ? g.OverallLength
+                    : g.FluteLength;
+
+                return Math.Max(exposed, Math.Max(g.FluteLength, g.ShoulderLength));
+            }
+        }
+
+        /// <summary>
+        /// Short physical description of the tool - "Ø12.7 flat end mill",
+        /// "Ø10 R2 bull nose end mill", "Ø2.5 118° drill".
+        /// </summary>
+        /// <remarks>
+        /// Derived, never stored. <see cref="Name"/> is whatever the library author
+        /// typed - often something like "Aluminum", which says what the tool is FOR but
+        /// nothing about what it IS. This is the label you can scan a list by.
+        ///
+        /// Only the numbers that distinguish one tool from another of the same type
+        /// appear: corner radius for a bull nose, point angle for anything conical,
+        /// thread pitch for a tap. Adding the rest would make every row look alike.
+        /// </remarks>
+        public string DisplayName
+        {
+            get
+            {
+                ToolGeometry g = Geometry ?? new ToolGeometry();
+                var parts = new List<string> { "Ø" + Format(g.Diameter) };
+
+                switch (Type)
+                {
+                    case ToolType.BullNoseEndMill:
+                        parts.Add("R" + Format(g.CornerRadius));
+                        break;
+
+                    case ToolType.Drill:
+                    case ToolType.SpotDrill:
+                    case ToolType.ChamferMill:
+                        if (g.TipAngle > 0)
+                        {
+                            parts.Add(Format(g.TipAngle) + "°");
+                        }
+
+                        break;
+
+                    case ToolType.Tap:
+                        if (g.ThreadPitch > 0)
+                        {
+                            parts.Add("× " + Format(g.ThreadPitch));
+                        }
+
+                        break;
+                }
+
+                parts.Add(ToolSearch.DisplayName(Type).ToLowerInvariant());
+                return string.Join(" ", parts);
+            }
+        }
+
+        /// <summary>
+        /// The plain shank above the cutting body, as a silhouette measured from the
+        /// tool tip. Empty when none is exposed below the holder.
+        /// </summary>
+        /// <remarks>
+        /// Runs from the top of the body - the greater of flute and shoulder length -
+        /// up to <see cref="Stickout"/>, at the shank diameter. Falls back to the
+        /// cutting diameter when no shank diameter is recorded, which is right for the
+        /// common case of a plain straight-shank end mill.
+        ///
+        /// Kept separate from the cutter profile rather than appended to it because the
+        /// shank does not cut: it matters for reach and collisions, never for material
+        /// removal, and merging the two would quietly widen the cutter in a Z-map.
+        /// </remarks>
+        public IReadOnlyList<ProfilePoint> GetShankProfile()
+        {
+            ToolGeometry g = Geometry ?? new ToolGeometry();
+
+            double bodyTop = Math.Max(g.FluteLength, g.ShoulderLength);
+            double top = Stickout;
+
+            if (top <= bodyTop + Precision.Epsilon)
+            {
+                return new List<ProfilePoint>();
+            }
+
+            double radius = (g.ShankDiameter > 0 ? g.ShankDiameter : g.Diameter) / 2.0;
+            if (radius <= 0)
+            {
+                return new List<ProfilePoint>();
+            }
+
+            return new List<ProfilePoint>
+            {
+                new ProfilePoint(bodyTop, radius),
+                new ProfilePoint(top, radius),
+            };
+        }
+
         /// <summary>Silhouette used by all geometry and simulation code.</summary>
         /// <exception cref="ArgumentException">The geometry is not valid for the type.</exception>
         public CutterProfile GetProfile(double chordTolerance = CutterProfile.DefaultChordTolerance)
@@ -146,10 +265,14 @@ namespace GCam.Core.Tooling
 
         public override string ToString()
         {
-            string label = string.IsNullOrWhiteSpace(Name)
-                ? $"{Type} Ø{Geometry?.Diameter:0.###}"
-                : Name;
-            return $"T{Number} {label}";
+            return string.IsNullOrWhiteSpace(Name)
+                ? $"T{Number} {DisplayName}"
+                : $"T{Number} {Name}";
+        }
+
+        private static string Format(double value)
+        {
+            return value.ToString("0.###", System.Globalization.CultureInfo.CurrentCulture);
         }
     }
 }

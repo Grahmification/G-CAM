@@ -78,7 +78,16 @@ namespace GCam.Core.Tooling
         /// <summary>Widest radius of the cutter, mm.</summary>
         public double MaxRadius => _points[_points.Length - 1].Radius;
 
-        /// <summary>Height of the profile - the flute length, mm.</summary>
+        /// <summary>
+        /// Height of the profile, mm - the top of the tool body, where the shank begins.
+        /// </summary>
+        /// <remarks>
+        /// This is the greater of flute length and shoulder length, NOT the flute length
+        /// alone. On a chamfer mill the two differ sharply: a real 1/4" chamfer mill has
+        /// a 3.175mm cutting cone on a body that runs 26mm to the shank. Stopping at the
+        /// flute length would model the cone floating in mid air, and would miss the
+        /// straight section entirely for collision purposes.
+        /// </remarks>
         public double Height => _points[_points.Length - 1].Height;
 
         /// <summary>
@@ -106,7 +115,9 @@ namespace GCam.Core.Tooling
             }
 
             double radius = geometry.Diameter / 2.0;
-            double fluteLength = geometry.FluteLength;
+
+            // Run to the top of the body, not just the cutting length - see Height.
+            double bodyTop = Math.Max(geometry.FluteLength, geometry.ShoulderLength);
             var points = new List<ProfilePoint>();
 
             switch (type)
@@ -152,13 +163,13 @@ namespace GCam.Core.Tooling
                     throw new ArgumentException("Unsupported tool type: " + type, nameof(type));
             }
 
-            // Run the full diameter up to the top of the flutes. A tool whose end
-            // geometry is already taller than its flute length is degenerate, but the
-            // profile should still be monotonic rather than doubling back.
+            // Run the full diameter up to the top of the body. A tool whose end geometry
+            // is already taller than that is degenerate, but the profile should still be
+            // monotonic rather than doubling back.
             double endHeight = points[points.Count - 1].Height;
-            if (fluteLength > endHeight)
+            if (bodyTop > endHeight)
             {
-                points.Add(new ProfilePoint(fluteLength, radius));
+                points.Add(new ProfilePoint(bodyTop, radius));
             }
 
             return new CutterProfile(points.ToArray(), chordTolerance);

@@ -56,6 +56,7 @@ namespace GCam.Core.Tooling
             return string.Join(
                 " ",
                 tool.Name,
+                tool.DisplayName,
                 tool.Type.ToString(),
                 DisplayName(tool.Type),
                 tool.Number.ToString(CultureInfo.InvariantCulture),

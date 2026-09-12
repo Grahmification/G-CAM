@@ -45,6 +45,15 @@ namespace GCam.UI.Controls
         private static readonly Brush ToolFill = Frozen(new SolidColorBrush(Color.FromArgb(0x40, 0x2D, 0x7D, 0xD2)));
         private static readonly Pen ToolPen = Frozen(new Pen(new SolidColorBrush(Color.FromRgb(0x2D, 0x7D, 0xD2)), 1.4));
 
+        // The shank does not cut, so it reads as plain steel rather than as cutting edge.
+        private static readonly Brush ShankFill = Frozen(new SolidColorBrush(Color.FromArgb(0x38, 0xB0, 0x88, 0x3C)));
+        private static readonly Pen ShankPen = Frozen(new Pen(new SolidColorBrush(Color.FromRgb(0xB0, 0x88, 0x3C)), 1.2));
+
+        // Deliberately muted: the holder is usually far bigger than the cutter, and
+        // drawing it as prominently would make every preview look like a holder.
+        private static readonly Brush HolderFill = Frozen(new SolidColorBrush(Color.FromArgb(0x30, 0x7A, 0x86, 0x92)));
+        private static readonly Pen HolderPen = Frozen(new Pen(new SolidColorBrush(Color.FromRgb(0x8A, 0x96, 0xA2)), 1.0));
+
         private static readonly Typeface LabelTypeface =
             new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
 
@@ -54,11 +63,30 @@ namespace GCam.UI.Controls
             typeof(ToolProfileView),
             new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
+        public static readonly DependencyProperty ShowHolderProperty = DependencyProperty.Register(
+            nameof(ShowHolder),
+            typeof(bool),
+            typeof(ToolProfileView),
+            new FrameworkPropertyMetadata(true, FrameworkPropertyMetadataOptions.AffectsRender));
+
         /// <summary>The tool to draw. Null shows a placeholder.</summary>
         public Tool Tool
         {
             get => (Tool)GetValue(ToolProperty);
             set => SetValue(ToolProperty, value);
+        }
+
+        /// <summary>
+        /// Whether to include the holder above the cutter.
+        /// </summary>
+        /// <remarks>
+        /// Worth being able to turn off. A holder is commonly 90mm tall beside a 3mm
+        /// end mill, and fitting both to the panel leaves the cutter a few pixels high.
+        /// </remarks>
+        public bool ShowHolder
+        {
+            get => (bool)GetValue(ShowHolderProperty);
+            set => SetValue(ShowHolderProperty, value);
         }
 
         protected override void OnRender(DrawingContext dc)
@@ -79,12 +107,48 @@ namespace GCam.UI.Controls
                 return;
             }
 
+            Tool tool = Tool;
+
+            // The shank runs from the top of the cutting body up to the holder face.
+            IReadOnlyList<ProfilePoint> shank = tool?.GetShankProfile();
+            if (shank != null && shank.Count < 2)
+            {
+                shank = null;
+            }
+
+            // The holder sits above the cutter, its lower face at the stickout height.
+            IReadOnlyList<ProfilePoint> holder = null;
+            double holderBase = 0;
+            if (ShowHolder && tool?.Holder != null && tool.Holder.Segments.Count > 0)
+            {
+                holder = tool.Holder.GetProfile();
+                holderBase = tool.Stickout;
+            }
+
             double maxRadius = 0;
             double maxHeight = 0;
             foreach (ProfilePoint point in profile)
             {
                 maxRadius = Math.Max(maxRadius, point.Radius);
                 maxHeight = Math.Max(maxHeight, point.Height);
+            }
+
+            if (shank != null)
+            {
+                foreach (ProfilePoint point in shank)
+                {
+                    maxRadius = Math.Max(maxRadius, point.Radius);
+                    maxHeight = Math.Max(maxHeight, point.Height);
+                }
+            }
+
+            if (holder != null)
+            {
+                foreach (ProfilePoint point in holder)
+                {
+                    maxRadius = Math.Max(maxRadius, point.Radius);
+                    maxHeight = Math.Max(maxHeight, holderBase + point.Height);
+                }
             }
 
             // Fit the whole tool, mirrored, with a margin. Guard against a degenerate
@@ -103,7 +167,19 @@ namespace GCam.UI.Controls
                 ((bounds.Height - toolPixelHeight) / 2) + toolPixelHeight);
 
             DrawGrid(dc, bounds, scale, origin);
-            DrawTool(dc, profile, scale, origin);
+
+            // Back to front, so each part draws over the one it joins.
+            if (holder != null)
+            {
+                DrawSilhouette(dc, holder, scale, origin, holderBase, HolderFill, HolderPen);
+            }
+
+            if (shank != null)
+            {
+                DrawSilhouette(dc, shank, scale, origin, 0, ShankFill, ShankPen);
+            }
+
+            DrawSilhouette(dc, profile, scale, origin, 0, ToolFill, ToolPen);
         }
 
         /// <summary>
@@ -176,36 +252,48 @@ namespace GCam.UI.Controls
             }
         }
 
-        private static void DrawTool(
-            DrawingContext dc, IReadOnlyList<ProfilePoint> profile, double scale, Point origin)
+        /// <summary>
+        /// Draws a half-profile mirrored about the axis, raised by <paramref name="baseHeight"/>.
+        /// </summary>
+        private static void DrawSilhouette(
+            DrawingContext dc,
+            IReadOnlyList<ProfilePoint> profile,
+            double scale,
+            Point origin,
+            double baseHeight,
+            Brush fill,
+            Pen stroke)
         {
             var geometry = new StreamGeometry();
             using (StreamGeometryContext ctx = geometry.Open())
             {
                 // Up the right-hand side...
-                ctx.BeginFigure(ToScreen(profile[0], scale, origin, mirrored: false), isFilled: true, isClosed: true);
+                ctx.BeginFigure(ToScreen(profile[0], scale, origin, baseHeight, false), isFilled: true, isClosed: true);
                 for (int i = 1; i < profile.Count; i++)
                 {
-                    ctx.LineTo(ToScreen(profile[i], scale, origin, mirrored: false), isStroked: true, isSmoothJoin: false);
+                    ctx.LineTo(ToScreen(profile[i], scale, origin, baseHeight, false), isStroked: true, isSmoothJoin: false);
                 }
 
                 // ...across the top and back down the mirrored left-hand side.
                 for (int i = profile.Count - 1; i >= 0; i--)
                 {
-                    ctx.LineTo(ToScreen(profile[i], scale, origin, mirrored: true), isStroked: true, isSmoothJoin: false);
+                    ctx.LineTo(ToScreen(profile[i], scale, origin, baseHeight, true), isStroked: true, isSmoothJoin: false);
                 }
             }
 
             geometry.Freeze();
-            dc.DrawGeometry(ToolFill, ToolPen, geometry);
+            dc.DrawGeometry(fill, stroke, geometry);
         }
 
-        private static Point ToScreen(ProfilePoint point, double scale, Point origin, bool mirrored)
+        private static Point ToScreen(
+            ProfilePoint point, double scale, Point origin, double baseHeight, bool mirrored)
         {
             double radius = mirrored ? -point.Radius : point.Radius;
 
             // Screen y grows downward; tool height grows upward from the tip.
-            return new Point(origin.X + (radius * scale), origin.Y - (point.Height * scale));
+            return new Point(
+                origin.X + (radius * scale),
+                origin.Y - ((baseHeight + point.Height) * scale));
         }
 
         private void DrawPlaceholder(DrawingContext dc, Rect bounds)

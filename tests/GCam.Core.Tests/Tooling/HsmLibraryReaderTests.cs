@@ -26,6 +26,9 @@ namespace GCam.Core.Tests.Tooling
             return Path.Combine(dir.FullName, "docs", "example_files", "tool_library_hsmworks.hsmlib");
         }
 
+        /// <summary>The example library, for tests in other classes that need real data.</summary>
+        internal static ToolLibrary ReadExampleLibrary() => ReadExample().Library;
+
         private static ToolLibraryReadResult ReadExample()
         {
             string path = ExampleFilePath();

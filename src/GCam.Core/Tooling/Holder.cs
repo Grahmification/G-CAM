@@ -79,6 +79,34 @@ namespace GCam.Core.Tooling
         public double MaxDiameter =>
             Segments.Count == 0 ? 0 : Segments.Max(s => Math.Max(s.LowerDiameter, s.UpperDiameter));
 
+        /// <summary>
+        /// The holder's silhouette as a polyline, measured up from its lower face.
+        /// </summary>
+        /// <remarks>
+        /// Same shape of data as <see cref="CutterProfile"/> so that anything drawing or
+        /// colliding against tool geometry can treat a holder the same way. Steps are
+        /// implicit: where one segment's upper diameter differs from the next segment's
+        /// lower diameter, the profile jumps vertically, which is exactly how collet
+        /// nuts and taper shanks are shaped.
+        ///
+        /// Unlike a cutter, a holder profile is NOT monotonic - it widens and narrows -
+        /// so do not reuse CutterProfile's lookup logic on it.
+        /// </remarks>
+        public IReadOnlyList<ProfilePoint> GetProfile()
+        {
+            var points = new List<ProfilePoint>();
+            double height = 0;
+
+            foreach (HolderSegment segment in Segments)
+            {
+                points.Add(new ProfilePoint(height, segment.LowerDiameter / 2.0));
+                height += segment.Length;
+                points.Add(new ProfilePoint(height, segment.UpperDiameter / 2.0));
+            }
+
+            return points;
+        }
+
         public IReadOnlyList<string> Validate()
         {
             var problems = new List<string>();

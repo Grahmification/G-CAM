@@ -114,12 +114,29 @@
                     </Grid.RowDefinitions>
 
                     <Border Grid.Row="0" Background="#F0F2F4" BorderBrush="#D0D4D8" BorderThickness="0,0,0,1">
-                        <TextBlock Text="{Binding SelectedTool.Name, TargetNullValue='Profile', FallbackValue='Profile'}"
-                                   Margin="8,4" FontWeight="SemiBold" Foreground="#37475A"
-                                   TextTrimming="CharacterEllipsis" />
+                        <Grid Margin="8,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding SelectedTool.Name, TargetNullValue='Profile', FallbackValue='Profile'}"
+                                       FontWeight="SemiBold" Foreground="#37475A"
+                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+
+                            <!-- A 90mm holder beside a 3mm cutter leaves the cutter a few
+                                 pixels tall, so this needs to be switchable. -->
+                            <CheckBox x:Name="ShowHolderCheck" Grid.Column="1" Content="Holder"
+                                      IsChecked="True" VerticalAlignment="Center" Margin="8,0,0,0"
+                                      ToolTip="Include the tool holder in the preview" />
+                        </Grid>
                     </Border>
 
-                    <controls:ToolProfileView Grid.Row="1" Tool="{Binding SelectedTool}" ClipToBounds="True" />
+                    <controls:ToolProfileView Grid.Row="1"
+                                              Tool="{Binding SelectedTool}"
+                                              ShowHolder="{Binding IsChecked, ElementName=ShowHolderCheck}"
+                                              ClipToBounds="True" />
                 </Grid>
             </Border>
         </Grid>
@@ -136,9 +153,11 @@
                       MouseDoubleClick="OnToolDoubleClick">
                 <ListView.View>
                     <GridView ColumnHeaderContainerStyle="{StaticResource {x:Type GridViewColumnHeader}}">
+                        <GridViewColumn Header="Tool" Width="200"
+                                        DisplayMemberBinding="{Binding DisplayName}" />
                         <GridViewColumn Header="T#" Width="42"
                                         DisplayMemberBinding="{Binding Number}" />
-                        <GridViewColumn Header="Description" Width="210"
+                        <GridViewColumn Header="Description" Width="170"
                                         DisplayMemberBinding="{Binding Name}" />
                         <GridViewColumn Header="Type" Width="120"
                                         DisplayMemberBinding="{Binding Type, Converter={StaticResource ToolTypeName}}" />
