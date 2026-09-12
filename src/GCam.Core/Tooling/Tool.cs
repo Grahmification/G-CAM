@@ -29,11 +29,41 @@ namespace GCam.Core.Tooling
         /// <summary>Human-readable description, e.g. "10mm 4-flute carbide bull nose".</summary>
         public string Name { get; set; }
 
+        /// <summary>Free-text note from whoever set the tool up.</summary>
+        public string Comment { get; set; }
+
+        /// <summary>Who made the tool.</summary>
+        public string Manufacturer { get; set; }
+
+        /// <summary>Manufacturer's catalogue number, for reordering.</summary>
+        public string ProductId { get; set; }
+
+        /// <summary>
+        /// Cutter substrate - "carbide", "hss" and so on. Free text rather than an enum:
+        /// source libraries use their own vocabularies and nothing consumes it yet.
+        /// </summary>
+        public string Material { get; set; }
+
         public ToolType Type { get; set; }
 
         public ToolGeometry Geometry { get; set; } = new ToolGeometry();
 
         public CuttingData Cutting { get; set; } = new CuttingData();
+
+        /// <summary>How the machine control refers to this tool. Used by posting.</summary>
+        public MachineData Machine { get; set; } = new MachineData();
+
+        /// <summary>
+        /// Fields from an imported library that G-CAM has no property for.
+        /// </summary>
+        /// <remarks>
+        /// Preserved verbatim and written back out, so importing does not quietly
+        /// destroy data. Keys are namespaced by source, e.g. "hsm.library-name".
+        /// Promoting one to a real property later is a refactor with no data lost in
+        /// the meantime.
+        /// </remarks>
+        public Dictionary<string, string> Extra { get; set; } =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// The holder this tool is assembled into. Null when unassigned; nothing consumes
@@ -101,10 +131,16 @@ namespace GCam.Core.Tooling
                 Number = Number,
                 Name = Name,
                 Type = Type,
+                Comment = Comment,
+                Manufacturer = Manufacturer,
+                ProductId = ProductId,
+                Material = Material,
                 Geometry = Geometry?.Clone(),
                 Cutting = Cutting?.Clone(),
+                Machine = Machine?.Clone(),
                 Holder = Holder?.Clone(),
                 SourceLibraryId = SourceLibraryId,
+                Extra = new Dictionary<string, string>(Extra, StringComparer.OrdinalIgnoreCase),
             };
         }
 

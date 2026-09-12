@@ -20,9 +20,13 @@ namespace GCam.Core.Tooling.Import
         string FileExtension { get; }
 
         /// <summary>
-        /// Reads a library. Throws <see cref="Diagnostics.GCamUserException"/> for a
-        /// malformed or unsupported file - that is a user-facing problem, not a defect.
+        /// Reads a library, along with warnings for anything that could not be read.
         /// </summary>
-        ToolLibrary Read(Stream stream, string sourcePath);
+        /// <remarks>
+        /// Throws <see cref="Diagnostics.GCamUserException"/> when the whole file is
+        /// unusable - that is a user-facing problem, not a defect. A single unreadable
+        /// tool belongs in the warnings instead, so one bad entry cannot lose a library.
+        /// </remarks>
+        ToolLibraryReadResult Read(Stream stream, string sourcePath);
     }
 }

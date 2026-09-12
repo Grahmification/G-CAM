@@ -27,8 +27,20 @@ namespace GCam.Core.Tooling
         Drill = 3,
 
         /// <summary>
-        /// Conical cutter for chamfering and spotting. May have a small flat at the tip.
+        /// Conical cutter for chamfering. May have a small flat at the tip.
         /// </summary>
         ChamferMill = 4,
+
+        /// <summary>
+        /// Short, rigid conical drill for spotting hole centres. Shaped like a chamfer
+        /// mill but kept distinct because posting treats it as a drilling cycle.
+        /// </summary>
+        SpotDrill = 5,
+
+        /// <summary>
+        /// Thread tap. Geometrically a cylinder; the thread pitch is what matters, and
+        /// posting must synchronise feed to spindle speed.
+        /// </summary>
+        Tap = 6,
     }
 }

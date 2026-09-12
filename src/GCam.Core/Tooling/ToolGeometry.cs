@@ -25,10 +25,22 @@ namespace GCam.Core.Tooling
         public double CornerRadius { get; set; }
 
         /// <summary>
-        /// Included angle of the point, in degrees - 118 or 135 for a typical drill,
-        /// 90 for a chamfer mill. Not used by end mills.
+        /// INCLUDED angle of the point, in degrees - 118 or 135 for a typical drill,
+        /// 90 for a 45-degree chamfer mill. Not used by end mills.
         /// </summary>
+        /// <remarks>
+        /// Always the included angle here, whatever the source format called it. HSM
+        /// libraries store a half-angle for chamfer mills and an included angle for
+        /// drills under the same attribute name; the importer normalises both to this.
+        /// </remarks>
         public double TipAngle { get; set; }
+
+        /// <summary>
+        /// Secondary point angle in degrees, where a tool has one - a spot drill with a
+        /// 90 degree primary point may have a 60 degree secondary relief. Carried for
+        /// fidelity; the cutter profile uses <see cref="TipAngle"/>.
+        /// </summary>
+        public double SecondTipAngle { get; set; }
 
         /// <summary>
         /// Diameter of the flat at the very tip of a chamfer mill. Zero for a true point.
@@ -37,6 +49,28 @@ namespace GCam.Core.Tooling
 
         /// <summary>Length of cut - how deep the flutes reach.</summary>
         public double FluteLength { get; set; }
+
+        /// <summary>
+        /// Distance from the tip to where the shank begins. Usually equals
+        /// <see cref="FluteLength"/>, but differs on a necked or reduced-shank tool -
+        /// and it is the shoulder, not the flutes, that collides with a workpiece.
+        /// </summary>
+        public double ShoulderLength { get; set; }
+
+        /// <summary>
+        /// Length of the tool body below the holder. Needed to work out how far the
+        /// tool sticks out, which is what holder collision checking will use.
+        /// </summary>
+        public double BodyLength { get; set; }
+
+        /// <summary>Thread pitch in mm, for taps. Zero for everything else.</summary>
+        public double ThreadPitch { get; set; }
+
+        /// <summary>
+        /// Included angle of the thread form in degrees - 60 for metric and UN threads.
+        /// Used by thread mills and taps.
+        /// </summary>
+        public double ThreadProfileAngle { get; set; }
 
         /// <summary>Number of flutes. Used for feed-per-tooth arithmetic.</summary>
         public int FluteCount { get; set; }
@@ -77,7 +111,7 @@ namespace GCam.Core.Tooling
             switch (type)
             {
                 case ToolType.FlatEndMill:
-                    if (Math.Abs(CornerRadius) > Tolerance)
+                    if (Math.Abs(CornerRadius) > Precision.Epsilon)
                     {
                         problems.Add("A flat end mill must have a corner radius of zero.");
                     }
@@ -85,7 +119,7 @@ namespace GCam.Core.Tooling
                     break;
 
                 case ToolType.BallEndMill:
-                    if (Diameter > 0 && Math.Abs(CornerRadius - radius) > Tolerance)
+                    if (Diameter > 0 && Math.Abs(CornerRadius - radius) > Precision.Epsilon)
                     {
                         problems.Add(Format(
                             "A ball end mill must have a corner radius of half its diameter ({0}).", radius));
@@ -98,7 +132,7 @@ namespace GCam.Core.Tooling
                     {
                         problems.Add("A bull nose end mill must have a corner radius greater than zero.");
                     }
-                    else if (Diameter > 0 && CornerRadius > radius + Tolerance)
+                    else if (Diameter > 0 && CornerRadius > radius + Precision.Epsilon)
                     {
                         problems.Add(Format(
                             "Corner radius cannot exceed half the diameter ({0}).", radius));
@@ -115,9 +149,10 @@ namespace GCam.Core.Tooling
                     break;
 
                 case ToolType.ChamferMill:
+                case ToolType.SpotDrill:
                     if (TipAngle <= 0 || TipAngle >= 180)
                     {
-                        problems.Add("Chamfer mill tip angle must be between 0 and 180 degrees.");
+                        problems.Add($"{type} tip angle must be between 0 and 180 degrees.");
                     }
 
                     if (TipDiameter < 0)
@@ -130,6 +165,14 @@ namespace GCam.Core.Tooling
                     }
 
                     break;
+
+                case ToolType.Tap:
+                    if (ThreadPitch <= 0)
+                    {
+                        problems.Add("A tap must have a thread pitch greater than zero.");
+                    }
+
+                    break;
             }
 
             return problems;
@@ -139,8 +182,6 @@ namespace GCam.Core.Tooling
         {
             return (ToolGeometry)MemberwiseClone();
         }
-
-        internal const double Tolerance = 1e-9;
 
         private static string Format(string template, double value)
         {

@@ -49,8 +49,6 @@ namespace GCam.Core.Tooling.Import
         public const int CurrentVersion = 1;
 
         public const string FileExtension = ".gcamtools";
-
-        internal const double InchesToMillimetres = 25.4;
     }
 
     /// <summary>Reads G-CAM's native tool library XML.</summary>
@@ -60,7 +58,7 @@ namespace GCam.Core.Tooling.Import
 
         public string FileExtension => GcamXmlLibrary.FileExtension;
 
-        public ToolLibrary Read(Stream stream, string sourcePath)
+        public ToolLibraryReadResult Read(Stream stream, string sourcePath)
         {
             if (stream == null)
             {
@@ -121,7 +119,7 @@ namespace GCam.Core.Tooling.Import
                     string.Join(Environment.NewLine, problems.Take(10)));
             }
 
-            return library;
+            return new ToolLibraryReadResult(library, new List<string>());
         }
 
         private static double ReadUnitScale(XElement root, string sourcePath)
@@ -137,7 +135,7 @@ namespace GCam.Core.Tooling.Import
                 case "in":
                 case "inch":
                 case "inches":
-                    return GcamXmlLibrary.InchesToMillimetres;
+                    return Units.MillimetresPerInch;
 
                 default:
                     throw new GCamUserException(
@@ -151,6 +149,9 @@ namespace GCam.Core.Tooling.Import
             {
                 Id = ReadString(element, "id"),
                 Name = ReadString(element, "name"),
+                Comment = ReadString(element, "comment"),
+                Vendor = ReadString(element, "vendor"),
+                ProductId = ReadString(element, "productId"),
             };
 
             foreach (XElement segment in element.Elements("segment"))
@@ -187,13 +188,45 @@ namespace GCam.Core.Tooling.Import
                 CornerRadius = ReadDouble(geometry, "cornerRadius") * scale,
                 TipDiameter = ReadDouble(geometry, "tipDiameter") * scale,
                 FluteLength = ReadDouble(geometry, "fluteLength") * scale,
+                ShoulderLength = ReadDouble(geometry, "shoulderLength") * scale,
+                BodyLength = ReadDouble(geometry, "bodyLength") * scale,
+                ThreadPitch = ReadDouble(geometry, "threadPitch") * scale,
                 ShankDiameter = ReadDouble(geometry, "shankDiameter") * scale,
                 OverallLength = ReadDouble(geometry, "overallLength") * scale,
 
                 // Angles are degrees regardless of the file's length units.
                 TipAngle = ReadDouble(geometry, "tipAngle"),
+                SecondTipAngle = ReadDouble(geometry, "secondTipAngle"),
+                ThreadProfileAngle = ReadDouble(geometry, "threadProfileAngle"),
                 FluteCount = ReadInt(geometry, "fluteCount", 0),
             };
+
+            tool.Comment = ReadString(element, "comment");
+            tool.Manufacturer = ReadString(element, "manufacturer");
+            tool.ProductId = ReadString(element, "productId");
+            tool.Material = ReadString(element, "material");
+
+            XElement machine = element.Element("machine");
+            if (machine != null)
+            {
+                tool.Machine = new MachineData
+                {
+                    DiameterOffset = ReadInt(machine, "diameterOffset", 0),
+                    LengthOffset = ReadInt(machine, "lengthOffset", 0),
+                    Turret = ReadInt(machine, "turret", 0),
+                    BreakControl = ReadBool(machine, "breakControl"),
+                    ManualToolChange = ReadBool(machine, "manualToolChange"),
+                };
+            }
+
+            foreach (XElement item in element.Elements("extra").Elements("item"))
+            {
+                string key = ReadString(item, "key");
+                if (!string.IsNullOrEmpty(key))
+                {
+                    tool.Extra[key] = ReadString(item, "value") ?? string.Empty;
+                }
+            }
 
             XElement cutting = element.Element("cutting");
             if (cutting != null)
@@ -207,6 +240,13 @@ namespace GCam.Core.Tooling.Import
                     PlungeFeed = ReadDouble(cutting, "plungeFeed") * scale,
                     Stepover = ReadDouble(cutting, "stepover") * scale,
                     Stepdown = ReadDouble(cutting, "stepdown") * scale,
+                    EntryFeed = ReadDouble(cutting, "entryFeed") * scale,
+                    ExitFeed = ReadDouble(cutting, "exitFeed") * scale,
+                    RampFeed = ReadDouble(cutting, "rampFeed") * scale,
+                    RetractFeed = ReadDouble(cutting, "retractFeed") * scale,
+                    RampSpindleRpm = ReadDouble(cutting, "rampSpindleRpm"),
+                    SpindleClockwise = ReadBool(cutting, "spindleClockwise", fallback: true),
+                    FeedMode = ReadFeedMode(cutting),
                     Coolant = ReadCoolant(cutting),
                 };
             }
@@ -243,6 +283,32 @@ namespace GCam.Core.Tooling.Import
             }
 
             return type;
+        }
+
+        private static FeedMode ReadFeedMode(XElement element)
+        {
+            string raw = ReadString(element, "feedMode");
+            FeedMode mode;
+            if (!string.IsNullOrWhiteSpace(raw) &&
+                Enum.TryParse(raw, ignoreCase: true, result: out mode) &&
+                Enum.IsDefined(typeof(FeedMode), mode))
+            {
+                return mode;
+            }
+
+            return FeedMode.PerMinute;
+        }
+
+        private static bool ReadBool(XElement element, string name, bool fallback = false)
+        {
+            string raw = ReadString(element, name);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return fallback;
+            }
+
+            bool value;
+            return bool.TryParse(raw, out value) ? value : fallback;
         }
 
         private static CoolantMode ReadCoolant(XElement element)
@@ -340,6 +406,9 @@ namespace GCam.Core.Tooling.Import
                 "holder",
                 new XAttribute("id", holder.Id ?? string.Empty),
                 new XAttribute("name", holder.Name ?? string.Empty),
+                holder.Comment == null ? null : new XAttribute("comment", holder.Comment),
+                holder.Vendor == null ? null : new XAttribute("vendor", holder.Vendor),
+                holder.ProductId == null ? null : new XAttribute("productId", holder.ProductId),
                 holder.Segments.Select(s => new XElement(
                     "segment",
                     Number("length", s.Length),
@@ -356,6 +425,11 @@ namespace GCam.Core.Tooling.Import
                 new XAttribute("name", tool.Name ?? string.Empty),
                 new XAttribute("type", tool.Type.ToString()));
 
+            AddIfPresent(element, "comment", tool.Comment);
+            AddIfPresent(element, "manufacturer", tool.Manufacturer);
+            AddIfPresent(element, "productId", tool.ProductId);
+            AddIfPresent(element, "material", tool.Material);
+
             if (tool.Holder != null && !string.IsNullOrEmpty(tool.Holder.Id))
             {
                 element.Add(new XAttribute("holderId", tool.Holder.Id));
@@ -369,6 +443,11 @@ namespace GCam.Core.Tooling.Import
                 Number("tipAngle", g.TipAngle),
                 Number("tipDiameter", g.TipDiameter),
                 Number("fluteLength", g.FluteLength),
+                Number("shoulderLength", g.ShoulderLength),
+                Number("bodyLength", g.BodyLength),
+                Number("threadPitch", g.ThreadPitch),
+                Number("secondTipAngle", g.SecondTipAngle),
+                Number("threadProfileAngle", g.ThreadProfileAngle),
                 new XAttribute("fluteCount", g.FluteCount),
                 Number("shankDiameter", g.ShankDiameter),
                 Number("overallLength", g.OverallLength)));
@@ -383,10 +462,47 @@ namespace GCam.Core.Tooling.Import
                     Number("plungeFeed", c.PlungeFeed),
                     Number("stepover", c.Stepover),
                     Number("stepdown", c.Stepdown),
+                    Number("entryFeed", c.EntryFeed),
+                    Number("exitFeed", c.ExitFeed),
+                    Number("rampFeed", c.RampFeed),
+                    Number("retractFeed", c.RetractFeed),
+                    Number("rampSpindleRpm", c.RampSpindleRpm),
+                    new XAttribute("spindleClockwise", c.SpindleClockwise),
+                    new XAttribute("feedMode", c.FeedMode.ToString()),
                     new XAttribute("coolant", c.Coolant.ToString())));
             }
 
+            MachineData m = tool.Machine;
+            if (m != null)
+            {
+                element.Add(new XElement(
+                    "machine",
+                    new XAttribute("diameterOffset", m.DiameterOffset),
+                    new XAttribute("lengthOffset", m.LengthOffset),
+                    new XAttribute("turret", m.Turret),
+                    new XAttribute("breakControl", m.BreakControl),
+                    new XAttribute("manualToolChange", m.ManualToolChange)));
+            }
+
+            if (tool.Extra != null && tool.Extra.Count > 0)
+            {
+                element.Add(new XElement(
+                    "extra",
+                    tool.Extra.Select(kv => new XElement(
+                        "item",
+                        new XAttribute("key", kv.Key),
+                        new XAttribute("value", kv.Value ?? string.Empty)))));
+            }
+
             return element;
+        }
+
+        private static void AddIfPresent(XElement element, string name, string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                element.Add(new XAttribute(name, value));
+            }
         }
 
         /// <summary>

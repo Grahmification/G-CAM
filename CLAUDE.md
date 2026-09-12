@@ -28,6 +28,8 @@ The rule that matters most: **`GCam.Core` never references SolidWorks.** It is w
 
 Scope is 3-axis milling only, and that assumption is baked into the model, the Z-map simulator and the posts.
 
+**Shared constants have one home.** Unit conversions live in `GCam.Core.Units` (`MillimetresPerInch`, `MillimetresPerMetre`, angle helpers); the floating-point comparison threshold is `GCam.Core.Precision.Epsilon`. Never write a bare `25.4`, `1000`, or `1e-9` — both of the first two had already been duplicated across files before being centralised. New shared constants go in a class named for their purpose, never a `Constants` junk drawer; a value used in only one file stays private there until a second caller appears.
+
 ## Knowledge base
 
 `docs/` is the project's working notebook — `docs/solidworks-api/` for API behaviour, `docs/cam/` for CAM domain knowledge, `docs/decisions/` for architecture decision records. See `docs/README.md` for conventions.

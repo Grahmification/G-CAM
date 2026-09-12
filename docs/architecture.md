@@ -115,7 +115,35 @@ The target is necessary because the framework targets alone do not stop it — *
 
 ## Rules with teeth
 
-**Units.** SOLIDWORKS works in metres — the help states it plainly, and it is the classic source of toolpaths wrong by 1000×. *Core works in millimetres*, because that is what tool definitions, G-code and CAM convention use. Conversion happens in exactly one place: `Extraction/`. Nothing downstream of extraction should ever multiply by 1000. (Assumption: mm internally with display/post conversion for inch users. Revisit before the tool library schema is frozen.)
+**Units.** SOLIDWORKS works in metres — the help states it plainly, and it is the classic source of toolpaths wrong by 1000×. *Core works in millimetres*, because that is what tool definitions, G-code and CAM convention use. Conversion happens only at the edges: `Extraction/` for SOLIDWORKS geometry, and the library readers for files that declare inches. Nothing in between scales anything.
+
+Every conversion factor lives in `GCam.Core.Units` (see the constants rule below). Never write a bare `25.4` or `1000`.
+
+(Assumption: mm internally with display/post conversion for inch users. Revisit before the tool library schema is frozen.)
+
+**Shared constants have exactly one home, named for what they mean.** A value that more than one file needs — a physical conversion, a comparison epsilon, a format version, a registry key, a well-known id — gets a named constant in a purpose-named static class, and every use refers to that.
+
+Current homes:
+
+| Class | Holds |
+| --- | --- |
+| `GCam.Core.Units` | `MillimetresPerInch`, `MillimetresPerMetre`, degree/radian helpers |
+| `GCam.Core.Precision` | `Epsilon` — the floating-point comparison threshold |
+| `GCam.Core.Tooling.Import.GcamXmlLibrary` | Native tool library format: root element, version, extension |
+
+Three things that make this a rule rather than a preference:
+
+- **It had already gone wrong twice before anyone looked.** `25.4` existed independently in `HsmLibraryReader` and `GcamXmlLibrary`; the float epsilon was parked on `ToolGeometry` and reached into from `CutterProfile`, which has nothing to do with tool geometry. Neither was noticed until a constant was questioned.
+- **Duplicated physical constants eventually disagree.** Not because anyone mistypes 25.4, but because one copy gains a fix, a comment or a precision change and the other does not.
+- **Names carry meaning that literals cannot.** `Units.MillimetresPerMetre` is greppable and self-explaining where `1000` is ambiguous — and that particular 1000 is the classic CAM integration bug.
+
+**Name the class for its purpose, never `Constants` or `Globals`.** A junk-drawer class attracts unrelated values, and then everything depends on it for no reason. If a new constant does not fit an existing home, that is a signal it wants its own small, clearly-named class — `Precision` exists precisely because an epsilon is not a unit.
+
+**Exception:** a constant used in exactly one file, meaningful only there, stays there — a private `const` next to its use is clearer than a distant shared one. Move it out when the second caller appears, not in anticipation.
+
+**Watch the vocabulary.** `Precision.Epsilon` is deliberately not called "tolerance": in CAM that word means a *machining* tolerance, and those are passed explicitly per operation rather than kept as globals (see `CutterProfile.ChordTolerance`). A shared constant with an overloaded name is worse than a duplicated literal.
+
+This is convention, not enforced by the build. A test scanning source for magic numbers was considered and rejected as brittle — it would flag legitimate literals like `2.0` in `radius = diameter / 2.0` and need constant suppression.
 
 **No exception leaves G-CAM code.** SOLIDWORKS calls us through COM by method name; an exception thrown back across that boundary is discarded at best and destabilises the host at worst — and an exception out of `ConnectToSW` silently unloads the add-in. Every method SOLIDWORKS, WPF or the task scheduler can call gets a `try`/`catch` calling `ErrorHandler.Handle`. Interior code throws freely; only entry points catch. The full entry-point list and per-callback policy is in [error-handling.md](error-handling.md).
 

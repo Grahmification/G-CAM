@@ -127,15 +127,25 @@ namespace GCam.Core.Tooling
                     break;
 
                 case ToolType.ChamferMill:
-                    // As a drill, but usually with a small flat at the tip.
+                case ToolType.SpotDrill:
+                    // As a drill, but usually with a small flat at the tip. A spot drill
+                    // is the same silhouette; the types differ only in how they post.
                     double tipRadius = geometry.TipDiameter / 2.0;
                     points.Add(new ProfilePoint(0, 0));
-                    if (tipRadius > ToolGeometry.Tolerance)
+                    if (tipRadius > Precision.Epsilon)
                     {
                         points.Add(new ProfilePoint(0, tipRadius));
                     }
 
                     points.Add(new ProfilePoint(ConeHeight(radius, tipRadius, geometry.TipAngle), radius));
+                    break;
+
+                case ToolType.Tap:
+                    // A plain cylinder. The thread form is far too fine to matter to a
+                    // Z-map or a collision check, and tapped holes are not milled - the
+                    // pitch drives posting, not geometry.
+                    points.Add(new ProfilePoint(0, 0));
+                    points.Add(new ProfilePoint(0, radius));
                     break;
 
                 default:
@@ -183,7 +193,7 @@ namespace GCam.Core.Tooling
                 }
 
                 double span = b.Height - a.Height;
-                double candidate = span <= ToolGeometry.Tolerance
+                double candidate = span <= Precision.Epsilon
                     ? Math.Max(a.Radius, b.Radius)
                     : a.Radius + ((b.Radius - a.Radius) * ((height - a.Height) / span));
 
@@ -207,7 +217,7 @@ namespace GCam.Core.Tooling
                 throw new ArgumentOutOfRangeException(nameof(radius), "Radius cannot be negative.");
             }
 
-            if (radius > MaxRadius + ToolGeometry.Tolerance)
+            if (radius > MaxRadius + Precision.Epsilon)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(radius),
@@ -226,7 +236,7 @@ namespace GCam.Core.Tooling
                 }
 
                 double span = b.Radius - a.Radius;
-                double candidate = span <= ToolGeometry.Tolerance
+                double candidate = span <= Precision.Epsilon
                     ? Math.Min(a.Height, b.Height)
                     : a.Height + ((b.Height - a.Height) * ((radius - a.Radius) / span));
 
@@ -238,7 +248,7 @@ namespace GCam.Core.Tooling
 
         private double WidestAt(double height)
         {
-            return _points.Where(p => Math.Abs(p.Height - height) <= ToolGeometry.Tolerance)
+            return _points.Where(p => Math.Abs(p.Height - height) <= Precision.Epsilon)
                           .Select(p => p.Radius)
                           .DefaultIfEmpty(0)
                           .Max();
@@ -254,12 +264,12 @@ namespace GCam.Core.Tooling
 
             points.Add(new ProfilePoint(0, 0));
 
-            if (flat > ToolGeometry.Tolerance)
+            if (flat > Precision.Epsilon)
             {
                 points.Add(new ProfilePoint(0, flat));
             }
 
-            if (cornerRadius <= ToolGeometry.Tolerance)
+            if (cornerRadius <= Precision.Epsilon)
             {
                 return;
             }
@@ -295,7 +305,7 @@ namespace GCam.Core.Tooling
         /// <paramref name="upperRadius"/> at the given included angle.</summary>
         private static double ConeHeight(double upperRadius, double lowerRadius, double includedAngleDegrees)
         {
-            double halfAngle = includedAngleDegrees * Math.PI / 360.0;
+            double halfAngle = Units.DegreesToRadians(includedAngleDegrees) / 2.0;
             return (upperRadius - lowerRadius) / Math.Tan(halfAngle);
         }
     }

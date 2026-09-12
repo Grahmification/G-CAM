@@ -14,7 +14,7 @@ namespace GCam.Core.Tests.Tooling
         {
             using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(xml)))
             {
-                return new GcamXmlLibraryReader().Read(stream, "test.gcamtools");
+                return new GcamXmlLibraryReader().Read(stream, "test.gcamtools").Library;
             }
         }
 
@@ -154,7 +154,7 @@ namespace GCam.Core.Tests.Tooling
             new GcamXmlLibraryWriter().Write(original, buffer);
             buffer.Position = 0;
 
-            ToolLibrary reloaded = new GcamXmlLibraryReader().Read(buffer, "roundtrip.gcamtools");
+            ToolLibrary reloaded = new GcamXmlLibraryReader().Read(buffer, "roundtrip.gcamtools").Library;
 
             Assert.Equal(original.Id, reloaded.Id);
             Assert.Equal(original.Name, reloaded.Name);
@@ -196,7 +196,7 @@ namespace GCam.Core.Tests.Tooling
             new GcamXmlLibraryWriter().Write(library, buffer);
             buffer.Position = 0;
 
-            Tool reloaded = new GcamXmlLibraryReader().Read(buffer, null).Tools[0];
+            Tool reloaded = new GcamXmlLibraryReader().Read(buffer, null).Library.Tools[0];
 
             Assert.Equal(6.35, reloaded.Geometry.Diameter, 10);
             Assert.Equal(19.0499999, reloaded.Geometry.FluteLength, 10);

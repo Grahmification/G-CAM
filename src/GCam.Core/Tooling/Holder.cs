@@ -56,6 +56,19 @@ namespace GCam.Core.Tooling
 
         public string Name { get; set; }
 
+        /// <summary>Free-text note.</summary>
+        public string Comment { get; set; }
+
+        /// <summary>Who supplies the holder.</summary>
+        public string Vendor { get; set; }
+
+        /// <summary>Supplier's catalogue number or product page.</summary>
+        public string ProductId { get; set; }
+
+        /// <summary>Fields from an imported library with no G-CAM property. See Tool.Extra.</summary>
+        public Dictionary<string, string> Extra { get; set; } =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>Stages ordered from the holder's lower face upward.</summary>
         public List<HolderSegment> Segments { get; set; } = new List<HolderSegment>();
 
@@ -98,7 +111,11 @@ namespace GCam.Core.Tooling
             {
                 Id = Id,
                 Name = Name,
+                Comment = Comment,
+                Vendor = Vendor,
+                ProductId = ProductId,
                 Segments = Segments.Select(s => s.Clone()).ToList(),
+                Extra = new Dictionary<string, string>(Extra, StringComparer.OrdinalIgnoreCase),
             };
         }
     }
