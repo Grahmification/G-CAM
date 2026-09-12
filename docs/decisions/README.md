@@ -1,0 +1,11 @@
+# Decisions
+
+Short records of architectural decisions and the reasoning behind them, so the "why" survives after the code makes the "what" obvious.
+
+Worth a record: anything that would be expensive to reverse, anything where a reasonable person would pick differently, and anything you'd otherwise have to re-argue in six months. Not worth a record: routine choices the code already explains.
+
+Number files in order: `0001-short-title.md`. Copy `TEMPLATE.md` to start. Decisions are append-only — when one is replaced, leave the original in place, mark it superseded, and link the new one.
+
+## Index
+
+_(nothing yet)_
