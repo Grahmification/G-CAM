@@ -27,11 +27,21 @@ tests/GCam.Integration.Tests    needs SOLIDWORKS (empty)
 ## Build, test, register
 
 ```bash
-dotnet build G-CAM.sln                                        # from the repo root
-dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj      # 121 tests, headless
+python tools/build.py          # build + test, with the noise filtered
 ```
 
-**Close SOLIDWORKS before building** — it holds the output DLLs open and the build fails at the copy step with MSB3021/MSB3027. Those are file locks, not compile errors.
+Use that rather than `dotnet build` directly — the `build` skill explains why. Raw
+output for this project misleads twice over: SOLIDWORKS file locks look like build
+failures, and the unelevated regasm step prints warnings containing the word "error",
+so grepping for "error" reports failures on a clean build. Both have already caused
+wrong conclusions here.
+
+Underneath it is `dotnet build G-CAM.sln` and
+`dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj` (123 tests, headless).
+
+**Close SOLIDWORKS before building** if you intend to load the add-in afterwards — it
+holds the output DLLs open, so the code compiles but the add-in folder keeps the
+previous build.
 
 Registration writes to HKLM and needs elevation. The post-build `regasm` step uses `ContinueOnError`, so an unelevated build *warns* and still produces DLLs. To actually register, run `deploy/register.cmd` from an elevated prompt — or run Visual Studio as administrator and the post-build step keeps registration in sync automatically.
 
