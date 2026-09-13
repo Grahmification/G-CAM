@@ -19,7 +19,8 @@ way to find out how that part hangs together and which projects it spans.
 | `AddIn` — CommandManager, COM registration | Done | [UI shells](design/ui-shells.md) |
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done | [UI shells](design/ui-shells.md) |
 | `Core/Model` — Job, Operation, Stock, JobDocument | Done, and persisted | [Jobs](design/jobs.md) |
-| `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4 | Started — only what stock and rendering need | |
+| `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4, Polyline | Started — what stock, rendering and contouring need | |
+| `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done for closed contours | [Operations](design/operations.md) |
 | `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh | Done for what exists to draw | [Jobs](design/jobs.md) |
 | `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job page | Done; Operation page is still a shell | [UI shells](design/ui-shells.md) |
@@ -27,7 +28,7 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — coordinate system transforms, model extent | Started — bounding boxes only, no BRep | |
 | `Core/Model` — Operation, heights, geometry references, the part's tool list, Toolpath | Done; nothing produces a toolpath yet | [Operations](design/operations.md) |
-| `Core/Strategies` — id, settings base, catalogue, context, Contour2d parameters | Started — no strategy computes anything yet | [Operations](design/operations.md) |
+| `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates; face, adaptive and drill are designed only | [Operations](design/operations.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; waiting for a strategy to run | [Operations](design/operations.md) |
 | `Core/Persistence` — the stored document format and the toolpath bytes | Done, round-tripped headlessly | [Operations](design/operations.md) |
 | `SolidWorks/Persistence` — getting those bytes into the part | Done; a job survives a close and reopen (2025 SP3). Toolpath streams still unexercised | [Storage](solidworks-api/third-party-storage.md) |
@@ -35,7 +36,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Geometry` beyond the primitives | Not started | |
 | `Posts` | Empty project | |
 
-No toolpath has been computed and nothing has been posted. The vertical slice below is still the plan, but two of its later steps arrived early: step 5, the OpenGL overlay, draws the stock box and knows how to draw a toolpath, and step 7, persistence, is done — a job survives a close and reopen. The toolpath work inherits both rather than starting them.
+**A 2D contour toolpath is computed** as of 2026-09-13, from contours handed in as polylines — nothing extracts those from the model yet, and nothing has been posted. Of the vertical slice below, steps 5 (the overlay) and 7 (persistence) arrived early, and step 4 now computes; step 3, extraction, is what stands between the algorithm and a real part.
 
 ## Decisions this rests on
 
@@ -88,10 +89,10 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │                              BoxMesh, ConeMesh, AxisTriad, ToolpathMesh
 │   │   │                              — what to draw, never how
 │   │   ├── Geometry/
-│   │   │   ├── Primitives/            Vec3, Plane, Bounds, Matrix4, Polyline
+│   │   │   ├── Primitives/            Vec3, Bounds, Matrix4, Polyline
+│   │   │   ├── Offset/                IContourOffsetter + Clipper2Offsetter
 │   │   │   ├── Brep/                  own face/edge/loop model, SW-independent
 │   │   │   ├── Faceting/              controlled-tolerance tessellation
-│   │   │   ├── Offset/                2D offsetting (Clipper2 behind an interface)
 │   │   │   └── Query/                 raycast, closest-point, containment
 │   │   ├── Strategies/                StrategyId, StrategySettings, StrategyCatalog,
 │   │   │                              IToolpathStrategy, GenerationContext

@@ -382,6 +382,36 @@ Four outcomes that are not "generated" and not failures either:
 An exception that is *not* a `GCamUserException` is a bug in a strategy. The operation
 fails with "see the log", and the stack trace goes to the log rather than to the user.
 
+### 2D contouring, the first strategy
+
+`Contour2dStrategy` turns a closed profile into passes. One pass is: rapid across at
+clearance, rapid down to the feed height, plunge to depth, lead in, cut the profile, lead
+out, retract. Depths repeat that, and the tool retracts between them because a contour is
+not guaranteed to be able to stay down — the profile may run outside the stock.
+
+Three things in it are worth knowing before changing it:
+
+- **Direction decides which way round, not which side.** The contour is oriented
+  counter-clockwise for a climb cut and clockwise otherwise, and then offset by a single
+  positive distance — so the cutter lands on the correct side either way, without a sign
+  to get backwards.
+- **The last pass lands exactly on the bottom**, not a float's width above it. The
+  alternative leaves a witness ridge that no operator can explain.
+- **A feed left at zero falls back to the cutting feed.** Zero means "not set", and
+  emitting `G1 F0` stops the machine dead in the cut.
+
+Offsetting is **Clipper2**, behind `IContourOffsetter` — the one bought-in algorithm in the
+geometry kernel, and the one worth buying: an offset that removes its own
+self-intersections is a solved problem with many edge cases, and getting it subtly wrong
+produces a path that looks right and gouges the part. It is a NuGet reference in Core, so
+it reaches the add-in through `AssemblyResolver` like everything else; see
+`docs/solidworks-api/addin-dependencies.md`.
+
+What the strategy deliberately does **not** do yet, left as gaps rather than as wrong
+numbers: open contours, ramped entry, arbitrary lead sweeps and perpendicular approach
+(a quarter-turn arc is what comes out), multiple finishing passes, tabs, chamfering and
+rest machining.
+
 ### What makes an operation stale
 
 Conservatively, everything that feeds generation: the operation's own parameters, its
@@ -617,7 +647,8 @@ while they are still cheap to change.
 | 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | **Done** — 2026-09-13, 35 tests |
 | 6a | The stored formats in Core — `GcamDocumentXml`, `ToolpathBinary`, `ParameterBag` | Needs the model above it to be settled. Pure Core, so a full round trip is a headless test | **Done** — 2026-09-13, 31 tests |
 | 6b | The SOLIDWORKS storage plumbing — third-party storage, the load/save notifications, release discipline | The half that cannot be tested headlessly, and the first code in `GCam.SolidWorks` for operations | **Done** — 2026-09-13, verified by hand on 2025 SP3. See [third-party-storage.md](../solidworks-api/third-party-storage.md) |
-| 7 | `Contour2d` strategy + the geometry extraction it needs | The first real toolpath. Everything above exists to be plugged into here | Not started |
+| 7a | `Contour2dStrategy` + `Polyline` + offsetting via Clipper2 | The first real toolpath, and pure Core so the geometry can be asserted headlessly | **Done** — 2026-09-13, 24 tests |
+| 7b | `SolidWorks/Extraction` — selections → tessellated contours, wired into `IGenerationContextFactory` | The half that needs a real part, and what makes 7a visible | Next |
 | 8 | The Operation property page | Last, because a page for a model that is still moving is written twice | Not started |
 
 Two orderings were considered and rejected. **Rendering first** (slice 4 before 2) would

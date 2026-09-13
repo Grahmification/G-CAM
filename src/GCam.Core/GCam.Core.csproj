@@ -17,6 +17,9 @@
     <RootNamespace>GCam.Core</RootNamespace>
     <AssemblyName>GCam.Core</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Clipper2" Version="2.0.0" />
+  </ItemGroup>
 
   <!--
     Fails the build if anything drags a SOLIDWORKS assembly into Core, directly or
@@ -29,11 +32,9 @@
   -->
   <Target Name="EnsureCoreHasNoSolidWorksReference" AfterTargets="ResolveAssemblyReferences">
     <ItemGroup>
-      <_SolidWorksRefs Include="@(ReferencePath)"
-                       Condition="$([System.String]::new('%(Filename)').StartsWith('SolidWorks'))" />
+      <_SolidWorksRefs Include="@(ReferencePath)" Condition="$([System.String]::new('%(Filename)').StartsWith('SolidWorks'))" />
     </ItemGroup>
-    <Error Condition="'@(_SolidWorksRefs)' != ''"
-           Text="GCam.Core must not reference SOLIDWORKS. Found: @(_SolidWorksRefs->'%(Filename)', ', '). Declare an interface in Abstractions/ and implement it in GCam.SolidWorks instead - see docs/architecture.md." />
+    <Error Condition="'@(_SolidWorksRefs)' != ''" Text="GCam.Core must not reference SOLIDWORKS. Found: @(_SolidWorksRefs->'%(Filename)', ', '). Declare an interface in Abstractions/ and implement it in GCam.SolidWorks instead - see docs/architecture.md." />
   </Target>
 
 </Project>

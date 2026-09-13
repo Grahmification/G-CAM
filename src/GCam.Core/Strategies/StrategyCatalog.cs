@@ -74,17 +74,20 @@ namespace GCam.Core.Strategies
 
         /// <summary>The strategies that are actually implemented, in display order.</summary>
         /// <remarks>
-        /// Only 2D contour so far. Face, adaptive clearing and drilling are designed for -
-        /// the base model was measured against all four - but none of them exists yet, and
-        /// offering a strategy that cannot generate anything would be worse than not
-        /// offering it.
+        /// Only 2D contour so far, and it is the only one that can generate. Face,
+        /// adaptive clearing and drilling are designed for - the base model was measured
+        /// against all four - but none of them exists yet, and offering a strategy that
+        /// cannot generate anything would be worse than not offering it.
         /// </remarks>
         public static StrategyCatalog CreateDefault()
         {
             var catalog = new StrategyCatalog();
 
             catalog.Register(new StrategyDescriptor(
-                StrategyId.Contour2d, "2D Contour", () => new Contour2dSettings()));
+                StrategyId.Contour2d,
+                "2D Contour",
+                () => new Contour2dSettings(),
+                () => new Contour2dStrategy()));
 
             return catalog;
         }

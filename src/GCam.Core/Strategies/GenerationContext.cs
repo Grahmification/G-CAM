@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using GCam.Core.Geometry.Primitives;
 using GCam.Core.Model;
 using GCam.Core.Model.Heights;
@@ -30,13 +31,15 @@ namespace GCam.Core.Strategies
             Operation operation,
             Tool tool,
             ResolvedHeights heights,
-            Bounds stock)
+            Bounds stock,
+            IReadOnlyList<Polyline> contours = null)
         {
             Job = job ?? throw new ArgumentNullException(nameof(job));
             Operation = operation ?? throw new ArgumentNullException(nameof(operation));
             Tool = tool ?? throw new ArgumentNullException(nameof(tool));
             Heights = heights ?? throw new ArgumentNullException(nameof(heights));
             Stock = stock;
+            Contours = contours ?? new Polyline[0];
         }
 
         public Job Job { get; }
@@ -51,6 +54,22 @@ namespace GCam.Core.Strategies
 
         /// <summary>The stock box, in the operation's frame.</summary>
         public Bounds Stock { get; }
+
+        /// <summary>
+        /// The operation's selected contours, already resolved to closed chains of points
+        /// in the operation's frame.
+        /// </summary>
+        /// <remarks>
+        /// Tessellated by `SolidWorks/Extraction` from whatever SOLIDWORKS curves the
+        /// selection turned out to be, to the operation's tolerance, and transformed into
+        /// the operation's frame - so a strategy never sees a spline, a metre, or a
+        /// rotated coordinate system.
+        ///
+        /// Empty for a strategy that does not select contours, and for one that does but
+        /// whose selections no longer resolve. The strategy decides which of those is an
+        /// error.
+        /// </remarks>
+        public IReadOnlyList<Polyline> Contours { get; }
 
         /// <summary>This operation's own feeds and speeds, not the tool's defaults.</summary>
         public CuttingData Cutting => Operation.Cutting;
