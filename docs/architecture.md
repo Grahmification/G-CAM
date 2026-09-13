@@ -26,7 +26,7 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job page | Done; Operation page is still a shell | [UI shells](design/ui-shells.md) |
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
-| `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Written, **never run on a real part** | [Operations](design/operations.md) |
+| `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Done; a contour generates from selected edges on a real part (2025 SP3) | [Operations](design/operations.md) |
 | `Core/Model` — Operation, heights, geometry references, the part's tool list, Toolpath | Done | [Operations](design/operations.md) |
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates; face, adaptive and drill are designed only | [Operations](design/operations.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; runs on the STA thread until an `SwDispatcher` exists | [Operations](design/operations.md) |
@@ -36,7 +36,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Geometry` beyond the primitives | Not started | |
 | `Posts` | Empty project | |
 
-**A 2D contour toolpath is computed** as of 2026-09-13, and the extraction that feeds it geometry from the model is written but **has never run on a real part**. Nothing has been posted. Of the vertical slice below, steps 3, 4, 5 and 7 now exist in some form; step 6, posting, is untouched.
+**A 2D contour toolpath generates from selected edges on a real part** as of 2026-09-13, draws in the 3D view, and is saved with the document. **Nothing has been posted** — of the vertical slice below, only step 6 is missing, and `GCam.Posts` is still an empty project.
 
 ## Decisions this rests on
 
