@@ -2,6 +2,8 @@
 
 **Status:** Accepted
 **Date:** 2026-09-12
+**Refined by:** [0008](0008-document-tool-list.md) — the copy lives in a per-part tool
+list shared by operations, not inside each operation. Everything below still holds.
 
 ## Context
 

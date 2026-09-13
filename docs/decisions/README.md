@@ -13,3 +13,7 @@ Number files in order: `0001-short-title.md`. Copy `TEMPLATE.md` to start. Decis
 - [0003. A job embeds a copy of its tool](0003-jobs-embed-their-tools.md) — why a part is self-contained, and library edits never reach a saved job.
 - [0004. A job owns its operations directly](0004-jobs-own-operations-directly.md) — why there is no Setup level, and what it would cost to add one later.
 - [0005. Draw the overlay with fixed-function vertex arrays](0005-opengl-overlay-with-vertex-arrays.md) — why not immediate mode, buffer objects or shaders inside somebody else's GL context.
+- [0006. Operation parameters are values, not expressions](0006-operation-parameters-are-values.md) — why G-CAM does not implement HSM's expression language, and how derived values stay editable from both ends anyway.
+- [0007. Strategy parameters are typed classes, not a named parameter bag](0007-typed-strategy-settings.md) — 231 parameters across four strategies, and why type safety beat generic UI generation.
+- [0008. One tool list per part, shared by operations](0008-document-tool-list.md) — where the embedded tool copy from 0003 actually lives, and why geometry is shared while feeds are not.
+- [0009. Generated toolpaths are stored in the SOLIDWORKS document](0009-persist-toolpaths-in-the-document.md) — why a reopened part shows its paths without recomputing, and what defends against a stale one.

@@ -26,9 +26,11 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — coordinate system transforms, model extent | Started — bounding boxes only, no BRep | |
-| `Core/Strategies`, `Simulation`, `Commands`, `Posting` | Not started | |
+| `Core/Model` — Operation beyond a placeholder, Toolpath, heights | Designed, not started | [Operations](design/operations.md) |
+| `Core/Strategies`, `Core/Generation` | Designed, not started | [Operations](design/operations.md) |
+| `SolidWorks/Persistence` | Designed, not started | [Operations](design/operations.md) |
+| `Core/Simulation`, `Commands`, `Posting` | Not started | |
 | `Core/Geometry` beyond the primitives | Not started | |
-| `SolidWorks/Persistence` | Not started | |
 | `Posts` | Empty project | |
 
 No toolpath has been computed and nothing has been posted. The vertical slice below is still the plan — but step 5 of it, the OpenGL overlay, now exists and is drawing the stock box, so the toolpath work inherits a renderer rather than starting one.
@@ -43,8 +45,10 @@ No toolpath has been computed and nothing has been posted. The vertical slice be
 | Machines | 3-axis mill only |
 | Toolpath display | OpenGL overlay on `BufferSwapNotify`, via hand-rolled P/Invoke (no OpenTK); fixed-function vertex arrays — see [0005](decisions/0005-opengl-overlay-with-vertex-arrays.md) |
 | Simulation | Z-map heightfield material removal |
-| Persistence | Inside the SOLIDWORKS document, third-party storage |
+| Persistence | Inside the SOLIDWORKS document, third-party storage; generated toolpaths stored with the operation — see [0009](decisions/0009-persist-toolpaths-in-the-document.md) |
 | Operation editing | SOLIDWORKS-native PropertyManager pages |
+| Operation parameters | Typed values, not HSM's expressions — see [0006](decisions/0006-operation-parameters-are-values.md); strategy parameters are typed classes — see [0007](decisions/0007-typed-strategy-settings.md) |
+| Tooling in a part | One tool list per part, shared by operations; feeds per operation — see [0008](decisions/0008-document-tool-list.md) |
 | Tree tab / tool library | WPF hosted in a COM-visible WinForms shell |
 | Posts | Data-driven XML templates now, script engine later behind the same interface |
 | Undo | Own command stack in Core, doubling as recompute dirty-tracking |
@@ -63,16 +67,21 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │
 ├── src/
 │   ├── GCam.Core/                     ★ netstandard2.0 — NO SolidWorks references. Ever.
-│   │   ├── Model/                     Job, Operation, Stock, JobDocument,
-│   │   │                              WorkOffsets — later Toolpath, Move
+│   │   ├── Model/                     Job, Operation, Stock, JobDocument (owns the
+│   │   │                              part's tool list), WorkOffsets, OperationFrame,
+│   │   │                              GeometryRef, Toolpath, Move
 │   │   │                              (no Setup level — see decision 0004)
+│   │   │   └── Heights/               HeightSetting, HeightMode, HeightContext
+│   │   │                              — mode + offset, resolved against stock/model
 │   │   ├── Tooling/                   Tool, Holder, CuttingData, MachineData,
 │   │   │                              CutterProfile, ToolSearch, IToolLibrary,
-│   │   │                              LibrarySession (open libraries + dirty state)
+│   │   │                              LibrarySession (open libraries + dirty state),
+│   │   │                              FeedsAndSpeeds (rpm ↔ surface speed, feed ↔ chip
+│   │   │                              load — both ends editable), ToolUsage
 │   │   │   └── Import/                native XML + HSMWorks (.hsmlib) readers
 │   │   ├── Rendering/                 RenderScene (named layers), RenderLayer,
 │   │   │                              RenderBatch, PrimitiveKind, RenderColour,
-│   │   │                              BoxMesh, ConeMesh, AxisTriad
+│   │   │                              BoxMesh, ConeMesh, AxisTriad, ToolpathMesh
 │   │   │                              — what to draw, never how
 │   │   ├── Geometry/
 │   │   │   ├── Primitives/            Vec3, Plane, Bounds, Matrix4, Polyline
@@ -80,7 +89,11 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │   ├── Faceting/              controlled-tolerance tessellation
 │   │   │   ├── Offset/                2D offsetting (Clipper2 behind an interface)
 │   │   │   └── Query/                 raycast, closest-point, containment
-│   │   ├── Strategies/                IToolpathStrategy + Contour2D, Pocket2D, Drill…
+│   │   ├── Strategies/                IToolpathStrategy, StrategySettings,
+│   │   │                              StrategyCatalog + Contour2d/, Face/,
+│   │   │                              Adaptive2d/, Drill/ — see design/operations.md
+│   │   ├── Generation/                GenerationQueue (off-thread, cancellable),
+│   │   │                              Staleness (what a change invalidates)
 │   │   ├── Simulation/                ISimulator, ZMap/, Verification/
 │   │   ├── Commands/                  ICommand, CommandStack, DirtyTracker
 │   │   ├── Posting/                   CLData — machine-neutral canonical toolpath
@@ -109,7 +122,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   ├── PropertyPages/             PmpHandlerBase (all 37 callbacks, wrapped),
 │   │   │                              GCamPropertyPage (build/show/tab restore),
 │   │   │                              JobPropertyPage, OperationPropertyPage
-│   │   ├── Persistence/               third-party storage read/write + storage events
+│   │   ├── Persistence/               third-party storage read/write + storage events;
+│   │   │                              model.xml plus one binary stream per toolpath
 │   │   ├── Hosting/                   JobTreeTabHost — COM-visible WinForms shell;
 │   │   │                              JobTreeTabs — one Manager Pane tab per part
 │   │   ├── Threading/                 SwDispatcher — marshal to SW's STA thread

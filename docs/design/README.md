@@ -14,6 +14,7 @@ area that has a note, so start there if you do not already know which subsystem 
 ## Index
 
 - [Jobs](jobs.md) — the job model, what `JobDocument` owns rather than the viewmodel, the three-projects-that-cannot-see-each-other arrangement, and the 3D preview.
+- [Operations](operations.md) — what every operation carries regardless of strategy, how a strategy adds the rest, and how one is generated, stored, drawn and edited. **Designed, not yet built.**
 - [UI shells](ui-shells.md) — the four custom UI surfaces, what hosts each, why property pages are rebuilt per show, and the toolbar icon strip.
 
 Add a file when a subsystem's design stops fitting in a paragraph, and add its line here.
