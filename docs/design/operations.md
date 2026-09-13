@@ -589,6 +589,15 @@ coarser than a machining one, which is most of the saving. A degenerate arc — 
 endpoints that do not lie on one — draws as a straight line rather than vanishing, because
 nothing drawn looks like a gap and sends someone hunting in the wrong place.
 
+**Vertices are carried into part coordinates before the batch is built**, by a required
+`Matrix4` argument — the same shape `BoxMesh.Corners` and `AxisTriad.Build` already take.
+`RenderBatch` promises part coordinates and a toolpath is computed in the operation's
+frame, so on a job whose coordinate system is rotated, omitting it draws the whole path in
+the wrong plane. That happened: the first generated toolpath came out perpendicular to the
+face it was cut from. The parameter is required rather than optional because the symptom
+looks like a broken toolpath rather than a broken transform, and sends you looking in the
+wrong place.
+
 `AlwaysOnTop` is not set. `RenderBatch`'s own remarks anticipate a toolpath buried in
 material wanting it, and that is a judgement best made with something on screen to look at
 — it lands when the preview is wired up.

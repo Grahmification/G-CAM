@@ -157,7 +157,7 @@ namespace GCam.SolidWorks.Rendering
         /// matches the current parameters. A disabled operation is not drawn at all,
         /// because it will not be cut.
         /// </remarks>
-        private void SetToolpaths(Job job)
+        private void SetToolpaths(Job job, JobFrame frame)
         {
             ClearToolpaths();
 
@@ -168,8 +168,11 @@ namespace GCam.SolidWorks.Rendering
                     continue;
                 }
 
+                // Into part coordinates, exactly as the stock box is. The toolpath is
+                // computed in the job's frame; RenderBatch promises the part's.
                 IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(
                     operation.Toolpath,
+                    frame.ToPart,
                     stale: operation.State == OperationState.Stale);
 
                 if (batches.Count == 0)
@@ -221,7 +224,7 @@ namespace GCam.SolidWorks.Rendering
 
             SetStock(stock, frame);
             SetOrigin(stock, model, frame);
-            SetToolpaths(job);
+            SetToolpaths(job, frame);
         }
 
         private void SetStock(Bounds stock, JobFrame frame)

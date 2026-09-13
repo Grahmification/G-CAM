@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using GCam.Core.Geometry.Primitives;
 using GCam.Core.Model;
 
@@ -78,6 +79,15 @@ namespace GCam.Core.Rendering
         /// The batches for one toolpath.
         /// </summary>
         /// <param name="path">What to draw. Null or a single move yields nothing.</param>
+        /// <param name="toPart">
+        /// The operation's frame to the part's, applied to every vertex.
+        /// <see cref="RenderBatch"/> promises part coordinates, and a toolpath is computed
+        /// in the operation's frame - so on any job whose coordinate system is rotated,
+        /// skipping this draws the path in the wrong plane. Required rather than optional
+        /// for exactly that reason: it was forgotten once, and the result looked like a
+        /// broken toolpath rather than a broken transform. Pass
+        /// <see cref="Matrix4.Identity"/> when the two frames are the same.
+        /// </param>
         /// <param name="showRapids">
         /// False leaves the rapids out. On a drilling job they dominate the screen, and
         /// they are the first thing someone turns off to see the cutting.
@@ -90,6 +100,7 @@ namespace GCam.Core.Rendering
         /// <param name="arcTolerance">Chord tolerance for tessellating arcs, mm.</param>
         public static IReadOnlyList<RenderBatch> Build(
             Toolpath path,
+            Matrix4 toPart,
             bool showRapids = true,
             bool stale = false,
             double arcTolerance = DefaultArcTolerance)
@@ -112,7 +123,7 @@ namespace GCam.Core.Rendering
 
                 if (move.Kind != runKind && run.Count > 0)
                 {
-                    Emit(batches, run, runKind, stale, showRapids);
+                    Emit(batches, run, runKind, toPart, stale, showRapids);
 
                     // The next run starts where this one stopped, or the path would show a
                     // gap at every change of kind.
@@ -137,7 +148,7 @@ namespace GCam.Core.Rendering
                 }
             }
 
-            Emit(batches, run, runKind, stale, showRapids);
+            Emit(batches, run, runKind, toPart, stale, showRapids);
             return batches;
         }
 
@@ -145,6 +156,7 @@ namespace GCam.Core.Rendering
             ICollection<RenderBatch> batches,
             List<Vec3> vertices,
             MoveKind kind,
+            Matrix4 toPart,
             bool stale,
             bool showRapids)
         {
@@ -161,7 +173,7 @@ namespace GCam.Core.Rendering
 
             batches.Add(new RenderBatch(
                 PrimitiveKind.LineStrip,
-                vertices.ToArray(),
+                vertices.Select(toPart.Transform).ToArray(),
                 colour,
                 lineWidth: kind == MoveKind.Rapid ? RenderBatch.DefaultLineWidth : CuttingLineWidth));
         }

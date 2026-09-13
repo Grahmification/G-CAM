@@ -25,16 +25,16 @@ namespace GCam.Core.Tests.Rendering
         [Fact]
         public void Nothing_to_draw_yields_no_batches()
         {
-            Assert.Empty(ToolpathMesh.Build(null));
-            Assert.Empty(ToolpathMesh.Build(new Toolpath()));
-            Assert.Empty(ToolpathMesh.Build(new Toolpath().Add(Move.Rapid(P(0, 0, 10)))));
+            Assert.Empty(ToolpathMesh.Build(null, Matrix4.Identity));
+            Assert.Empty(ToolpathMesh.Build(new Toolpath(), Matrix4.Identity));
+            Assert.Empty(ToolpathMesh.Build(new Toolpath().Add(Move.Rapid(P(0, 0, 10))), Matrix4.Identity));
         }
 
         [Fact]
         public void Consecutive_moves_of_one_kind_become_a_single_strip()
         {
             // Two cutting moves are one strip of three points, not two strips of two.
-            IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(Square());
+            IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(Square(), Matrix4.Identity);
 
             RenderBatch cutting = batches.Single(
                 b => b.Colour.Equals(ToolpathMesh.ColourFor(MoveKind.Cutting)));
@@ -46,7 +46,7 @@ namespace GCam.Core.Tests.Rendering
         [Fact]
         public void Each_kind_of_move_gets_its_own_colour()
         {
-            IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(Square());
+            IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(Square(), Matrix4.Identity);
 
             // Plunge, cut, retract. The opening rapid goes nowhere - it only says where
             // the tool starts - so it contributes no segment.
@@ -59,7 +59,7 @@ namespace GCam.Core.Tests.Rendering
         {
             // Otherwise the path shows a gap at every change of kind, which reads as a
             // bug in the strategy rather than in the drawing.
-            IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(Square());
+            IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(Square(), Matrix4.Identity);
 
             for (int i = 1; i < batches.Count; i++)
             {
@@ -77,9 +77,9 @@ namespace GCam.Core.Tests.Rendering
                 .Add(Move.Rapid(P(50, 50, 10)))
                 .Add(Move.Cut(P(60, 50), 500));
 
-            Assert.Equal(3, ToolpathMesh.Build(path).Count);
+            Assert.Equal(3, ToolpathMesh.Build(path, Matrix4.Identity).Count);
 
-            IReadOnlyList<RenderBatch> without = ToolpathMesh.Build(path, showRapids: false);
+            IReadOnlyList<RenderBatch> without = ToolpathMesh.Build(path, Matrix4.Identity, showRapids: false);
 
             Assert.Equal(2, without.Count);
             Assert.DoesNotContain(without,
@@ -89,7 +89,7 @@ namespace GCam.Core.Tests.Rendering
         [Fact]
         public void A_stale_path_is_faded_rather_than_hidden()
         {
-            IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(Square(), stale: true);
+            IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(Square(), Matrix4.Identity, stale: true);
 
             Assert.NotEmpty(batches);
             Assert.All(batches, b => Assert.Equal(ToolpathMesh.StaleAlpha, b.Colour.Alpha, 6));
@@ -103,7 +103,8 @@ namespace GCam.Core.Tests.Rendering
                 new Toolpath()
                     .Add(Move.Rapid(P(0, 0, 10)))
                     .Add(Move.Rapid(P(5, 0, 10)))
-                    .Add(Move.Cut(P(10, 0), 500)));
+                    .Add(Move.Cut(P(10, 0), 500)),
+                Matrix4.Identity);
 
             RenderBatch rapid = batches.Single(
                 b => b.Colour.Equals(ToolpathMesh.ColourFor(MoveKind.Rapid)));
@@ -122,7 +123,7 @@ namespace GCam.Core.Tests.Rendering
                 .Add(Move.Rapid(P(10, 0)))
                 .Add(Move.CutArc(P(0, 10), 500, Vec3.Zero, clockwise: false));
 
-            RenderBatch batch = Assert.Single(ToolpathMesh.Build(path));
+            RenderBatch batch = Assert.Single(ToolpathMesh.Build(path, Matrix4.Identity));
 
             Assert.True(batch.Vertices.Count > 4);
             Assert.All(batch.Vertices, v => Assert.Equal(10, new Vec3(v.X, v.Y, 0).Length, 3));
@@ -140,7 +141,7 @@ namespace GCam.Core.Tests.Rendering
                 .Add(Move.Rapid(P(10, 0)))
                 .Add(Move.CutArc(P(0, 10), 500, Vec3.Zero, clockwise: true));
 
-            RenderBatch batch = Assert.Single(ToolpathMesh.Build(path));
+            RenderBatch batch = Assert.Single(ToolpathMesh.Build(path, Matrix4.Identity));
 
             // The long way round: through the bottom of the circle.
             Assert.Contains(batch.Vertices, v => v.Y < -1);
@@ -156,7 +157,7 @@ namespace GCam.Core.Tests.Rendering
                 .Add(Move.Rapid(P(10, 0)))
                 .Add(Move.CutArc(P(0, 10), 500, Vec3.Zero, clockwise: false));
 
-            Assert.Equal(P(0, 10), Assert.Single(ToolpathMesh.Build(path)).Vertices.Last());
+            Assert.Equal(P(0, 10), Assert.Single(ToolpathMesh.Build(path, Matrix4.Identity)).Vertices.Last());
         }
 
         [Fact]
@@ -167,7 +168,7 @@ namespace GCam.Core.Tests.Rendering
                 .Add(Move.Rapid(P(10, 0)))
                 .Add(Move.CutArc(P(10, 0), 500, Vec3.Zero, clockwise: false));
 
-            RenderBatch batch = Assert.Single(ToolpathMesh.Build(path));
+            RenderBatch batch = Assert.Single(ToolpathMesh.Build(path, Matrix4.Identity));
 
             Assert.True(batch.Vertices.Count > 8);
             Assert.Contains(batch.Vertices, v => v.X < -9);
@@ -180,7 +181,7 @@ namespace GCam.Core.Tests.Rendering
                 .Add(Move.Rapid(P(10, 0, 0)))
                 .Add(Move.CutArc(P(10, 0, -5), 500, Vec3.Zero, clockwise: false));
 
-            IReadOnlyList<Vec3> vertices = Assert.Single(ToolpathMesh.Build(path)).Vertices;
+            IReadOnlyList<Vec3> vertices = Assert.Single(ToolpathMesh.Build(path, Matrix4.Identity)).Vertices;
 
             Assert.Equal(-5, vertices.Last().Z, 9);
             Assert.All(vertices, v => Assert.Equal(10, new Vec3(v.X, v.Y, 0).Length, 3));
@@ -199,8 +200,8 @@ namespace GCam.Core.Tests.Rendering
                 .Add(Move.Rapid(P(10, 0)))
                 .Add(Move.CutArc(P(0, 10), 500, Vec3.Zero, clockwise: false));
 
-            int coarse = ToolpathMesh.Build(path, arcTolerance: 0.5).Single().Vertices.Count;
-            int fine = ToolpathMesh.Build(path, arcTolerance: 0.001).Single().Vertices.Count;
+            int coarse = ToolpathMesh.Build(path, Matrix4.Identity, arcTolerance: 0.5).Single().Vertices.Count;
+            int fine = ToolpathMesh.Build(path, Matrix4.Identity, arcTolerance: 0.001).Single().Vertices.Count;
 
             Assert.True(fine > coarse);
         }
@@ -214,7 +215,7 @@ namespace GCam.Core.Tests.Rendering
                 .Add(Move.Rapid(P(0, 0)))
                 .Add(Move.CutArc(P(10, 0), 500, Vec3.Zero, clockwise: false));
 
-            RenderBatch batch = Assert.Single(ToolpathMesh.Build(path));
+            RenderBatch batch = Assert.Single(ToolpathMesh.Build(path, Matrix4.Identity));
 
             Assert.Equal(2, batch.Vertices.Count);
             Assert.Equal(P(10, 0), batch.Vertices.Last());
@@ -227,10 +228,55 @@ namespace GCam.Core.Tests.Rendering
                 .Add(Move.Rapid(P(10, 0, 0)))
                 .Add(Move.CutArc(P(0, 0, 10), 500, Vec3.Zero, clockwise: false, plane: ArcPlane.ZX));
 
-            IReadOnlyList<Vec3> vertices = Assert.Single(ToolpathMesh.Build(path)).Vertices;
+            IReadOnlyList<Vec3> vertices = Assert.Single(ToolpathMesh.Build(path, Matrix4.Identity)).Vertices;
 
             Assert.All(vertices, v => Assert.Equal(0, v.Y, 9));
             Assert.All(vertices, v => Assert.Equal(10, new Vec3(v.X, 0, v.Z).Length, 3));
+        }
+
+        [Fact]
+        public void Vertices_are_carried_into_part_coordinates()
+        {
+            // The bug this pins: a toolpath is computed in the job's frame and RenderBatch
+            // promises the part's. Drawn without the transform, a rotated job puts the
+            // whole path in the wrong plane - and it looks like a broken toolpath rather
+            // than a broken transform.
+            Matrix4 toPart = Matrix4.FromAxes(
+                new Vec3(100, 200, 300),
+                new Vec3(1, 0, 0), new Vec3(0, 1, 0), new Vec3(0, 0, 1));
+
+            RenderBatch batch = Assert.Single(ToolpathMesh.Build(
+                new Toolpath()
+                    .Add(Move.Rapid(P(0, 0, 0)))
+                    .Add(Move.Cut(P(10, 0, 0), 500)),
+                toPart));
+
+            Assert.Equal(new Vec3(100, 200, 300), batch.Vertices.First());
+            Assert.Equal(new Vec3(110, 200, 300), batch.Vertices.Last());
+        }
+
+        [Fact]
+        public void A_rotated_frame_turns_the_path_with_it()
+        {
+            // Cutting in the job's XY plane has to come out in whatever plane the job's
+            // coordinate system actually sits in.
+            // The job's axes in part coordinates: job +Z lies along part -Y.
+            Matrix4 toPart = Matrix4.FromAxes(
+                Vec3.Zero,
+                new Vec3(1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, -1, 0));
+
+            RenderBatch batch = Assert.Single(ToolpathMesh.Build(
+                new Toolpath()
+                    .Add(Move.Rapid(P(0, 0, 0)))
+                    .Add(Move.Cut(P(0, 0, 5), 500)),
+                toPart));
+
+            // Job +Z is part -Y under that frame.
+            Vec3 end = batch.Vertices.Last();
+
+            Assert.Equal(0, end.X, 6);
+            Assert.Equal(-5, end.Y, 6);
+            Assert.Equal(0, end.Z, 6);
         }
 
         [Fact]
