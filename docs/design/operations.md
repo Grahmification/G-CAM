@@ -336,9 +336,22 @@ public interface IToolpathStrategy
 ```
 
 `GenerationContext` carries the resolved inputs — the operation, its part tool, the
-resolved geometry, the resolved heights, the stock, and the frame — so a strategy touches
-no COM and no SOLIDWORKS, and runs on a worker thread. Strategies are pure: same context
-in, same toolpath out.
+resolved geometry, the resolved heights and the stock — so a strategy touches no COM and no
+SOLIDWORKS, and runs on a worker thread. Strategies are pure: same context in, same
+toolpath out. `IGenerationContextFactory` builds one, declared in Core and implemented in
+`GCam.SolidWorks`, because resolving heights and geometry is the one part of generation
+that needs the model.
+
+`IToolpathStrategy` and `GenerationContext` live in `Core/Strategies` rather than
+`Core/Generation`, so the dependency runs one way — Generation → Strategies → Model. Both
+folders one way round is worth more than either name being perfect.
+
+**Nothing in Core creates a thread.** The caller runs the queue on a worker; Core spawning
+its own would hide the rule rather than honour it. For the same reason the queue forwards a
+strategy's progress **synchronously** rather than through `System.Progress<T>`: that type
+posts to whatever synchronisation context captured it, which here is the worker thread, so
+reports would arrive late, out of order, or after the run they describe. Marshalling to the
+UI thread is the caller's decision and belongs in the caller's own `IProgress<T>`.
 
 **Generation is explicit and runs off the STA thread.** The user generates one operation,
 a job, or everything; `GenerationQueue` runs them in tree order, reporting percentage
@@ -351,6 +364,21 @@ screen, dimmed.
 carries on with the next operation. The previous toolpath is kept — a failed retry must
 never lose a path that was already proven. A modal dialog per failure would stop a
 whole-job generate dead, which is exactly when failures cluster.
+
+Four outcomes that are not "generated" and not failures either:
+
+- **A disabled operation is skipped**, keeping whatever toolpath and state it had.
+- **An empty result is a `Warning`**, not a silent success. An operation can legitimately
+  have nothing to cut, and saying nothing would look like success with an invisible result.
+- **A strategy with no implementation yet fails with a readable message.** Settings, a
+  property page and persistence all exist before an algorithm does, so this is a real state
+  rather than a placeholder — and it beats a null reference from inside the queue.
+- **Cancelling mid-regeneration leaves the operation `Stale`, not `NotGenerated`**, when it
+  already had a path. There is still a toolpath; it is out of date, which is exactly what
+  it was before the cancelled run started.
+
+An exception that is *not* a `GCamUserException` is a bug in a strategy. The operation
+fails with "see the log", and the stack trace goes to the log rather than to the user.
 
 ### What makes an operation stale
 
@@ -544,8 +572,8 @@ while they are still cheap to change.
 | 2 | `Operation` rewrite + `StrategyId`/`StrategySettings`/`StrategyCatalog` + `Contour2dSettings` + `ContourSelection` | The shape everything else binds to. Cheapest to change now, most expensive once persistence has written it into saved parts | **Done** — 2026-09-13, 65 tests |
 | 3 | `JobDocument.Tools` + `ToolUsage`, seeding `Operation.Cutting` from a tool | Pure Core, and it unblocks the part-tool list in the library browser | **Done** — 2026-09-13, 20 tests |
 | 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | **Done** — 2026-09-13, 32 tests |
-| 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | Next |
-| 6 | Persistence — `model.xml`, then the toolpath streams | Needs the model above it to be settled, and writing it into saved parts is what makes earlier slices expensive to revisit | Not started |
+| 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | **Done** — 2026-09-13, 35 tests |
+| 6 | Persistence — `model.xml`, then the toolpath streams | Needs the model above it to be settled, and writing it into saved parts is what makes earlier slices expensive to revisit | Next |
 | 7 | `Contour2d` strategy + the geometry extraction it needs | The first real toolpath. Everything above exists to be plugged into here | Not started |
 | 8 | The Operation property page | Last, because a page for a model that is still moving is written twice | Not started |
 

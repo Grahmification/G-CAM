@@ -12,8 +12,13 @@ namespace GCam.Core.Strategies
     public sealed class StrategyDescriptor
     {
         private readonly Func<StrategySettings> _newSettings;
+        private readonly Func<IToolpathStrategy> _newStrategy;
 
-        public StrategyDescriptor(StrategyId id, string displayName, Func<StrategySettings> newSettings)
+        public StrategyDescriptor(
+            StrategyId id,
+            string displayName,
+            Func<StrategySettings> newSettings,
+            Func<IToolpathStrategy> newStrategy = null)
         {
             if (id.IsEmpty)
             {
@@ -23,6 +28,7 @@ namespace GCam.Core.Strategies
             Id = id;
             DisplayName = displayName;
             _newSettings = newSettings ?? throw new ArgumentNullException(nameof(newSettings));
+            _newStrategy = newStrategy;
         }
 
         public StrategyId Id { get; }
@@ -30,8 +36,23 @@ namespace GCam.Core.Strategies
         /// <summary>What to call it in the New Operation list. "2D Contour", not "contour2d".</summary>
         public string DisplayName { get; }
 
+        /// <summary>
+        /// False when the parameters exist but nothing can compute a toolpath from them
+        /// yet.
+        /// </summary>
+        /// <remarks>
+        /// A real state rather than a placeholder: 2D contour has had settings, a property
+        /// page and persistence before it had an algorithm. An operation of a strategy
+        /// with no implementation fails generation with a message saying so, which beats
+        /// a null reference from somewhere in the queue.
+        /// </remarks>
+        public bool HasStrategy => _newStrategy != null;
+
         /// <summary>A fresh settings object at its defaults.</summary>
         public StrategySettings CreateSettings() => _newSettings();
+
+        /// <summary>The thing that computes toolpaths, or null when there is none yet.</summary>
+        public IToolpathStrategy CreateStrategy() => _newStrategy?.Invoke();
     }
 
     /// <summary>

@@ -27,8 +27,8 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — coordinate system transforms, model extent | Started — bounding boxes only, no BRep | |
 | `Core/Model` — Operation, heights, geometry references, the part's tool list, Toolpath | Done; nothing produces a toolpath yet | [Operations](design/operations.md) |
-| `Core/Strategies` — id, settings base, catalogue, Contour2d parameters | Started — no strategy computes anything yet | [Operations](design/operations.md) |
-| `Core/Generation` | Designed, not started | [Operations](design/operations.md) |
+| `Core/Strategies` — id, settings base, catalogue, context, Contour2d parameters | Started — no strategy computes anything yet | [Operations](design/operations.md) |
+| `Core/Generation` — queue, progress, staleness rules | Done; waiting for a strategy to run | [Operations](design/operations.md) |
 | `SolidWorks/Persistence` | Designed, not started | [Operations](design/operations.md) |
 | `Core/Simulation`, `Commands`, `Posting` | Not started | |
 | `Core/Geometry` beyond the primitives | Not started | |
@@ -93,13 +93,15 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │   ├── Offset/                2D offsetting (Clipper2 behind an interface)
 │   │   │   └── Query/                 raycast, closest-point, containment
 │   │   ├── Strategies/                StrategyId, StrategySettings, StrategyCatalog,
-│   │   │                              later IToolpathStrategy
+│   │   │                              IToolpathStrategy, GenerationContext
 │   │   │   ├── Shared/                groups some strategies have and others do not —
 │   │   │   │                          MultipleDepthsSettings, LeadSettings, CutDirection,
 │   │   │   │                          ContourSelection (picked entity + its modifiers)
 │   │   │   └── Contour2d/             + later Face/, Adaptive2d/, Drill/
 │   │   │                              — see design/operations.md
-│   │   ├── Generation/                GenerationQueue (off-thread, cancellable),
+│   │   ├── Generation/                GenerationQueue (explicit, cancellable; the
+│   │   │                              caller owns the thread), GenerationProgress,
+│   │   │                              IGenerationContextFactory,
 │   │   │                              Staleness (what a change invalidates)
 │   │   ├── Simulation/                ISimulator, ZMap/, Verification/
 │   │   ├── Commands/                  ICommand, CommandStack, DirtyTracker
