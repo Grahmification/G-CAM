@@ -82,7 +82,7 @@ does mean `JobTreeTabs` now has a second responsibility. When a third subscriber
 document notifications appears — persistence, most likely — that is the moment to factor
 `Events/` out of it.
 
-## Persisted, with one piece of debt now due
+## Persistence
 
 **Jobs are saved inside the part** and come back when it reopens — verified on 2025 SP3 on
 2026-09-13. How that works is in
@@ -91,20 +91,35 @@ document notifications appears — persistence, most likely — that is the mome
 document dirty**, or SOLIDWORKS never offers the save that would write it, and the user
 loses the work without being asked.
 
-**A job still names its bodies and coordinate system as plain strings**, and that was
-justified only while jobs lasted a single session. It is not any more. A body renamed
-between sessions now silently repoints a proven job — the exact failure the original note
-promised to prevent, with its precondition removed.
+## What a job points at
 
-Three places carry the same debt:
+**Bodies and coordinate systems are `GeometryRef`s**, carrying SOLIDWORKS' own persistent
+identity from `GetPersistReference3` alongside the name. `Job.ModelBodies`,
+`Job.CoordinateSystem` and `OperationFrame.CoordinateSystem` all work this way, as the
+geometry an operation selects already did.
 
-| Where | What it holds |
-| --- | --- |
-| `Job.ModelBodyNames` | Which solid bodies the job machines |
-| `Job.CoordinateSystemName` | The job's origin and orientation |
-| `OperationFrame.CoordinateSystemName` | A per-operation override of the same |
+Names alone were enough while a job lasted one session. They stopped being enough the
+moment jobs began surviving a reopen: a stored name cannot tell a renamed body from a
+different body that has since taken the old name, so a renamed body would silently change
+what a proven job cuts.
 
-All three should become persistent reference ids from
-`IModelDocExtension::GetPersistReference3`, which is what `GeometryRef` already does for
-the geometry an operation selects — so the mechanism exists and only the wiring is
-missing.
+**SOLIDWORKS is still addressed by name.** `SelectByID2` is the only route into a
+PropertyManager selection box, so the reference's job is to say *which name to use now* —
+resolve the id, ask the entity what it is called today, select that. A rename therefore
+follows correctly rather than breaking.
+
+### Migrating a part saved before this
+
+A reference read from such a part has a name and no id, which is a usable state rather
+than an empty one — `GeometryRef.IsEmpty` means "identifies nothing", not "has no id",
+precisely so that a save cannot throw the names away.
+
+`PersistentRefs.CurrentName` is where the migration happens, and it **mutates the
+reference on purpose**: resolving by id updates the stored name after a rename, and
+resolving by name stamps the id in. Anything that resolves a reference therefore also
+migrates it, so an old part comes out modern the first time it is saved for any reason.
+
+One asymmetry worth knowing: a reference that **has** an id which no longer resolves falls
+back to nothing, not to the name. The entity is gone, and a new one may have taken its
+name — selecting that would be the silent repointing this whole change exists to
+prevent.

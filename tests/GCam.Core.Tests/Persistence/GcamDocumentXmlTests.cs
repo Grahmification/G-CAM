@@ -35,9 +35,19 @@ namespace GCam.Core.Tests.Persistence
 
             Job job = document.AddNew();
             job.Name = "Roughing";
-            job.CoordinateSystemName = "Coordinate System1";
+            job.CoordinateSystem = new GeometryRef
+            {
+                PersistentId = "cs-persist-id",
+                Kind = GeometryRefKind.CoordinateSystem,
+                DisplayName = "Coordinate System1",
+            };
             job.WorkOffset = 2;
-            job.ModelBodyNames.Add("Boss-Extrude1");
+            job.ModelBodies.Add(new GeometryRef
+            {
+                PersistentId = "body-persist-id",
+                Kind = GeometryRefKind.Body,
+                DisplayName = "Boss-Extrude1",
+            });
             job.Stock.SideOffset = 2;
             job.Stock.TopOffset = 1;
             job.Extra["hsm.origin"] = "imported";
@@ -107,9 +117,11 @@ namespace GCam.Core.Tests.Persistence
             Job job = RoundTrip(Sample()).Jobs.Single();
 
             Assert.Equal("Roughing", job.Name);
-            Assert.Equal("Coordinate System1", job.CoordinateSystemName);
+            Assert.Equal("cs-persist-id", job.CoordinateSystem.PersistentId);
+            Assert.Equal("Coordinate System1", job.CoordinateSystem.DisplayName);
             Assert.Equal(2, job.WorkOffset);
-            Assert.Equal("Boss-Extrude1", job.ModelBodyNames.Single());
+            Assert.Equal("body-persist-id", job.ModelBodies.Single().PersistentId);
+            Assert.Equal("Boss-Extrude1", job.ModelBodies.Single().DisplayName);
             Assert.Equal(2, job.Stock.SideOffset, 9);
             Assert.Equal(1, job.Stock.TopOffset, 9);
             Assert.Equal("imported", job.Extra["hsm.origin"]);

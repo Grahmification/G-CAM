@@ -25,24 +25,21 @@ namespace GCam.Core.Model
         /// The solid bodies this job machines. Empty means every solid body in the part.
         /// </summary>
         /// <remarks>
-        /// Names, not persistent references - and this is now a real problem rather than a
-        /// deferred one. The justification was that jobs did not survive a reopen, so a
-        /// name only had to last the session. Jobs are persisted as of 2026-09-13, so a
-        /// body renamed between sessions now silently changes what a proven job cuts,
-        /// which is exactly the failure the note used to promise to prevent.
+        /// Persistent references, because a job outlives the session that made it. A body
+        /// renamed between sessions must not silently change what a proven job cuts, and a
+        /// stored name cannot tell the difference between a rename and a different body
+        /// that has taken the old name.
         ///
-        /// These must become persistent reference ids from
-        /// IModelDocExtension::GetPersistReference3, the way <see cref="GeometryRef"/>
-        /// already does for the geometry an operation selects. Same for
-        /// <see cref="CoordinateSystemName"/> and <see cref="OperationFrame"/>.
+        /// <see cref="GeometryRef.DisplayName"/> still carries the name, for the UI and as
+        /// the fallback that lets a part saved before this change keep working.
         /// </remarks>
-        public List<string> ModelBodyNames { get; set; } = new List<string>();
+        public List<GeometryRef> ModelBodies { get; set; } = new List<GeometryRef>();
 
         /// <summary>
         /// The coordinate system feature defining this job's origin and orientation.
         /// Null means the part origin.
         /// </summary>
-        public string CoordinateSystemName { get; set; }
+        public GeometryRef CoordinateSystem { get; set; }
 
         public Stock Stock { get; set; } = new Stock();
 
@@ -59,13 +56,15 @@ namespace GCam.Core.Model
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>True when the job machines every solid body rather than a chosen set.</summary>
-        public bool MachinesWholePart => ModelBodyNames == null || ModelBodyNames.Count == 0;
+        public bool MachinesWholePart => ModelBodies == null || ModelBodies.Count == 0;
 
         /// <summary>
         /// What the coordinate system box shows, including the part-origin default.
         /// </summary>
         public string CoordinateSystemDisplayName =>
-            string.IsNullOrWhiteSpace(CoordinateSystemName) ? "Part origin" : CoordinateSystemName;
+            CoordinateSystem == null || CoordinateSystem.IsEmpty
+                ? "Part origin"
+                : CoordinateSystem.ToString();
 
         /// <summary>Deep copy, keeping the id.</summary>
         public Job Clone()
@@ -74,8 +73,9 @@ namespace GCam.Core.Model
             {
                 Id = Id,
                 Name = Name,
-                ModelBodyNames = new List<string>(ModelBodyNames ?? new List<string>()),
-                CoordinateSystemName = CoordinateSystemName,
+                ModelBodies = (ModelBodies ?? new List<GeometryRef>())
+                    .Select(b => b?.Clone()).Where(b => b != null).ToList(),
+                CoordinateSystem = CoordinateSystem?.Clone(),
                 Stock = Stock?.Clone() ?? new Stock(),
                 WorkOffset = WorkOffset,
                 Operations = (Operations ?? new List<Operation>()).Select(o => o.Clone()).ToList(),

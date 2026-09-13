@@ -29,19 +29,21 @@ namespace GCam.Core.Model
         /// </summary>
         /// <remarks>
         /// A name rather than a persistent reference, matching
-        /// <see cref="Job.CoordinateSystemName"/>, and carrying the same debt: both become
+        /// <see cref="Job.CoordinateSystem"/>: both are
         /// persistent reference ids when persistence lands. Unlike the geometry an
         /// operation selects, which uses <see cref="GeometryRef"/> from the start, a
         /// coordinate system is a feature and is resolved by the same code that already
         /// resolves the job's.
         /// </remarks>
-        public string CoordinateSystemName { get; set; }
+        public GeometryRef CoordinateSystem { get; set; }
 
         /// <summary>What the coordinate system box shows.</summary>
         public string DisplayName =>
             InheritFromJob
                 ? "From job"
-                : string.IsNullOrWhiteSpace(CoordinateSystemName) ? "Part origin" : CoordinateSystemName;
+                : CoordinateSystem == null || CoordinateSystem.IsEmpty
+                    ? "Part origin"
+                    : CoordinateSystem.ToString();
 
         /// <summary>
         /// Problems visible without resolving anything.
@@ -55,7 +57,12 @@ namespace GCam.Core.Model
         /// </remarks>
         public IReadOnlyList<string> Validate() => new string[0];
 
-        public OperationFrame Clone() => (OperationFrame)MemberwiseClone();
+        public OperationFrame Clone()
+        {
+            var copy = (OperationFrame)MemberwiseClone();
+            copy.CoordinateSystem = CoordinateSystem?.Clone();
+            return copy;
+        }
 
         public override string ToString() => DisplayName;
     }

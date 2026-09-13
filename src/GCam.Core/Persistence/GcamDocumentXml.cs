@@ -171,14 +171,14 @@ namespace GCam.Core.Persistence
                 new XAttribute("name", job.Name ?? string.Empty),
                 new XAttribute("workOffset", job.WorkOffset));
 
-            if (!string.IsNullOrEmpty(job.CoordinateSystemName))
+            if (job.CoordinateSystem != null && !job.CoordinateSystem.IsEmpty)
             {
-                element.Add(new XAttribute("coordinateSystem", job.CoordinateSystemName));
+                element.Add(WriteGeometryRef(job.CoordinateSystem, "coordinateSystem"));
             }
 
             element.Add(new XElement(
                 "bodies",
-                job.ModelBodyNames.Select(n => new XElement("body", new XAttribute("name", n)))));
+                job.ModelBodies.Where(b => b != null).Select(b => WriteGeometryRef(b, "body"))));
 
             element.Add(WriteStock(job.Stock));
             element.Add(WriteExtra(job.Extra));
@@ -250,9 +250,7 @@ namespace GCam.Core.Persistence
             element.Add(new XElement(
                 "frame",
                 new XAttribute("inherit", operation.Frame.InheritFromJob),
-                operation.Frame.CoordinateSystemName == null
-                    ? null
-                    : new XAttribute("coordinateSystem", operation.Frame.CoordinateSystemName)));
+                WriteGeometryRef(operation.Frame.CoordinateSystem, "coordinateSystem")));
 
             element.Add(WriteSettings(operation.Settings));
             element.Add(WriteExtra(operation.Extra));
@@ -290,7 +288,7 @@ namespace GCam.Core.Persistence
                 WriteGeometryRef(selection.Entity));
         }
 
-        private static XElement WriteGeometryRef(GeometryRef entity)
+        private static XElement WriteGeometryRef(GeometryRef entity, string elementName = "ref")
         {
             if (entity == null)
             {
@@ -298,7 +296,7 @@ namespace GCam.Core.Persistence
             }
 
             return new XElement(
-                "ref",
+                elementName,
                 new XAttribute("id", entity.PersistentId ?? string.Empty),
                 new XAttribute("kind", entity.Kind.ToString()),
                 entity.DisplayName == null ? null : new XAttribute("name", entity.DisplayName));
@@ -461,14 +459,17 @@ namespace GCam.Core.Persistence
             {
                 Id = ReadString(element, "id") ?? Guid.NewGuid().ToString("D"),
                 Name = ReadString(element, "name"),
-                CoordinateSystemName = ReadString(element, "coordinateSystem"),
+                CoordinateSystem = ReadGeometryRefOrName(
+                    element.Element("coordinateSystem"),
+                    ReadString(element, "coordinateSystem"),
+                    GeometryRefKind.CoordinateSystem),
                 WorkOffset = ReadInt(element, "workOffset", WorkOffsets.First),
             };
 
-            job.ModelBodyNames.AddRange(
+            job.ModelBodies.AddRange(
                 element.Elements("bodies").Elements("body")
-                    .Select(b => ReadString(b, "name"))
-                    .Where(n => !string.IsNullOrEmpty(n)));
+                    .Select(b => ReadGeometryRefOrName(b, null, GeometryRefKind.Body))
+                    .Where(b => b != null));
 
             job.Stock = ReadStock(element.Element("stock"));
             ReadExtra(element.Element("extra"), job.Extra);
@@ -599,6 +600,40 @@ namespace GCam.Core.Persistence
             };
         }
 
+        /// <summary>
+        /// Reads a reference that may have been written before references existed.
+        /// </summary>
+        /// <remarks>
+        /// Parts saved before 2026-09-13 stored bodies and coordinate systems as bare
+        /// names, so a reference read from one has a display name and no persistent id.
+        /// That is a usable state: the SOLIDWORKS side falls back to selecting by name and
+        /// stamps the id in as soon as it resolves one, so an old part migrates the first
+        /// time it is opened and saved.
+        /// </remarks>
+        private static GeometryRef ReadGeometryRefOrName(
+            XElement element, string legacyName, GeometryRefKind kind)
+        {
+            GeometryRef reference = ReadGeometryRef(element);
+
+            if (reference != null)
+            {
+                if (reference.Kind == GeometryRefKind.Unknown)
+                {
+                    reference.Kind = kind;
+                }
+
+                return reference;
+            }
+
+            // A <body name="Boss-Extrude1"/> from before, or coordinateSystem="..." as an
+            // attribute on the job rather than an element under it.
+            string name = ReadString(element, "name") ?? legacyName;
+
+            return string.IsNullOrWhiteSpace(name)
+                ? null
+                : new GeometryRef { Kind = kind, DisplayName = name };
+        }
+
         private static GeometryRef ReadGeometryRef(XElement element)
         {
             if (element == null)
@@ -683,7 +718,10 @@ namespace GCam.Core.Persistence
             }
 
             frame.InheritFromJob = ReadBool(element, "inherit", true);
-            frame.CoordinateSystemName = ReadString(element, "coordinateSystem");
+            frame.CoordinateSystem = ReadGeometryRefOrName(
+                element.Element("coordinateSystem"),
+                ReadString(element, "coordinateSystem"),
+                GeometryRefKind.CoordinateSystem);
 
             return frame;
         }

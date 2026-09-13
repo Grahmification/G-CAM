@@ -1,6 +1,8 @@
 using System;
 using GCam.Core;
 using GCam.Core.Geometry.Primitives;
+using GCam.Core.Model;
+using GCam.SolidWorks.Selection;
 using SolidWorks.Interop.sldworks;
 
 namespace GCam.SolidWorks.Extraction
@@ -40,9 +42,21 @@ namespace GCam.SolidWorks.Extraction
         /// missing feature, and machining at the part origin is a visible, recoverable
         /// wrong answer where refusing to draw anything is just a mystery.
         /// </remarks>
-        public static JobFrame Resolve(SldWorks swApp, ModelDoc2 model, string coordinateSystemName)
+        public static JobFrame Resolve(SldWorks swApp, ModelDoc2 model, GeometryRef coordinateSystem)
         {
-            if (swApp == null || model == null || string.IsNullOrWhiteSpace(coordinateSystemName))
+            if (swApp == null || model == null || coordinateSystem == null || coordinateSystem.IsEmpty)
+            {
+                return JobFrame.PartOrigin;
+            }
+
+            // The reference decides which name to measure, so a coordinate system that has
+            // been renamed since the job was saved still resolves. A reference that no
+            // longer points at anything falls back to the part origin rather than to a
+            // stale name, which could now belong to a different feature entirely.
+            string coordinateSystemName = JobSelections.CurrentCoordinateSystemName(
+                model, coordinateSystem);
+
+            if (string.IsNullOrWhiteSpace(coordinateSystemName))
             {
                 return JobFrame.PartOrigin;
             }

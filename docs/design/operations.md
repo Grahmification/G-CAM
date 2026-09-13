@@ -244,10 +244,10 @@ implemented in `GCam.SolidWorks/Extraction`. A reference that no longer resolves
 `Warning` on the operation naming the missing entity — never a silent empty selection,
 which would generate an empty toolpath that looks like success.
 
-Persistent references, not names, from the start — which is what `Job.ModelBodyNames` and
-both `CoordinateSystemName`s still need to become. Their justification was that jobs did
-not survive a reopen; jobs are persisted now, so a renamed body silently changes what a
-proven job cuts. See [Jobs](jobs.md).
+Persistent references, not names — which is now true of what a *job* points at as well:
+`Job.ModelBodies`, `Job.CoordinateSystem` and `OperationFrame.CoordinateSystem` are all
+`GeometryRef`s, with names kept as the display label and the migration fallback. See
+[Jobs](jobs.md).
 
 ### Selection modifiers are stored as intent, not baked in
 

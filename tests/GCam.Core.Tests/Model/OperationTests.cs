@@ -204,7 +204,12 @@ namespace GCam.Core.Tests.Model
             operation.Frame.InheritFromJob = false;
             Assert.Equal("Part origin", operation.Frame.DisplayName);
 
-            operation.Frame.CoordinateSystemName = "Coordinate System2";
+            operation.Frame.CoordinateSystem = new GeometryRef
+            {
+                PersistentId = "cs-id",
+                Kind = GeometryRefKind.CoordinateSystem,
+                DisplayName = "Coordinate System2",
+            };
             Assert.Equal("Coordinate System2", operation.Frame.DisplayName);
         }
     }

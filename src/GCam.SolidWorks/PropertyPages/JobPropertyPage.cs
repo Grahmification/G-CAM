@@ -405,12 +405,12 @@ namespace GCam.SolidWorks.PropertyPages
 
             model.ClearSelection2(true);
 
-            var missing = JobSelections.SelectBodies(model, _working.ModelBodyNames, MarkBodies);
+            var missing = JobSelections.SelectBodies(model, _working.ModelBodies, MarkBodies);
             if (missing.Count > 0)
             {
                 // Not an error dialog: the user is looking at the page and will see the
                 // box is short. Selecting by name is why this can happen at all, and the
-                // note at Job.ModelBodyNames says what replaces it.
+                // note at Job.ModelBodies says how they are identified.
                 Log.Warn(
                     "Job '{0}' refers to {1} body/bodies this part no longer has: {2}.",
                     _working.Name,
@@ -418,12 +418,12 @@ namespace GCam.SolidWorks.PropertyPages
                     string.Join(", ", missing));
             }
 
-            if (!JobSelections.SelectCoordinateSystem(model, _working.CoordinateSystemName, MarkCoordinateSystem))
+            if (!JobSelections.SelectCoordinateSystem(model, _working.CoordinateSystem, MarkCoordinateSystem))
             {
                 Log.Warn(
                     "Job '{0}' refers to coordinate system '{1}', which this part no longer has.",
                     _working.Name,
-                    _working.CoordinateSystemName);
+                    _working.CoordinateSystemDisplayName);
             }
         }
 
@@ -500,15 +500,17 @@ namespace GCam.SolidWorks.PropertyPages
 
             if (id == IdBodies)
             {
-                _working.ModelBodyNames = JobSelections.NamesWithMark(model, MarkBodies);
+                _working.ModelBodies = JobSelections.RefsWithMark(
+                    model, MarkBodies, GeometryRefKind.Body);
                 UpdatePreview();
                 return;
             }
 
             if (id == IdCoordinateSystem)
             {
-                _working.CoordinateSystemName =
-                    JobSelections.NamesWithMark(model, MarkCoordinateSystem).FirstOrDefault();
+                _working.CoordinateSystem = JobSelections
+                    .RefsWithMark(model, MarkCoordinateSystem, GeometryRefKind.CoordinateSystem)
+                    .FirstOrDefault();
                 UpdatePreview();
             }
         }
@@ -581,8 +583,8 @@ namespace GCam.SolidWorks.PropertyPages
         private void CommitToJob()
         {
             _target.Name = _working.Name;
-            _target.ModelBodyNames = _working.ModelBodyNames;
-            _target.CoordinateSystemName = _working.CoordinateSystemName;
+            _target.ModelBodies = _working.ModelBodies;
+            _target.CoordinateSystem = _working.CoordinateSystem;
             _target.Stock = _working.Stock;
             _target.WorkOffset = _working.WorkOffset;
         }

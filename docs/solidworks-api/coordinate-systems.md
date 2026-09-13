@@ -104,6 +104,7 @@ at that boundary and everything above it is millimetres.
   one to check.
 - **Assumed:** that `GetExtremePoint` is cheap enough to call six times per body on every
   keystroke in a stock field. It has not been measured; it has also not been noticed.
-- Selections are still resolved **by name**. When jobs start being saved into the
-  document these become persistent reference ids from
-  `IModelDocExtension::GetPersistReference3` — see the note on `Job.ModelBodyNames`.
+- Selections are **identified** by persistent reference and **resolved** by name: the
+  reference from `IModelDocExtension::GetPersistReference3` says which name to ask
+  `SelectByID2` for now, so a renamed coordinate system still resolves. See
+  [Jobs](../design/jobs.md) for the migration of parts saved before references.

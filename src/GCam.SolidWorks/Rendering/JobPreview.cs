@@ -134,9 +134,9 @@ namespace GCam.SolidWorks.Rendering
         /// </remarks>
         private void Build(Job job)
         {
-            JobFrame frame = CoordinateSystems.Resolve(_swApp, _model, job.CoordinateSystemName);
+            JobFrame frame = CoordinateSystems.Resolve(_swApp, _model, job.CoordinateSystem);
 
-            List<Body2> bodies = JobSelections.SolidBodies(_model, job.ModelBodyNames);
+            List<Body2> bodies = JobSelections.SolidBodies(_model, job.ModelBodies);
 
             if (bodies.Count == 0)
             {

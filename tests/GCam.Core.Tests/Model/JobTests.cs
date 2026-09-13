@@ -7,11 +7,23 @@ namespace GCam.Core.Tests.Model
 {
     public class JobTests
     {
+        private static GeometryRef Ref(string name) => new GeometryRef
+        {
+            PersistentId = name + "-id",
+            Kind = GeometryRefKind.Body,
+            DisplayName = name,
+        };
+
         private static Job SampleJob()
         {
             var job = new Job { Name = "Roughing" };
-            job.ModelBodyNames.Add("Boss-Extrude1");
-            job.CoordinateSystemName = "Coordinate System1";
+            job.ModelBodies.Add(Ref("Boss-Extrude1"));
+            job.CoordinateSystem = new GeometryRef
+            {
+                PersistentId = "cs-id",
+                Kind = GeometryRefKind.CoordinateSystem,
+                DisplayName = "Coordinate System1",
+            };
             job.Stock.SideOffset = 2;
             job.Operations.Add(new Operation(new Contour2dSettings()) { Name = "Contour1" });
             job.Extra["hsm.origin"] = "imported";
@@ -34,7 +46,7 @@ namespace GCam.Core.Tests.Model
         public void Choosing_a_body_stops_it_machining_the_whole_part()
         {
             var job = new Job();
-            job.ModelBodyNames.Add("Boss-Extrude1");
+            job.ModelBodies.Add(Ref("Boss-Extrude1"));
 
             Assert.False(job.MachinesWholePart);
         }
@@ -71,9 +83,9 @@ namespace GCam.Core.Tests.Model
             Job job = SampleJob();
 
             Job copy = job.Clone();
-            copy.ModelBodyNames.Add("Boss-Extrude2");
+            copy.ModelBodies.Add(Ref("Boss-Extrude2"));
 
-            Assert.Single(job.ModelBodyNames);
+            Assert.Single(job.ModelBodies);
         }
 
         [Fact]
