@@ -136,7 +136,7 @@ Every one of these is called *by* something outside G-CAM, so every one needs a 
 | 5 | `OnCommandEnable` | `GCamAddin.Callbacks` | `quiet: true`, return `0` (disabled). Called constantly, so **never** show UI; repeat suppression keeps it to one log line |
 | 6 | `JobTreeTabHost` constructor | `GCam.SolidWorks.Hosting` | Catch in the ctor; on failure host a plain error label so the tab appears but empty. An exception here means no tab and no explanation |
 | 7 | PropertyManager page handlers | `PropertyPages/` | `PmpHandlerBase` implements every `IPropertyManagerPage2Handler9` method with the try/catch and delegates to a protected virtual, so pages cannot forget. Note several take `out` parameters |
-| 8 | Document events (`SaveToStorageNotify`, `LoadFromStorageNotify`, file open/close) | `Events/` | Return `0` on failure. A throw during save risks corrupting the document's third-party storage |
+| 8 | Document events (`ActiveModelDocChangeNotify`, `FileCloseNotify` in `Hosting/JobTreeTabs`; later `SaveToStorageNotify`, `LoadFromStorageNotify` in `Events/`) | `Hosting/`, `Events/` | Return `0` on failure. A throw during save risks corrupting the document's third-party storage |
 | 9 | `BufferSwapNotify` render callback | `Rendering/ViewHooks` | `quiet: true`. The renderer counts its own consecutive failures and unhooks after 3, reporting once. Fires on every redraw — a dialog here is an unkillable modal storm |
 | 10 | WPF event handlers and commands | `GCam.UI` | Wrap in viewmodel command bodies; `Dispatcher.UnhandledException` as backstop |
 | 11 | Background toolpath tasks | `Core` via `Task.Run` | try/catch inside the awaited method. Presentation marshals back through `SwDispatcher` — a WPF dialog cannot be shown from a worker thread |

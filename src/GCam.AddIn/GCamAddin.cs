@@ -26,7 +26,7 @@ namespace GCam.AddIn
         private SldWorks _swApp;
         private int _addinID = -1;
         private ICommandManager _iCmdMgr;
-        private FeatMgrView _jobTreeTab;
+        private JobTreeTabs _jobTreeTabs;
 
         private IGCamLog _log = NullLog.Instance;
         private ErrorHandler _errors;
@@ -83,11 +83,11 @@ namespace GCam.AddIn
 
             try
             {
-                CreateJobTreeTab();
+                StartJobTreeTabs();
             }
             catch (Exception ex)
             {
-                _errors.Handle(ex, nameof(CreateJobTreeTab));
+                _errors.Handle(ex, nameof(StartJobTreeTabs));
             }
 
             _log.Info("G-CAM connected");
@@ -102,11 +102,11 @@ namespace GCam.AddIn
         {
             try
             {
-                RemoveJobTreeTab();
+                StopJobTreeTabs();
             }
             catch (Exception ex)
             {
-                _errors?.Handle(ex, nameof(RemoveJobTreeTab), quiet: true);
+                _errors?.Handle(ex, nameof(StopJobTreeTabs), quiet: true);
             }
 
             try
@@ -213,28 +213,22 @@ namespace GCam.AddIn
         }
 
         /// <summary>
-        /// Adds the G-CAM tab to the FeatureManager pane.
+        /// Starts keeping a G-CAM tab in the Manager Pane of every open part.
         /// </summary>
         /// <remarks>
+        /// The tab belongs to a document rather than to the application, so this cannot
+        /// be a single call at connect time - see <see cref="JobTreeTabs"/>, which owns
+        /// the document notifications and the per-document tabs.
+        ///
         /// CreateFeatureMgrControl4 activates <see cref="JobTreeTabHost"/> by ProgID as
         /// an ActiveX control, so GCam.SolidWorks.dll must be COM-registered for the tab
         /// to appear. If it silently fails to show, that registration is the first thing
         /// to check.
-        ///
-        /// The tab is created against the active document; it is not global. Documents
-        /// opened later need the same call, which is what the document-open event will
-        /// be for once there is state worth showing.
         /// </remarks>
-        private void CreateJobTreeTab()
+        private void StartJobTreeTabs()
         {
-            var model = _swApp.ActiveDoc as ModelDoc2;
-            if (model == null)
-            {
-                _log.Debug("No active document at connect time; job tree tab not created.");
-                return;
-            }
-
-            // Three bitmaps, one per resolution band. SOLIDWORKS picks by DPI.
+            // Three bitmaps, one per resolution band. SOLIDWORKS picks by DPI and reads
+            // them from disk, so they ship beside the assembly.
             string dir = Path.Combine(
                 Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty,
                 "Resources", "icons");
@@ -246,30 +240,14 @@ namespace GCam.AddIn
                 Path.Combine(dir, "main40.png"),
             };
 
-            _jobTreeTab = model.ModelViewManager.CreateFeatureMgrControl4(
-                tabIcons,
-                JobTreeTabHost.ProgIdValue,
-                string.Empty,
-                "G-CAM",
-                (int)swFeatMgrPane_e.swFeatMgrPaneBottom);
-
-            if (_jobTreeTab == null)
-            {
-                _log.Warn(
-                    "CreateFeatureMgrControl4 returned null. Is GCam.SolidWorks.dll registered? " +
-                    "Run deploy\\register.cmd as administrator.");
-            }
+            _jobTreeTabs = new JobTreeTabs(_swApp, tabIcons, _errors, _log);
+            _jobTreeTabs.Start();
         }
 
-        private void RemoveJobTreeTab()
+        private void StopJobTreeTabs()
         {
-            if (_jobTreeTab == null)
-            {
-                return;
-            }
-
-            Marshal.ReleaseComObject(_jobTreeTab);
-            _jobTreeTab = null;
+            _jobTreeTabs?.Dispose();
+            _jobTreeTabs = null;
         }
     }
 }
