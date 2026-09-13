@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 G-CAM is a SOLIDWORKS 2025 add-in (C#, .NET Framework 4.8) that generates CAM toolpaths, in the spirit of HSMWorks or Fusion 360's CAM workspace. Internal team tool, 3-axis milling only.
 
-Built so far: the add-in loads with a CommandManager tab; a G-CAM tab in the Manager Pane of every open part showing a tree of jobs with rename and a context menu; a Job PropertyManager page with model, stock, coordinate system and work offset; an empty Operation page; a tool library model with HSMWorks import; a tool library browser with create/edit/delete and a tabbed tool editor; an OpenGL overlay drawing the selected job's stock box and coordinate system triad in the 3D view; and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet, and **jobs are not saved into the document**, so they are lost when the part closes. `docs/architecture.md` has the full status table and the planned layout.
+**No toolpath has been computed and nothing has been posted**, and **jobs are not saved into the document**, so they are lost when the part closes. `docs/architecture.md` opens with the status table — trust it over any impression of progress, including the one this file gives.
 
 ## Layout
 
@@ -22,7 +22,7 @@ tests/GCam.Core.Tests           headless, no SOLIDWORKS needed
 tests/GCam.Integration.Tests    needs SOLIDWORKS (empty)
 ```
 
-`GCamAddin` is a `partial` class split by concern — `.cs` (lifetime), `.CommandManager.cs` (toolbar/tab construction), `.Callbacks.cs` (toolbar callbacks), `GCamAddinRegistration.cs` (COM registration). Keep that split.
+`GCamAddin` is one `partial` class split by concern — `.cs` (lifetime), `.CommandManager.cs` (toolbar/tab construction), `.Callbacks.cs` (toolbar callbacks), `.Jobs.cs` (job commands), `GCamAddinRegistration.cs` (COM registration). A new concern gets a new `GCamAddin.*.cs`.
 
 ## Build, test, register
 
@@ -30,64 +30,41 @@ tests/GCam.Integration.Tests    needs SOLIDWORKS (empty)
 python tools/build.py          # build + test, with the noise filtered
 ```
 
-Use that rather than `dotnet build` directly — the `build` skill explains why. Raw
-output for this project misleads twice over: SOLIDWORKS file locks look like build
-failures, and the unelevated regasm step prints warnings containing the word "error",
-so grepping for "error" reports failures on a clean build. Both have already caused
-wrong conclusions here.
+Use that rather than `dotnet build` directly — SOLIDWORKS file locks look like build failures, and the unelevated `regasm` step warns in words containing "error". Both have already caused wrong conclusions here; the `build` skill has the detail.
 
-Underneath it is `dotnet build G-CAM.sln` and
-`dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj` (232 tests, headless).
+**Close SOLIDWORKS before building** if you intend to load the add-in afterwards; it holds the output DLLs open, so the code compiles but the add-in folder keeps the previous build.
 
-**Close SOLIDWORKS before building** if you intend to load the add-in afterwards — it
-holds the output DLLs open, so the code compiles but the add-in folder keeps the
-previous build.
+Registration writes to HKLM and needs elevation: run `deploy/register.cmd` from an elevated prompt, or run Visual Studio as administrator and the post-build step keeps it in sync. **Two assemblies get registered**, not one — registering only `GCam.AddIn.dll` gives a working toolbar and a silently missing tab. Ordinary code changes need no re-registration; `docs/solidworks-api/addin-wont-load.md` lists the changes that do.
 
-Registration writes to HKLM and needs elevation. The post-build `regasm` step uses `ContinueOnError`, so an unelevated build *warns* and still produces DLLs. To actually register, run `deploy/register.cmd` from an elevated prompt — or run Visual Studio as administrator and the post-build step keeps registration in sync automatically.
-
-**Two assemblies get registered**, not one: `GCam.AddIn.dll` (the add-in) and `GCam.SolidWorks.dll` (the ActiveX control hosting the FeatureManager tab). Registering only the first gives a working toolbar and a silently missing tab.
-
-Re-register when the assembly version, name, output path (including Debug↔Release), or COM GUID changes — not for ordinary code changes.
-
-F5 launches SOLIDWORKS with the debugger attached; the launch target is in `GCam.AddIn.csproj`, not a gitignored `.user` file.
-
-## When the add-in will not load
-
-SOLIDWORKS reports nothing — the checkbox just un-ticks. Run `tools/diagnose-addin.ps1`; it checks registration, flags stale CLSID entries, and reproduces the activation outside SOLIDWORKS. Start-up failures also land in `%LOCALAPPDATA%\G-CAM\logs\startup-failure.log`. See `docs/solidworks-api/addin-wont-load.md`.
-
-## API reference
-
-Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help offline from the local CHM files — use it to check any signature, enum value, or Remarks before writing a call, rather than guessing or fetching help.solidworks.com.
+**When the add-in will not load**, SOLIDWORKS reports nothing — the checkbox just un-ticks. Run `tools/diagnose-addin.ps1`; start-up failures also land in `%LOCALAPPDATA%\G-CAM\logs\startup-failure.log`. Same doc.
 
 ## Architecture rules
 
-`docs/architecture.md` is authoritative. The ones that bite most often:
+`docs/architecture.md` is authoritative and argues each of these in full under "Rules with teeth". The ones that bite most often:
 
-**`GCam.Core` never references SolidWorks.** Enforced by an MSBuild target in `GCam.Core.csproj`, not left to discipline. It keeps the toolpath math testable without a licence, lets calculation run off the STA thread, and preserves the out-of-process escape hatch. Core declares interfaces; `GCam.SolidWorks` implements them; `GCam.AddIn` wires them together.
+- **`GCam.Core` never references SolidWorks.** Core declares the interfaces, `GCam.SolidWorks` implements them, `GCam.AddIn` wires them together. An MSBuild target enforces it, so a violation fails the build with the fix in the message.
+- **No exception leaves G-CAM code.** Every method SOLIDWORKS, WPF or the task scheduler can call wraps its body in try/catch and calls `ErrorHandler.Handle`; interior code throws freely. An exception escaping `ConnectToSW` unloads the add-in silently. Entry-point list in `docs/error-handling.md`.
+- **Job and operation editing happens on SOLIDWORKS-native PropertyManager pages, not WPF.** Derive from `GCamPropertyPage`; it seals the lifecycle callbacks on purpose. See `docs/solidworks-api/property-manager-pages.md`.
+- **Never set `IPropertyManagerPageControl.Visible` on a page you are about to show.** It kills SOLIDWORKS outright — silently, with nothing in any log, and only after about the fourth show, which makes it look like anything but what it is. Pages are therefore rebuilt for every show, with controls created at the visibility they need via `AddControl2`'s options. Populate from `LoadControls` before `Show2`, never `AfterActivation`, and keep control ids unique per page — duplicates are accepted in silence.
+- **Every OpenGL draw sits inside `using (new GlState())`**, which pushes the client attribute stack as well as the server one — pop only the server stack and SOLIDWORKS ends up reading through our vertex buffer. Draw only inside `BufferSwapNotify`; `Core/Rendering` says what to draw and `GCam.SolidWorks` says how. See `docs/solidworks-api/opengl-overlay.md`.
+- **Core works in millimetres**, SOLIDWORKS in metres. Convert only at the edges, using `GCam.Core.Units` — never a bare `25.4` or `1000`.
+- **Shared constants have one home, named for their purpose** — `GCam.Core.Units`, `GCam.Core.Precision.Epsilon`. Never a `Constants` junk drawer. A value used in one file stays private until a second caller appears.
+- **Logic worth testing goes in Core, even when it looks like UI** — `ToolSearch` is in `Core/Tooling`, not the browser viewmodel. Core owns rules; viewmodels own presentation state. There is no `GCam.UI.Tests`, and moving the rule beats adding one.
+- **Tool library edits are held in memory until the browser's OK, but creating a library is not an edit** — `CreateNew` and `SaveAsCopy` write immediately. Only `.gcamtools` is writable: ask `ToolLibraryImporter.CanWrite`, never compare extensions yourself.
+- **Settings** (`%LOCALAPPDATA%\G-CAM\settings.xml`, via `IGCamSettings`) never throw. A corrupt or unwritable file yields defaults and a log line, never a failed load.
+- **NuGet packages work only because of `AssemblyResolver`** in `GCam.AddIn/Composition` — an add-in gets no app.config, so binding redirects do not exist. Read `docs/solidworks-api/addin-dependencies.md` before debugging any "could not load file or assembly".
 
-**No exception leaves G-CAM code.** Every method SOLIDWORKS, WPF or the task scheduler can call wraps its body in try/catch and calls `ErrorHandler.Handle`. Interior code throws freely. An exception escaping `ConnectToSW` unloads the add-in silently. See `docs/error-handling.md` for the entry-point list.
+## SOLIDWORKS API
 
-**Job and operation editing happens on SOLIDWORKS-native PropertyManager pages, not WPF.** A page cannot be hosted inside G-CAM's own Manager Pane tab — SOLIDWORKS always renders it on the PropertyManager tab — so editing is a round trip back to the G-CAM tab, which `GCamPropertyPage` arranges. Derive from it; it seals the lifecycle callbacks on purpose. `PmpHandlerBase` underneath wraps all 37 `IPropertyManagerPage2Handler9` callbacks in the try/catch so a page cannot forget one. See `docs/solidworks-api/property-manager-pages.md`, including two parameters the help calls `out` that are actually `ref`.
+Target is **2025 SP3**. The `solidworks-api` skill reads the API help offline from the local CHM files — check any signature, enum value or Remarks there before writing a call, rather than guessing or fetching help.solidworks.com.
 
-**Never set `IPropertyManagerPageControl.Visible` on a page you are about to show.** It kills SOLIDWORKS outright — silently, with nothing in any log, and only after about the fourth show, which makes it look like anything but what it is. Property pages are therefore **rebuilt for every show** and controls are created with the visibility they need via `AddControl2`'s options; `GCamPropertyPage.Show` does this and the reasons are in `docs/solidworks-api/property-manager-pages.md`. Related: populate a page from `LoadControls` before `Show2`, never from `AfterActivation`, and keep control ids unique per page — duplicates are accepted in silence.
+Two traps that give no useful error when hit: use `IFrame.GetHWndx64`, not `GetHWnd`, because the 32-bit variant truncates the handle; and `SolidWorks.Interop.sldworks` declares its own `Environment` type, which collides with `System.Environment` — alias it.
 
-**3D graphics: Core says what to draw, `GCam.SolidWorks` says how, and drawing happens only inside `BufferSwapNotify`.** `Core/Rendering` describes a `RenderScene` of named layers of vertex batches — millimetres, part coordinates, no matrices and no OpenGL. `SceneRenderer` turns that into GL calls; `ViewportRenderer` hooks every window of a document. The rule that bites: **every draw must sit inside `using (new GlState())`**, which pushes the client attribute stack as well as the server one — pop only the server stack and SOLIDWORKS ends up reading through our vertex buffer. `ViewportRenderer.HasDrawn` says whether `BufferSwapNotify` ever arrived, which is what separates a broken draw from a missing notification. Verified working on 2025 SP3, including on rotated coordinate systems and with "Enhanced graphics performance" both on and off — despite what older forum advice says, that option does *not* break the overlay. See `docs/solidworks-api/opengl-overlay.md` and [0005](docs/decisions/0005-opengl-overlay-with-vertex-arrays.md).
+## Docs
 
-**Units: Core works in millimetres**, SOLIDWORKS in metres. Convert only at the edges. Conversion factors live in `GCam.Core.Units`; never write a bare `25.4` or `1000`.
+`docs/` is the project's working notebook — `solidworks-api/` for API behaviour, `cam/` for CAM domain knowledge, `decisions/` for ADRs. Check it before researching a SOLIDWORKS question; much of what is there was learned by experiment and is not in the official help. Conventions are in `docs/README.md`; tag what you add **Verified** (say on which SOLIDWORKS version), **From docs**, or **Assumed**.
 
-**Shared constants have one home**, named for their purpose — `GCam.Core.Units`, `GCam.Core.Precision.Epsilon`. Never a `Constants` junk drawer. A value used in one file stays private until a second caller appears.
-
-**Logic worth testing goes in Core, even when it looks like UI** — `ToolSearch` is in `Core/Tooling`, not the browser viewmodel. Core owns rules; viewmodels own presentation state. There is no `GCam.UI.Tests` project, and moving the rule beats adding one.
-
-**Settings** live in `%LOCALAPPDATA%\G-CAM\settings.xml`, beside the logs, via `IGCamSettings`/`XmlSettingsStore` in Core. Nothing on that path throws — a corrupt or unwritable file yields defaults and a log line, never a failed load.
-
-**Tool library edits are held in memory until committed, but creating a library is not an edit.** `LibrarySession` owns the open libraries and their dirty state; adding, editing or deleting tools waits for the browser's OK, and Cancel discards it. `CreateNew` and `SaveAsCopy` write immediately and leave the library clean — the user chose a path, and it has to appear in the folder tree. Only `.gcamtools` is writable — ask `ToolLibraryImporter.CanWrite`, never compare extensions yourself. Imported `.hsmlib` files are read-only by decision, not by omission ([0002](docs/decisions/0002-imported-libraries-are-read-only.md)).
-
-**NuGet packages need no extra work, but only because of `AssemblyResolver`** in `GCam.AddIn/Composition`. An add-in gets no app.config, so binding redirects do not exist and version unification breaks at runtime. See `docs/solidworks-api/addin-dependencies.md` before debugging any "could not load file or assembly".
-
-## Keeping the docs true
-
-**When you change the code, update the docs that describe it — in the same piece of work, not later.** Route by what changed:
+**When you change the code, update the docs that describe it — in the same piece of work, not later.** A stale doc is worse than a missing one, because it is believed; this has already actively misled here twice. The status table and any test counts rot first.
 
 | What changed | What to update |
 | --- | --- |
@@ -97,21 +74,4 @@ Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help
 | CAM domain or file-format knowledge | `docs/cam/` |
 | A rule that governs every edit, or a fact needed to get started | Here as well — sparingly, since this file loads every session |
 
-**A stale doc is worse than a missing one**, because it is believed. This has already gone wrong twice: `CLAUDE.md` described the add-in as "Hello World" and pointed at a solution path that no longer existed, long after neither was true; and the architecture tree read as a description of the repository when most of it did not exist. Both actively misled. The status table and any test counts are the first things to rot — check them whenever you touch this file.
-
 If a change makes a documented statement false, fixing that statement is part of the change, not follow-up work.
-
-## Knowledge base
-
-`docs/` is the project's working notebook — `docs/solidworks-api/` for API behaviour, `docs/cam/` for CAM domain knowledge, `docs/decisions/` for architecture decision records. See `docs/README.md` for conventions.
-
-Check it before researching a SOLIDWORKS API question; much of what is there was learned by experiment and is not in the official help. When you work something out that took real effort — an API quirk, a units convention, a snippet that finally worked — write it down there, tagged **Verified** (say on which SOLIDWORKS version), **From docs**, or **Assumed**.
-
-## SOLIDWORKS API constraints
-
-- Interop assemblies are referenced via `$(SolidWorksApiDir)` from `Directory.Build.props`, with `EmbedInteropTypes=false`. A machine without SOLIDWORKS cannot build.
-- Release COM objects with `Marshal.ReleaseComObject` rather than relying on the GC.
-- Use `IFrame.GetHWndx64`, not `GetHWnd` — SOLIDWORKS is 64-bit and the 32-bit variant truncates the handle.
-- `SolidWorks.Interop.sldworks` declares its own `Environment` type, which collides with `System.Environment`. Alias it.
-- The add-in's `Guid` in `GCamAddinRegistration.cs` (`df725bf7-…`) is SOLIDWORKS' identity for it. Unregister before changing it.
-- `[assembly: ComVisible(false)]` — visibility is opted into per type.

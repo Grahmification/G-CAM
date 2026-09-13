@@ -8,7 +8,7 @@ Official reference: the SolidWorks API Help installed alongside SolidWorks, and 
 
 ## Index
 
-- [The add-in checkbox un-ticks itself](addin-wont-load.md) — diagnosing silent add-in load failures; stale CLSID version subkeys.
+- [The add-in checkbox un-ticks itself](addin-wont-load.md) — diagnosing silent add-in load failures; stale CLSID version subkeys; which changes require re-registering.
 - [Showing WPF windows from an add-in](wpf-in-solidworks.md) — owners, modality, the 64-bit HWND, and drawing.
 - [Tabs in the Manager Pane](manager-pane-tabs.md) — why a tab created at connect time never appears, keeping one per document, and which COM objects you may release.
 - [PropertyManager pages](property-manager-pages.md) — why a page cannot live inside your own tab and how to get the user back to it, `ref` where the help says `out`, and the handler QI that fails silently.

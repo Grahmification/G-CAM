@@ -30,6 +30,26 @@ The diagnosis that nailed it: install an `AssemblyResolve` handler in a test hos
 
 **Avoid it recurring:** run `deploy\register.cmd Debug /u` *before* renaming or deleting a registered assembly. Once the DLL is gone, `regasm /unregister` cannot clean up after it and the key must be deleted by hand.
 
+## When re-registration is actually needed
+
+Registration records four things about the assembly: its CLSID, its name, its version, and
+the path `regasm /codebase` wrote. Ordinary code changes touch none of them, so the vast
+majority of builds need no re-registration at all. Re-register when one of these changes:
+
+| Change | Why it breaks |
+| --- | --- |
+| Assembly version (`$(Version)` in `Directory.Build.props`) | `regasm` writes a version subkey and leaves the old one; the highest wins — the failure above |
+| Assembly name | The CLSID points at a name that no longer exists |
+| Output path, **including Debug↔Release** | `CodeBase` points at the DLL you are no longer building |
+| The `Guid` in `GCamAddinRegistration.cs` | That GUID *is* SOLIDWORKS' identity for the add-in |
+
+The GUID case has a trap: unregister **before** changing it. Once the assembly registers
+under a new GUID, nothing knows about the old key, and SOLIDWORKS keeps offering the stale
+entry in Tools > Add-Ins until it is deleted by hand.
+
+Running Visual Studio as administrator sidesteps the whole question — the post-build
+`regasm` step then succeeds on every build and registration never drifts.
+
 ## Other causes worth checking
 
 **Never registered, or registered unelevated.** `regasm` writes to HKLM. Double-clicking `register.cmd` does not elevate — right-click, Run as administrator. The script warns if it is not elevated.
@@ -40,7 +60,9 @@ The diagnosis that nailed it: install an `AssemblyResolve` handler in a test hos
 
 ## If activation succeeds but the add-in still fails
 
-Then the failure *is* in `ConnectToSW`, and an exception thrown there makes SOLIDWORKS unload the add-in just as silently. Attach a debugger:
+Then the failure *is* in `ConnectToSW`, and an exception thrown there makes SOLIDWORKS unload the add-in just as silently.
+
+F5 on `GCam.AddIn` launches SOLIDWORKS with the debugger already attached — the launch target lives in `GCam.AddIn.csproj` rather than the `.user` file Visual Studio would normally write it to, because `.user` files are gitignored and the setting was silently lost once already. Otherwise, attach by hand:
 
 1. Visual Studio > Debug > Attach to Process > `SLDWORKS.exe`
 2. Debug > Windows > Exception Settings, tick **Common Language Runtime Exceptions**

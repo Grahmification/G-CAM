@@ -121,9 +121,13 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │
 │   └── GCam.AddIn/                    thin: entry point + wiring only
 │       ├── GCamAddin.cs               ISwAddin — ConnectToSW / DisconnectFromSW
+│       ├── GCamAddin.CommandManager.cs   toolbar, menu and ribbon tab construction
+│       ├── GCamAddin.Callbacks.cs     the methods those buttons resolve by name
+│       ├── GCamAddin.Jobs.cs          job commands behind the tree and the buttons
 │       ├── GCamAddinRegistration.cs   COM registration (already written)
-│       ├── Composition/               DI wiring + Serilog setup
-│       └── Commands/                  CommandManager tabs, buttons, callbacks
+│       ├── Composition/               DI wiring, Serilog setup, AssemblyResolver
+│       ├── Diagnostics/               Serilog adapter for Core's IGCamLog
+│       └── Commands/                  GCamCommand — the command ids
 │
 ├── tests/
 │   ├── GCam.Core.Tests/               headless — no SOLIDWORKS, runs on any machine
@@ -133,6 +137,12 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 └── deploy/
     └── register.cmd                elevated regasm helper; installer comes later
 ```
+
+**`GCamAddin` is one `partial` class split by concern**, not several classes. SOLIDWORKS
+resolves toolbar callbacks by name against the single object registered with
+`SetAddinCallbackInfo2`, so they have to be members of that one type — the split is how it
+stays readable as lifetime, UI construction, callbacks and job commands accumulate. Keep
+it: a new concern gets a new `GCamAddin.*.cs`, not a longer `GCamAddin.cs`.
 
 ## Dependency rules
 
@@ -294,7 +304,7 @@ The solution is set up and all seven projects build. No product code yet beyond 
 - Solution flattened: `G-CAM.sln` at the repo root, projects under `src/` and `tests/`. The old `G-CAM/G-CAM/` nesting is gone.
 - Renamed to `GCam.*` for assemblies and namespaces — `G-CAM` as an assembly name forces the namespace `G_CAM`, which reads badly across seven projects. "G-CAM" remains the product name.
 - All projects are SDK-style. **Verified:** `<UseWPF>true</UseWPF>` does work with `net48` under the SDK, XAML compilation included — this was flagged as an assumption and is now tested.
-- `Directory.Build.props` holds shared settings and `$(SolidWorksApiDir)`, so the interop `HintPath`s are no longer the brittle `..\..\..\..\..\..` relative paths. Override it on the command line if SOLIDWORKS lives elsewhere.
+- `Directory.Build.props` holds shared settings and `$(SolidWorksApiDir)`, so the interop `HintPath`s are no longer the brittle `..\..\..\..\..\..` relative paths. Override it on the command line if SOLIDWORKS lives elsewhere. Every interop reference sets `EmbedInteropTypes=false`, as the SDK templates do. A consequence worth knowing before setting up a build agent: **the solution does not build on a machine without SOLIDWORKS installed**, because those `HintPath`s cannot resolve. `GCam.Core` and its tests build anywhere, which is the whole point of the Core-purity rule above.
 - Test stack is xUnit. FluentAssertions is deliberately absent: v8+ moved to a paid Xceed licence in January 2025. Pin `[7.0.0]` or use the AwesomeAssertions fork if you want it.
 
 **Registration is now non-fatal.** The post-build `regasm` step uses `ContinueOnError`, so an ordinary unelevated build warns instead of failing and still produces a DLL. Run `deploy/register.cmd` from an elevated prompt to actually register. This matters more than it sounds: the old setup made every unelevated build look broken.
