@@ -6,10 +6,11 @@ This is a notebook, not a manual. Half-finished notes are fine and better than n
 
 ## Where things go
 
-Start with **[architecture.md](architecture.md)** — the project layout, the dependency rules, and the constraints that shape them. **[error-handling.md](error-handling.md)** covers the boundary/logging/reporting plan.
+Start with **[architecture.md](architecture.md)** — the project layout, the dependency rules, and the constraints that shape them. Its status table links to the design note for each subsystem, so it is also the way in when you know *what* you are working on but not *where* it lives. **[error-handling.md](error-handling.md)** covers the boundary/logging/reporting plan.
 
 | Folder | Contents |
 | --- | --- |
+| `design/` | How one subsystem of G-CAM hangs together: the objects, which project each lives in, and what decided the shape. One file per subsystem, linked from the status table in `architecture.md`. |
 | `solidworks-api/` | How the SolidWorks API actually behaves: interfaces, COM quirks, units, event and lifetime gotchas, working snippets. |
 | `cam/` | CAM domain knowledge independent of SolidWorks: toolpath strategies, geometry/offsetting, feeds and speeds, G-code dialects, post-processing. |
 | `decisions/` | Architecture decisions and why they were made. See `decisions/TEMPLATE.md`. |

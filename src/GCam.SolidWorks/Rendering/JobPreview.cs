@@ -63,7 +63,7 @@ namespace GCam.SolidWorks.Rendering
         /// The cost is that it is not screen-constant the way HSMWorks' is: zoom far
         /// enough out and it shrinks with everything else. Making it screen-constant
         /// would mean rebuilding the geometry on every view change and a scene per window
-        /// rather than per document - see the note in docs/architecture.md.
+        /// rather than per document - see the note in docs/design/jobs.md.
         /// </remarks>
         private const double TriadFraction = 0.30;
 

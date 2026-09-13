@@ -62,13 +62,16 @@ Two traps that give no useful error when hit: use `IFrame.GetHWndx64`, not `GetH
 
 ## Docs
 
-`docs/` is the project's working notebook — `solidworks-api/` for API behaviour, `cam/` for CAM domain knowledge, `decisions/` for ADRs. Check it before researching a SOLIDWORKS question; much of what is there was learned by experiment and is not in the official help. Conventions are in `docs/README.md`; tag what you add **Verified** (say on which SOLIDWORKS version), **From docs**, or **Assumed**.
+`docs/` is the project's working notebook — `design/` for how one subsystem hangs together, `solidworks-api/` for API behaviour, `cam/` for CAM domain knowledge, `decisions/` for ADRs. Check it before researching a SOLIDWORKS question; much of what is there was learned by experiment and is not in the official help. Conventions are in `docs/README.md`; tag what you add **Verified** (say on which SOLIDWORKS version), **From docs**, or **Assumed**.
+
+**Before working on an area, read its design note** — the status table at the top of `docs/architecture.md` links each area to one. It is faster than reading the code, and it names the projects the area spans, which is rarely just the obvious one.
 
 **When you change the code, update the docs that describe it — in the same piece of work, not later.** A stale doc is worse than a missing one, because it is believed; this has already actively misled here twice. The status table and any test counts rot first.
 
 | What changed | What to update |
 | --- | --- |
 | A project, folder, dependency rule, or anything in the layout | `docs/architecture.md` — the tree *and* the status table at the top |
+| How one subsystem works, or a new one | Its note in `docs/design/`, indexed in that README and linked from the status table |
 | A choice with real alternatives, that you would otherwise re-argue in six months | A new ADR in `docs/decisions/`, indexed in its README |
 | SOLIDWORKS API behaviour learned by experiment | `docs/solidworks-api/`, tagged Verified / From docs / Assumed |
 | CAM domain or file-format knowledge | `docs/cam/` |
