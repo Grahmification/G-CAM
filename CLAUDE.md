@@ -69,6 +69,22 @@ Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help
 
 **NuGet packages need no extra work, but only because of `AssemblyResolver`** in `GCam.AddIn/Composition`. An add-in gets no app.config, so binding redirects do not exist and version unification breaks at runtime. See `docs/solidworks-api/addin-dependencies.md` before debugging any "could not load file or assembly".
 
+## Keeping the docs true
+
+**When you change the code, update the docs that describe it — in the same piece of work, not later.** Route by what changed:
+
+| What changed | What to update |
+| --- | --- |
+| A project, folder, dependency rule, or anything in the layout | `docs/architecture.md` — the tree *and* the status table at the top |
+| A choice with real alternatives, that you would otherwise re-argue in six months | A new ADR in `docs/decisions/`, indexed in its README |
+| SOLIDWORKS API behaviour learned by experiment | `docs/solidworks-api/`, tagged Verified / From docs / Assumed |
+| CAM domain or file-format knowledge | `docs/cam/` |
+| A rule that governs every edit, or a fact needed to get started | Here as well — sparingly, since this file loads every session |
+
+**A stale doc is worse than a missing one**, because it is believed. This has already gone wrong twice: `CLAUDE.md` described the add-in as "Hello World" and pointed at a solution path that no longer existed, long after neither was true; and the architecture tree read as a description of the repository when most of it did not exist. Both actively misled. The status table and any test counts are the first things to rot — check them whenever you touch this file.
+
+If a change makes a documented statement false, fixing that statement is part of the change, not follow-up work.
+
 ## Knowledge base
 
 `docs/` is the project's working notebook — `docs/solidworks-api/` for API behaviour, `docs/cam/` for CAM domain knowledge, `docs/decisions/` for architecture decision records. See `docs/README.md` for conventions.
