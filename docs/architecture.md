@@ -29,7 +29,8 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Model` — Operation, heights, geometry references, the part's tool list, Toolpath | Done; nothing produces a toolpath yet | [Operations](design/operations.md) |
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d parameters | Started — no strategy computes anything yet | [Operations](design/operations.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; waiting for a strategy to run | [Operations](design/operations.md) |
-| `SolidWorks/Persistence` | Designed, not started | [Operations](design/operations.md) |
+| `Core/Persistence` — the stored document format and the toolpath bytes | Done, round-tripped headlessly | [Operations](design/operations.md) |
+| `SolidWorks/Persistence` — getting those bytes into the part | Designed, not started | [Operations](design/operations.md) |
 | `Core/Simulation`, `Commands`, `Posting` | Not started | |
 | `Core/Geometry` beyond the primitives | Not started | |
 | `Posts` | Empty project | |
@@ -105,6 +106,9 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │                              Staleness (what a change invalidates)
 │   │   ├── Simulation/                ISimulator, ZMap/, Verification/
 │   │   ├── Commands/                  ICommand, CommandStack, DirtyTracker
+│   │   ├── Persistence/               GcamDocumentXml (the stored format, both ways),
+│   │   │                              ToolpathBinary — what the bytes mean; the
+│   │   │                              SolidWorks project owns getting them in and out
 │   │   ├── Posting/                   CLData — machine-neutral canonical toolpath
 │   │   ├── Diagnostics/               IGCamLog, IErrorPresenter, ErrorHandler
 │   │   ├── Settings/                  IGCamSettings + XmlSettingsStore

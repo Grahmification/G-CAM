@@ -19,8 +19,26 @@ namespace GCam.Core.Strategies.Contour2d
     /// adding a property here is cheap once one is wanted. Adding all 152 before anything
     /// can cut is not.
     /// </remarks>
-    public sealed class Contour2dSettings : StrategySettings
+    public sealed class Contour2dSettings : StrategySettings, IContourSelectionOwner
     {
+        /// <summary>
+        /// Parameter names as they appear in files. Changing one silently drops whatever
+        /// was stored under the old name, so they are spelled out rather than derived from
+        /// the property names.
+        /// </summary>
+        private static class Names
+        {
+            public const string Direction = "direction";
+            public const string StockToLeave = "stockToLeave";
+            public const string VerticalStockToLeave = "verticalStockToLeave";
+            public const string MultipleDepths = "doMultipleDepths";
+            public const string MaximumStepdown = "maximumStepdown";
+            public const string EvenStepdowns = "useEvenStepdowns";
+            public const string LeadOutMatchesLeadIn = "exitSameAsEntry";
+            public const string LeadInPrefix = "entry_";
+            public const string LeadOutPrefix = "exit_";
+        }
+
         public override StrategyId Strategy => StrategyId.Contour2d;
 
         /// <summary>
@@ -81,6 +99,58 @@ namespace GCam.Core.Strategies.Contour2d
                 LeadOut = LeadOut.Clone(),
                 LeadOutMatchesLeadIn = LeadOutMatchesLeadIn,
             };
+        }
+
+        public override void WriteParameters(ParameterBag bag)
+        {
+            bag.SetEnum(Names.Direction, Direction);
+            bag.Set(Names.StockToLeave, StockToLeave);
+            bag.Set(Names.VerticalStockToLeave, VerticalStockToLeave);
+
+            bag.Set(Names.MultipleDepths, MultipleDepths.Enabled);
+            bag.Set(Names.MaximumStepdown, MultipleDepths.MaximumStepdown);
+            bag.Set(Names.EvenStepdowns, MultipleDepths.UseEvenStepdowns);
+
+            bag.Set(Names.LeadOutMatchesLeadIn, LeadOutMatchesLeadIn);
+            WriteLead(bag, Names.LeadInPrefix, LeadIn);
+            WriteLead(bag, Names.LeadOutPrefix, LeadOut);
+        }
+
+        public override void ReadParameters(ParameterBag bag)
+        {
+            Direction = bag.GetEnum(Names.Direction, Direction);
+            StockToLeave = bag.GetDouble(Names.StockToLeave, StockToLeave);
+            VerticalStockToLeave = bag.GetDouble(Names.VerticalStockToLeave, VerticalStockToLeave);
+
+            MultipleDepths.Enabled = bag.GetBool(Names.MultipleDepths, MultipleDepths.Enabled);
+            MultipleDepths.MaximumStepdown =
+                bag.GetDouble(Names.MaximumStepdown, MultipleDepths.MaximumStepdown);
+            MultipleDepths.UseEvenStepdowns =
+                bag.GetBool(Names.EvenStepdowns, MultipleDepths.UseEvenStepdowns);
+
+            LeadOutMatchesLeadIn = bag.GetBool(Names.LeadOutMatchesLeadIn, LeadOutMatchesLeadIn);
+            ReadLead(bag, Names.LeadInPrefix, LeadIn);
+            ReadLead(bag, Names.LeadOutPrefix, LeadOut);
+        }
+
+        private static void WriteLead(ParameterBag bag, string prefix, LeadSettings lead)
+        {
+            bag.Set(prefix + "enabled", lead.Enabled);
+            bag.Set(prefix + "radius", lead.Radius);
+            bag.Set(prefix + "distance", lead.Distance);
+            bag.Set(prefix + "sweep", lead.Sweep);
+            bag.Set(prefix + "verticalRadius", lead.VerticalRadius);
+            bag.Set(prefix + "perpendicular", lead.Perpendicular);
+        }
+
+        private static void ReadLead(ParameterBag bag, string prefix, LeadSettings lead)
+        {
+            lead.Enabled = bag.GetBool(prefix + "enabled", lead.Enabled);
+            lead.Radius = bag.GetDouble(prefix + "radius", lead.Radius);
+            lead.Distance = bag.GetDouble(prefix + "distance", lead.Distance);
+            lead.Sweep = bag.GetDouble(prefix + "sweep", lead.Sweep);
+            lead.VerticalRadius = bag.GetDouble(prefix + "verticalRadius", lead.VerticalRadius);
+            lead.Perpendicular = bag.GetBool(prefix + "perpendicular", lead.Perpendicular);
         }
 
         public override IReadOnlyList<string> Validate()

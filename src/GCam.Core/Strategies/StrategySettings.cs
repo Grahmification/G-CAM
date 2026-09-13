@@ -35,6 +35,30 @@ namespace GCam.Core.Strategies
         public abstract StrategySettings Clone();
 
         /// <summary>
+        /// Writes every parameter worth keeping into the bag, under stable names.
+        /// </summary>
+        /// <remarks>
+        /// Abstract rather than virtual on purpose. A strategy that forgets to save a
+        /// parameter loses it silently on the next reopen, and the loss is invisible until
+        /// someone notices a toolpath came out different - so this cannot be inherited by
+        /// omission. The same reasoning that makes `PmpHandlerBase` wrap all 37 callbacks.
+        ///
+        /// Selections are not parameters and do not go in here - see
+        /// <see cref="ParameterBag"/>.
+        /// </remarks>
+        public abstract void WriteParameters(ParameterBag bag);
+
+        /// <summary>
+        /// Reads parameters back, leaving anything absent at this object's default.
+        /// </summary>
+        /// <remarks>
+        /// An absent parameter is the normal shape of a file written by an older build, so
+        /// every read falls back rather than failing. That is what makes a new parameter a
+        /// non-breaking addition.
+        /// </remarks>
+        public abstract void ReadParameters(ParameterBag bag);
+
+        /// <summary>
         /// Problems with these settings alone. Empty when they are usable.
         /// </summary>
         /// <remarks>

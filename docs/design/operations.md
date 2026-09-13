@@ -466,6 +466,32 @@ G-CAM has tested. Confirm by writing a 40-character element name before relying 
 Everything carries a schema version, and unknown elements round-trip through `Extra`
 rather than being dropped, exactly as the tool library reader already does.
 
+**The format lives in Core** (`Core/Persistence`), with `GCam.SolidWorks` responsible only
+for getting bytes into and out of the document's storage. That is what lets a full
+round-trip — tools, jobs, operations, settings, selections, heights — be a headless test.
+
+**The part's tool list is written through the tool library writer**, as a
+`gcamToolLibrary` element embedded in the document. Not tidiness: two tool serialisers
+would eventually disagree, and the same tool would read back differently depending on
+whether it came from a library or a part. Reading it back found a real gap —
+`SourceLibraryId` was not in the library format at all, because a tool in a library *is*
+from that library, but in a part it is the only record of where the tool came from and the
+only route back to it.
+
+**Reading never loses the part over one bad operation.** An operation whose strategy this
+build does not have is skipped and reported by name; a parameter that will not parse falls
+back to its default; a truncated toolpath stream keeps the moves that survived. Only two
+things stop a load: XML that will not parse, and a document whose format version is newer
+than this build — half-reading that could lose data silently.
+
+Three states are corrected on load rather than trusted:
+
+- An operation claiming `Generated` with **no stored toolpath stream** becomes
+  `NotGenerated`. Otherwise it draws nothing while calling itself up to date.
+- An operation saved mid-run comes back `NotGenerated`, never `Generating` — nothing is
+  generating it now, and `Generating` is the one state the UI cannot clear by itself.
+- `Stale` is kept, because the toolpath is kept.
+
 ### Templates
 
 A template is an operation **without geometry, tool identity or state**: the strategy, an
@@ -473,6 +499,20 @@ embedded tool definition, and the parameters. G-CAM writes its own versioned XML
 out to mirror the HSMWorks file so the concepts line up one-to-one, and a separate
 importer reads `.hsmworks-template`, mapping the parameter names it recognises and
 preserving the rest.
+
+This is why settings serialise through a **`ParameterBag`** of named values rather than
+straight to XML: the same names have to serve both the part document and the template
+files, and writing settings twice is how the two drift apart. `WriteParameters` and
+`ReadParameters` are **abstract**, not virtual — a strategy that forgets to save a
+parameter loses it silently on the next reopen, and the loss is invisible until someone
+notices a toolpath came out different. The same reasoning that makes `PmpHandlerBase` wrap
+all 37 callbacks.
+
+Selections deliberately do not go through the bag, which is what keeps templates portable.
+The document format writes them separately, finding them through
+`IContourSelectionOwner` — a seam narrow enough that a serialiser never has to know
+`Contour2dSettings` by name, and typed enough that a drill operation cannot store a
+contour.
 
 This is the same split that already works for tool libraries: our format is writable,
 theirs is read-only ([0002](../decisions/0002-imported-libraries-are-read-only.md)).
@@ -573,7 +613,8 @@ while they are still cheap to change.
 | 3 | `JobDocument.Tools` + `ToolUsage`, seeding `Operation.Cutting` from a tool | Pure Core, and it unblocks the part-tool list in the library browser | **Done** — 2026-09-13, 20 tests |
 | 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | **Done** — 2026-09-13, 32 tests |
 | 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | **Done** — 2026-09-13, 35 tests |
-| 6 | Persistence — `model.xml`, then the toolpath streams | Needs the model above it to be settled, and writing it into saved parts is what makes earlier slices expensive to revisit | Next |
+| 6a | The stored formats in Core — `GcamDocumentXml`, `ToolpathBinary`, `ParameterBag` | Needs the model above it to be settled. Pure Core, so a full round trip is a headless test | **Done** — 2026-09-13, 31 tests |
+| 6b | The SOLIDWORKS storage plumbing — third-party storage, the load/save notifications, release discipline | The half that cannot be tested headlessly, and the first code in `GCam.SolidWorks` for operations | Next |
 | 7 | `Contour2d` strategy + the geometry extraction it needs | The first real toolpath. Everything above exists to be plugged into here | Not started |
 | 8 | The Operation property page | Last, because a page for a model that is still moving is written twice | Not started |
 

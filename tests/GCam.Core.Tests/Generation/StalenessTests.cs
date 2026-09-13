@@ -19,6 +19,10 @@ namespace GCam.Core.Tests.Generation
             public override bool DependsOnPrecedingStock => true;
 
             public override StrategySettings Clone() => new RestMachiningSettings();
+
+            public override void WriteParameters(ParameterBag bag) { }
+
+            public override void ReadParameters(ParameterBag bag) { }
         }
 
         private static Operation Generated(string name, StrategySettings settings = null)

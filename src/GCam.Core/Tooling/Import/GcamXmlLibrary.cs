@@ -76,7 +76,20 @@ namespace GCam.Core.Tooling.Import
                     $"'{Describe(sourcePath)}' is not valid XML: {ex.Message}", ex);
             }
 
-            XElement root = document.Root;
+            return ReadElement(document.Root, sourcePath);
+        }
+
+        /// <summary>
+        /// Reads a library from an element already parsed out of a larger document.
+        /// </summary>
+        /// <remarks>
+        /// The part file stores its tool list as one of these, embedded in the document's
+        /// own XML. Reusing this rather than writing a second tool reader is not tidiness:
+        /// two readers would eventually disagree, and the same tool would come back
+        /// differently depending on whether it was in a library or in a part.
+        /// </remarks>
+        public ToolLibraryReadResult ReadElement(XElement root, string sourcePath)
+        {
             if (root == null || root.Name.LocalName != GcamXmlLibrary.RootElement)
             {
                 throw new GCamUserException(
@@ -205,6 +218,7 @@ namespace GCam.Core.Tooling.Import
             tool.Manufacturer = ReadString(element, "manufacturer");
             tool.ProductId = ReadString(element, "productId");
             tool.Material = ReadString(element, "material");
+            tool.SourceLibraryId = ReadString(element, "sourceLibraryId");
 
             XElement machine = element.Element("machine");
             if (machine != null)
@@ -378,6 +392,21 @@ namespace GCam.Core.Tooling.Import
     {
         public void Write(IToolLibrary library, Stream stream)
         {
+            XElement root = WriteElement(library);
+
+            new XDocument(new XDeclaration("1.0", "utf-8", null), root).Save(stream);
+        }
+
+        /// <summary>
+        /// The library as an element, for embedding in a larger document.
+        /// </summary>
+        /// <remarks>
+        /// What the part file stores its tool list as. See
+        /// <see cref="GcamXmlLibraryReader.ReadElement"/> for why there is one of these
+        /// rather than two.
+        /// </remarks>
+        public XElement WriteElement(IToolLibrary library)
+        {
             if (library == null)
             {
                 throw new ArgumentNullException(nameof(library));
@@ -397,7 +426,7 @@ namespace GCam.Core.Tooling.Import
 
             root.Add(new XElement("tools", library.Tools.Select(WriteTool)));
 
-            new XDocument(new XDeclaration("1.0", "utf-8", null), root).Save(stream);
+            return root;
         }
 
         private static XElement WriteHolder(Holder holder)
@@ -429,6 +458,11 @@ namespace GCam.Core.Tooling.Import
             AddIfPresent(element, "manufacturer", tool.Manufacturer);
             AddIfPresent(element, "productId", tool.ProductId);
             AddIfPresent(element, "material", tool.Material);
+
+            // Null for a tool that lives in a library; set for the copy inside a part,
+            // where it is the only record of where the tool came from and the only way
+            // back to it. See docs/decisions/0003-jobs-embed-their-tools.md.
+            AddIfPresent(element, "sourceLibraryId", tool.SourceLibraryId);
 
             if (tool.Holder != null && !string.IsNullOrEmpty(tool.Holder.Id))
             {

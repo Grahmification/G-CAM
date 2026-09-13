@@ -15,6 +15,10 @@ namespace GCam.Core.Tests.Strategies
             public override StrategyId Strategy => new StrategyId("fake");
 
             public override StrategySettings Clone() => new FakeSettings();
+
+            public override void WriteParameters(ParameterBag bag) { }
+
+            public override void ReadParameters(ParameterBag bag) { }
         }
 
         [Fact]
