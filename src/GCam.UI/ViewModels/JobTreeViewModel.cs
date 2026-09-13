@@ -163,6 +163,15 @@ namespace GCam.UI.ViewModels
             _editor?.NewOperation(node?.Job ?? _document.DefaultJob);
         }
 
+        /// <summary>Computes the toolpaths for a job's operations.</summary>
+        public void GenerateJob(JobNode node)
+        {
+            if (node?.Job != null)
+            {
+                _editor?.GenerateJob(node.Job);
+            }
+        }
+
         public void Duplicate(JobNode node)
         {
             if (node == null)

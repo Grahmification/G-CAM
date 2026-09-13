@@ -66,6 +66,29 @@ namespace GCam.Core.Model
                 ? "Part origin"
                 : CoordinateSystem.ToString();
 
+        /// <summary>
+        /// The lowest "<paramref name="stem"/> n" this job does not already use.
+        /// </summary>
+        /// <remarks>
+        /// Here rather than in the caller for the same reason job naming is in
+        /// <see cref="JobDocument"/>: it is a rule about the model, and a headless test can
+        /// reach it. Fills gaps rather than climbing forever, so deleting the second of
+        /// three operations and making a new one gives you 2 back, not 4.
+        /// </remarks>
+        public string NextOperationName(string stem)
+        {
+            stem = string.IsNullOrWhiteSpace(stem) ? "Operation" : stem.Trim();
+
+            int n = 1;
+            while (Operations.Any(o => string.Equals(
+                       o?.Name, stem + n, StringComparison.OrdinalIgnoreCase)))
+            {
+                n++;
+            }
+
+            return stem + n;
+        }
+
         /// <summary>Deep copy, keeping the id.</summary>
         public Job Clone()
         {

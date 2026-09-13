@@ -22,5 +22,15 @@ namespace GCam.Core.Abstractions
 
         /// <summary>Adds an operation to the given job, or to the default job when null.</summary>
         void NewOperation(Job job);
+
+        /// <summary>
+        /// Computes the toolpaths for a job's operations.
+        /// </summary>
+        /// <remarks>
+        /// Stated here rather than done in the tree because generation needs the model -
+        /// the stock, the selected geometry, the coordinate system - and the tree cannot
+        /// see SOLIDWORKS. The same arrangement as the rest of this interface.
+        /// </remarks>
+        void GenerateJob(Job job);
     }
 }

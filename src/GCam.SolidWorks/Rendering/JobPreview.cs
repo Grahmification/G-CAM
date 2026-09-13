@@ -67,6 +67,9 @@ namespace GCam.SolidWorks.Rendering
         /// </remarks>
         private const double TriadFraction = 0.30;
 
+        /// <summary>The toolpath layers currently on screen, so they can be taken down.</summary>
+        private readonly List<string> _toolpathLayers = new List<string>();
+
         private readonly SldWorks _swApp;
         private readonly ModelDoc2 _model;
         private readonly IViewportRenderer _viewport;
@@ -122,6 +125,63 @@ namespace GCam.SolidWorks.Rendering
         {
             _viewport.Scene.Remove(StockLayer);
             _viewport.Scene.Remove(OriginLayer);
+            ClearToolpaths();
+        }
+
+        /// <summary>
+        /// Takes down every toolpath layer this preview has put up.
+        /// </summary>
+        /// <remarks>
+        /// Tracked rather than derived from the job: an operation that has just been
+        /// deleted still has a layer on screen, and the job can no longer name it.
+        /// </remarks>
+        private void ClearToolpaths()
+        {
+            foreach (string layer in _toolpathLayers)
+            {
+                _viewport.Scene.Remove(layer);
+            }
+
+            _toolpathLayers.Clear();
+        }
+
+        /// <summary>
+        /// Draws whatever toolpaths the job's operations have, one layer each.
+        /// </summary>
+        /// <remarks>
+        /// A layer per operation, so one can be shown or hidden without touching the
+        /// others - the naming convention lives in <see cref="ToolpathMesh.LayerName"/>.
+        ///
+        /// A stale path is drawn faded rather than hidden: it is still the only picture of
+        /// what the machine last did, and drawing it at full strength would claim it
+        /// matches the current parameters. A disabled operation is not drawn at all,
+        /// because it will not be cut.
+        /// </remarks>
+        private void SetToolpaths(Job job)
+        {
+            ClearToolpaths();
+
+            foreach (Operation operation in job.Operations)
+            {
+                if (operation?.Toolpath == null || !operation.Enabled)
+                {
+                    continue;
+                }
+
+                IReadOnlyList<RenderBatch> batches = ToolpathMesh.Build(
+                    operation.Toolpath,
+                    stale: operation.State == OperationState.Stale);
+
+                if (batches.Count == 0)
+                {
+                    continue;
+                }
+
+                string layer = ToolpathMesh.LayerName(operation.Id);
+
+                _viewport.Scene.Set(layer, batches);
+                _toolpathLayers.Add(layer);
+            }
         }
 
         /// <summary>
@@ -161,6 +221,7 @@ namespace GCam.SolidWorks.Rendering
 
             SetStock(stock, frame);
             SetOrigin(stock, model, frame);
+            SetToolpaths(job);
         }
 
         private void SetStock(Bounds stock, JobFrame frame)

@@ -4,9 +4,9 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Built as far as slice 6 of the build order at the end of this document: the model,
-strategy settings, generation and persistence all exist. No strategy computes a toolpath
-yet, so nothing has been generated.
+Built as far as slice 7 of the build order at the end of this document. 2D contouring
+computes a toolpath, the extraction that feeds it real geometry is written but has never
+run on a real part, and nothing has been posted.
 
 The four decisions underneath this document are recorded separately:
 [0006](../decisions/0006-operation-parameters-are-values.md) (values, not expressions),
@@ -338,7 +338,7 @@ public interface IToolpathStrategy
 ```
 
 `GenerationContext` carries the resolved inputs — the operation, its part tool, the
-resolved geometry, the resolved heights and the stock — so a strategy touches no COM and no
+resolved contours, the resolved heights and the stock — so a strategy touches no COM and no
 SOLIDWORKS, and runs on a worker thread. Strategies are pure: same context in, same
 toolpath out. `IGenerationContextFactory` builds one, declared in Core and implemented in
 `GCam.SolidWorks`, because resolving heights and geometry is the one part of generation
@@ -648,8 +648,15 @@ while they are still cheap to change.
 | 6a | The stored formats in Core — `GcamDocumentXml`, `ToolpathBinary`, `ParameterBag` | Needs the model above it to be settled. Pure Core, so a full round trip is a headless test | **Done** — 2026-09-13, 31 tests |
 | 6b | The SOLIDWORKS storage plumbing — third-party storage, the load/save notifications, release discipline | The half that cannot be tested headlessly, and the first code in `GCam.SolidWorks` for operations | **Done** — 2026-09-13, verified by hand on 2025 SP3. See [third-party-storage.md](../solidworks-api/third-party-storage.md) |
 | 7a | `Contour2dStrategy` + `Polyline` + offsetting via Clipper2 | The first real toolpath, and pure Core so the geometry can be asserted headlessly | **Done** — 2026-09-13, 24 tests |
-| 7b | `SolidWorks/Extraction` — selections → tessellated contours, wired into `IGenerationContextFactory` | The half that needs a real part, and what makes 7a visible | Next |
-| 8 | The Operation property page | Last, because a page for a model that is still moving is written twice | Not started |
+| 7b | `SolidWorks/Extraction` — selections → tessellated contours, `GenerationContextFactory`, Generate in the tree menu, toolpaths drawn | The half that needs a real part, and what makes 7a visible | **Written, unverified** — 2026-09-13. Compiles; never yet run on a real part |
+| 7c | A stopgap creation path: New Operation builds a contour operation from the current selection | **The build order had a hole**: the property page was last, and it is the only thing that can create an operation — so slices 5, 7a and 7b were all unverifiable. This unblocks them | **Done** — 2026-09-13 |
+| 8 | The Operation property page | The real way to create and edit one. It replaces the guessing in 7c, not the creation itself | Next |
+
+**The hole this order had.** Putting the property page last assumed generation could be
+verified some other way. It could not: the page is the only thing that can create an
+operation, so everything above it was untestable until a stopgap creation path was added
+as 7c. Worth remembering when ordering the next subsystem — "can this slice be exercised
+at all?" is a different question from "does this slice depend on that one?".
 
 Two orderings were considered and rejected. **Rendering first** (slice 4 before 2) would
 show something in the 3D view on day one, but the renderer is already proven by the stock

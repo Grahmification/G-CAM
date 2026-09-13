@@ -185,6 +185,10 @@ namespace GCam.UI.Views
             AddMenuItem("Rename", BeginRename, shortcut: "F2");
             _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
             AddMenuItem("New Operation…", () => _model.NewOperation(job));
+            AddMenuItem(
+                "Generate",
+                () => _model.GenerateJob(job),
+                enabled: job.Job != null && job.Job.Operations.Count > 0);
             _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
             AddMenuItem("Duplicate", () => _model.Duplicate(job));
 

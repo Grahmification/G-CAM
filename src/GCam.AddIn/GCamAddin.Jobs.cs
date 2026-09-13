@@ -1,7 +1,12 @@
 using System;
 using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
+using GCam.Core.Generation;
 using GCam.Core.Model;
+using GCam.Core.Strategies.Contour2d;
+using GCam.Core.Tooling;
+using GCam.SolidWorks.Selection;
+using GCam.SolidWorks.Extraction;
 using GCam.SolidWorks.PropertyPages;
 using SolidWorks.Interop.sldworks;
 
@@ -37,6 +42,18 @@ namespace GCam.AddIn
         }
 
         /// <summary>Entry point 10. Adds an operation to a job.</summary>
+        /// <remarks>
+        /// <b>Creates the operation outright, from whatever is selected in the graphics
+        /// area.</b> The Operation property page is still a shell, and until it exists
+        /// this is the only way an operation can come into being - which otherwise makes
+        /// the whole toolpath pipeline untestable, since nothing else can produce one to
+        /// generate.
+        ///
+        /// The creation itself is not throwaway: with a page, New Operation still creates
+        /// the operation and the page then edits it. What the page replaces is the
+        /// guessing below - seeding from the current selection and from the first tool in
+        /// the part. Pre-filling from the selection is what HSMWorks does anyway.
+        /// </remarks>
         public void NewOperation(Job job)
         {
             try
@@ -46,15 +63,129 @@ namespace GCam.AddIn
                     throw new GCamUserException("Create a job before adding an operation.");
                 }
 
-                // Opens the shell page. Nothing is added to the job yet - operations
-                // have no parameters to set, so creating one would put an empty node in
-                // the tree with no way to give it meaning. That arrives with the
-                // operation work.
-                OperationPage.Show();
+                var model = _swApp.ActiveDoc as ModelDoc2;
+                JobDocument jobs = _jobTreeTabs?.JobsFor(model);
+
+                if (model == null || jobs == null)
+                {
+                    throw new GCamUserException("Open a part before adding an operation.");
+                }
+
+                var settings = new Contour2dSettings();
+                settings.Contours.AddRange(JobSelections.CurrentContourSelections(model));
+
+                if (settings.Contours.Count == 0)
+                {
+                    throw new GCamUserException(
+                        "Select the edges or faces of a closed profile, then add the " +
+                        "operation. Choosing geometry on the page comes with the " +
+                        "Operation page.");
+                }
+
+                var operation = new Operation(settings)
+                {
+                    Name = job.NextOperationName("2D Contour"),
+                };
+
+                operation.UseTool(DefaultTool(jobs));
+
+                job.Operations.Add(operation);
+
+                _log.Info(
+                    "Created operation '{0}' from {1} selected entities.",
+                    operation.Name, settings.Contours.Count);
+
+                _jobTreeTabs.MarkDirty(model);
+                _jobTreeTabs.RefreshJobs(model);
+                _jobTreeTabs.SelectJob(model, job);
             }
             catch (Exception ex)
             {
                 _errors.Handle(ex, nameof(NewOperation));
+            }
+        }
+
+        /// <summary>
+        /// The tool a new operation starts with.
+        /// </summary>
+        /// <remarks>
+        /// The first tool already in the part, or a plainly-named stand-in when it has
+        /// none. The stand-in is a stopgap for the same reason as the rest of this path:
+        /// choosing a tool is the property page's job, and until that exists an operation
+        /// with no tool cannot be generated at all. It is named and logged so nobody
+        /// mistakes it for a considered choice.
+        /// </remarks>
+        private Tool DefaultTool(JobDocument jobs)
+        {
+            if (jobs.Tools.Count > 0)
+            {
+                return jobs.Tools[0];
+            }
+
+            var tool = new Tool
+            {
+                Number = 1,
+                Name = "Stand-in 6mm end mill",
+                Type = ToolType.FlatEndMill,
+                Geometry = { Diameter = 6, FluteLength = 20, ShoulderLength = 20, FluteCount = 3 },
+                Cutting = { SpindleRpm = 8000, CuttingFeed = 800, PlungeFeed = 300 },
+            };
+
+            jobs.AddTool(tool);
+
+            _log.Warn(
+                "This part had no tools, so a stand-in {0} was added. Choose a real one " +
+                "once the Operation page can.", tool.DisplayName);
+
+            return tool;
+        }
+
+        /// <summary>
+        /// Entry point 11. Computes the toolpaths for a job's operations.
+        /// </summary>
+        /// <remarks>
+        /// <b>Runs on the calling thread, which is SOLIDWORKS' main STA thread.</b> The
+        /// architecture calls for generation off it, and <see cref="GenerationQueue"/> is
+        /// built for that - but the context factory has to reach SOLIDWORKS for the stock,
+        /// the geometry and the coordinate system, and marshalling that back to the STA
+        /// thread needs an `SwDispatcher` that does not exist yet. A 2D contour on one
+        /// profile is milliseconds; a surface finishing pass will not be, so this has to
+        /// move before the strategies get slower.
+        ///
+        /// Failures land on their operations rather than in a dialog: the queue catches
+        /// them, and the tree shows what happened.
+        /// </remarks>
+        public void GenerateJob(Job job)
+        {
+            try
+            {
+                var model = _swApp.ActiveDoc as ModelDoc2;
+                JobDocument jobs = _jobTreeTabs?.JobsFor(model);
+
+                if (job == null || model == null || jobs == null)
+                {
+                    return;
+                }
+
+                var queue = new GenerationQueue(
+                    _strategies,
+                    new GenerationContextFactory(_swApp, model, jobs, _log),
+                    _log);
+
+                GenerationResult result = queue.Generate(job);
+
+                _log.Info("Generated job '{0}': {1}", job.Name, result);
+
+                // The toolpaths are part of the document now, so the part has unsaved
+                // changes even though nothing about the model moved.
+                _jobTreeTabs.MarkDirty(model);
+
+                _jobTreeTabs.RefreshJobs(model);
+                _jobTreeTabs.SelectJob(model, job);
+            }
+            catch (Exception ex)
+            {
+                _errors.Handle(ex, nameof(GenerateJob));
             }
         }
 

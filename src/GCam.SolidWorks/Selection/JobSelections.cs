@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using GCam.Core.Model;
+using GCam.Core.Strategies.Shared;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -26,7 +27,7 @@ namespace GCam.SolidWorks.Selection
     /// route into a PropertyManager selection box. The reference is what decides which
     /// name to use now.
     /// </remarks>
-    internal static class JobSelections
+    public static class JobSelections
     {
         /// <summary>
         /// The names of everything currently selected into the box with this mark.
@@ -106,6 +107,53 @@ namespace GCam.SolidWorks.Selection
             }
 
             return missing;
+        }
+
+        /// <summary>
+        /// The edges and faces currently selected in the graphics area, as contour
+        /// selections.
+        /// </summary>
+        /// <remarks>
+        /// Mark -1 means "everything selected", rather than the numbered mark a
+        /// PropertyManager box uses - this reads a plain selection made before any page is
+        /// open, which is how New Operation picks up what the user had already clicked.
+        ///
+        /// Edges and faces have no names in SOLIDWORKS, so the display name is positional.
+        /// The persistent reference is the identity; the name is only a label.
+        /// </remarks>
+        public static List<ContourSelection> CurrentContourSelections(ModelDoc2 model)
+        {
+            var selections = new List<ContourSelection>();
+
+            var selection = model?.SelectionManager as SelectionMgr;
+            if (selection == null)
+            {
+                return selections;
+            }
+
+            int count = selection.GetSelectedObjectCount2(-1);
+
+            for (int i = 1; i <= count; i++)
+            {
+                object entity = selection.GetSelectedObject6(i, -1);
+
+                GeometryRefKind kind =
+                    entity is Edge ? GeometryRefKind.Edge :
+                    entity is Face2 ? GeometryRefKind.Face :
+                    GeometryRefKind.Unknown;
+
+                if (kind == GeometryRefKind.Unknown)
+                {
+                    continue;
+                }
+
+                string label = kind + " " + (selections.Count + 1);
+
+                selections.Add(new ContourSelection(
+                    PersistentRefs.Describe(model, entity, kind, label)));
+            }
+
+            return selections;
         }
 
         /// <summary>The solid body with this name, or null. The migration fallback.</summary>

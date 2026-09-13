@@ -26,17 +26,17 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job page | Done; Operation page is still a shell | [UI shells](design/ui-shells.md) |
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
-| `SolidWorks/Extraction` — coordinate system transforms, model extent | Started — bounding boxes only, no BRep | |
-| `Core/Model` — Operation, heights, geometry references, the part's tool list, Toolpath | Done; nothing produces a toolpath yet | [Operations](design/operations.md) |
+| `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Written, **never run on a real part** | [Operations](design/operations.md) |
+| `Core/Model` — Operation, heights, geometry references, the part's tool list, Toolpath | Done | [Operations](design/operations.md) |
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates; face, adaptive and drill are designed only | [Operations](design/operations.md) |
-| `Core/Generation` — queue, progress, staleness rules | Done; waiting for a strategy to run | [Operations](design/operations.md) |
+| `Core/Generation` — queue, progress, staleness rules | Done; runs on the STA thread until an `SwDispatcher` exists | [Operations](design/operations.md) |
 | `Core/Persistence` — the stored document format and the toolpath bytes | Done, round-tripped headlessly | [Operations](design/operations.md) |
 | `SolidWorks/Persistence` — getting those bytes into the part | Done; a job survives a close and reopen (2025 SP3). Toolpath streams still unexercised | [Storage](solidworks-api/third-party-storage.md) |
 | `Core/Simulation`, `Commands`, `Posting` | Not started | |
 | `Core/Geometry` beyond the primitives | Not started | |
 | `Posts` | Empty project | |
 
-**A 2D contour toolpath is computed** as of 2026-09-13, from contours handed in as polylines — nothing extracts those from the model yet, and nothing has been posted. Of the vertical slice below, steps 5 (the overlay) and 7 (persistence) arrived early, and step 4 now computes; step 3, extraction, is what stands between the algorithm and a real part.
+**A 2D contour toolpath is computed** as of 2026-09-13, and the extraction that feeds it geometry from the model is written but **has never run on a real part**. Nothing has been posted. Of the vertical slice below, steps 3, 4, 5 and 7 now exist in some form; step 6, posting, is untouched.
 
 ## Decisions this rests on
 
