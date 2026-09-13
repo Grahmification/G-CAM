@@ -5,6 +5,7 @@ using GCam.Core.Model;
 using GCam.Core.Model.Heights;
 using GCam.Core.Strategies;
 using GCam.Core.Strategies.Contour2d;
+using GCam.Core.Strategies.Shared;
 using Xunit;
 
 namespace GCam.Core.Tests.Model
@@ -17,7 +18,8 @@ namespace GCam.Core.Tests.Model
         private static Operation Usable()
         {
             var settings = new Contour2dSettings();
-            settings.Contours.Add(new GeometryRef { PersistentId = "edge-1", DisplayName = "Edge1" });
+            settings.Contours.Add(new ContourSelection(
+                new GeometryRef { PersistentId = "edge-1", DisplayName = "Edge1" }));
 
             return new Operation(settings)
             {

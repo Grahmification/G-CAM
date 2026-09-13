@@ -12,12 +12,12 @@ namespace GCam.Core.Tests.Strategies
         private static Contour2dSettings Usable()
         {
             var settings = new Contour2dSettings();
-            settings.Contours.Add(new GeometryRef
+            settings.Contours.Add(new ContourSelection(new GeometryRef
             {
                 PersistentId = "edge-1",
                 Kind = GeometryRefKind.Edge,
                 DisplayName = "Edge1",
-            });
+            }));
             return settings;
         }
 
@@ -47,7 +47,7 @@ namespace GCam.Core.Tests.Strategies
         public void An_empty_selection_among_real_ones_is_reported()
         {
             Contour2dSettings settings = Usable();
-            settings.Contours.Add(new GeometryRef());
+            settings.Contours.Add(new ContourSelection(new GeometryRef()));
 
             Assert.Contains(settings.Validate(), p => p.Contains("empty"));
         }
@@ -143,12 +143,14 @@ namespace GCam.Core.Tests.Strategies
             original.LeadIn.Radius = 7;
 
             var copy = (Contour2dSettings)original.Clone();
-            copy.Contours[0].DisplayName = "Changed";
-            copy.Contours.Add(new GeometryRef { PersistentId = "edge-2" });
+            copy.Contours[0].Entity.DisplayName = "Changed";
+            copy.Contours[0].PropagateTangent = false;
+            copy.Contours.Add(new ContourSelection(new GeometryRef { PersistentId = "edge-2" }));
             copy.MultipleDepths.MaximumStepdown = 99;
             copy.LeadIn.Radius = 99;
 
-            Assert.Equal("Edge1", original.Contours.Single().DisplayName);
+            Assert.Equal("Edge1", original.Contours.Single().Entity.DisplayName);
+            Assert.True(original.Contours.Single().PropagateTangent);
             Assert.Equal(3, original.MultipleDepths.MaximumStepdown, 9);
             Assert.Equal(7, original.LeadIn.Radius, 9);
             Assert.Equal(CutDirection.Conventional, copy.Direction);

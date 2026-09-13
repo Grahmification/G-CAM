@@ -93,7 +93,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   ├── Strategies/                StrategyId, StrategySettings, StrategyCatalog,
 │   │   │                              later IToolpathStrategy
 │   │   │   ├── Shared/                groups some strategies have and others do not —
-│   │   │   │                          MultipleDepthsSettings, LeadSettings, CutDirection
+│   │   │   │                          MultipleDepthsSettings, LeadSettings, CutDirection,
+│   │   │   │                          ContourSelection (picked entity + its modifiers)
 │   │   │   └── Contour2d/             + later Face/, Adaptive2d/, Drill/
 │   │   │                              — see design/operations.md
 │   │   ├── Generation/                GenerationQueue (off-thread, cancellable),

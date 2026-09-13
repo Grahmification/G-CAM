@@ -228,6 +228,44 @@ Persistent references, not names, from the start. `Job.ModelBodyNames` uses name
 only because jobs are not persisted; operations are persisted from day one, and a renamed
 face must not silently change what a proven operation cuts.
 
+### Selection modifiers are stored as intent, not baked in
+
+Picking geometry in SOLIDWORKS comes with modifiers — tangent propagation, propagate along
+Z — that decide how far a selection runs from the entity actually clicked. There are two
+ways to store the result, and they are not equivalent:
+
+| | Stored |
+| --- | --- |
+| **Bake at pick time** | The forty edges SOLIDWORKS' selection expanded to |
+| **Store as intent** | The one entity picked, plus the modifiers, re-chained every generate |
+
+**G-CAM stores intent**, in `ContourSelection` — the entity, `PropagateTangent`,
+`PropagateAlongZ` and `Reversed`. Three reasons:
+
+- **HSMWorks does.** `chainingTolerance` is a parameter on contouring, facing and adaptive
+  clearing in their own templates, and a tolerance for chaining only exists if the chaining
+  happens in the CAM engine rather than in the CAD selection.
+- One stored reference survives a model edit that would break forty.
+- The property page can show what was chosen — "this edge, tangentially" — rather than a
+  list of forty edges nobody picked individually.
+
+The cost is real: **a model edit can silently change how far a chain runs**, by making two
+edges tangent that were not. Staleness covers it — a SOLIDWORKS rebuild marks every
+operation stale, so the path is regenerated and seen before it can post without a warning.
+
+`Reversed` is one flag rather than an inside/outside setting, because which side the cutter
+runs on follows from the direction the chain is walked and the climb/conventional choice.
+It is the same thing HSMWorks' per-contour arrow toggles.
+
+None of this is honoured yet — the flags are stored and round-tripped, and propagation
+lands with the contour strategy. The shape exists now because persistence would otherwise
+freeze the wrong one into saved parts.
+
+**Tangential extension is a different thing and is not here.** `tangentialExtensionDistance`
+and its family are strategy parameters that act on an already-fixed selection, so they
+belong in `Contour2dSettings` and arrive with the algorithm that honours them. The supplied
+templates set them to 0.5mm and 1mm, so they are wanted — just not yet.
+
 ## Strategy settings
 
 ```csharp
@@ -454,7 +492,7 @@ while they are still cheap to change.
 | # | Slice | Why here | State |
 | --- | --- | --- | --- |
 | 1 | `Heights/` + `FeedsAndSpeeds` + `GeometryRef` | The only parts of the base that are *logic* rather than data, so the only parts a test can prove. Pure Core, no dependencies on anything unbuilt | **Done** — 2026-09-13, 49 tests |
-| 2 | `Operation` rewrite + `StrategyId`/`StrategySettings`/`StrategyCatalog` + `Contour2dSettings` | The shape everything else binds to. Cheapest to change now, most expensive once persistence has written it into saved parts | **Done** — 2026-09-13, 59 tests |
+| 2 | `Operation` rewrite + `StrategyId`/`StrategySettings`/`StrategyCatalog` + `Contour2dSettings` + `ContourSelection` | The shape everything else binds to. Cheapest to change now, most expensive once persistence has written it into saved parts | **Done** — 2026-09-13, 65 tests |
 | 3 | `JobDocument.Tools` + `ToolUsage`, seeding `Operation.Cutting` from a tool | Pure Core, and it unblocks the part-tool list in the library browser | Next |
 | 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | Not started |
 | 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | Not started |

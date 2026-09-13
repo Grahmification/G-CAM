@@ -24,14 +24,19 @@ namespace GCam.Core.Strategies.Contour2d
         public override StrategyId Strategy => StrategyId.Contour2d;
 
         /// <summary>
-        /// The edges or faces whose boundary the cutter follows.
+        /// The edges or faces whose boundary the cutter follows, each with the modifiers
+        /// it was picked with.
         /// </summary>
         /// <remarks>
         /// Typed as part of the strategy rather than on the base operation, because there
         /// is no meaningful selection every strategy shares - drilling takes cylindrical
         /// faces, facing takes an optional boundary. See docs/design/operations.md.
+        ///
+        /// <see cref="ContourSelection"/> rather than a bare <see cref="GeometryRef"/>
+        /// because tangent propagation is stored as intent and re-evaluated, not baked
+        /// into a list of edges at pick time.
         /// </remarks>
-        public List<GeometryRef> Contours { get; set; } = new List<GeometryRef>();
+        public List<ContourSelection> Contours { get; set; } = new List<ContourSelection>();
 
         public CutDirection Direction { get; set; } = CutDirection.Climb;
 
