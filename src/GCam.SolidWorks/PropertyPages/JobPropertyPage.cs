@@ -32,7 +32,9 @@ namespace GCam.SolidWorks.PropertyPages
         // Controls. Ids are page-local and referenced nowhere else.
         private const int IdName = 10;
         private const int IdBodies = 20;
-        private const int IdCoordinateSystem = 21;
+        private const int IdBodiesHint = 21;
+        private const int IdCoordinateSystem = 22;
+        private const int IdCoordinateSystemHint = 23;
         private const int IdStockMode = 30;
         private const int IdTop = 31;
         private const int IdBottom = 32;
@@ -72,7 +74,11 @@ namespace GCam.SolidWorks.PropertyPages
 
         private Job _target;
         private Job _working;
-        private bool _lengthUnitsLogged;
+
+        // True while LoadControls is assigning. Assigning to a combobox or number box
+        // fires its change callback, which would write the value straight back and, in
+        // the stock mode's case, re-toggle control visibility mid-load.
+        private bool _loading;
 
         public JobPropertyPage(SldWorks swApp, ErrorHandler errors, IGCamLog log)
             : base(swApp, errors, log)
@@ -113,7 +119,7 @@ namespace GCam.SolidWorks.PropertyPages
                 singleEntityOnly: false,
                 tip: "Solid bodies to machine. Leave empty to machine every body.");
 
-            AddLabel(model, IdBodies + 1, "Leave empty to machine every solid body.");
+            AddLabel(model, IdBodiesHint, "Leave empty to machine every solid body.");
 
             _coordinateSystem = AddSelectionbox(
                 model, IdCoordinateSystem, MarkCoordinateSystem,
@@ -121,19 +127,31 @@ namespace GCam.SolidWorks.PropertyPages
                 singleEntityOnly: true,
                 tip: "Coordinate system feature defining program zero. Leave empty for the part origin.");
 
-            AddLabel(model, IdCoordinateSystem + 1, "Leave empty to use the part origin.");
+            AddLabel(model, IdCoordinateSystemHint, "Leave empty to use the part origin.");
 
             var stock = AddGroup(page, GroupStock, "Stock");
             _stockMode = AddCombobox(stock, IdStockMode, "Mode", StockModeNames, "How the stock is sized");
 
-            _top = AddLengthbox(stock, IdTop, "Top", "Material above the top of the model");
-            _side = AddLengthbox(stock, IdSide, "Side", "Material on all four sides");
-            _offsetX = AddLengthbox(stock, IdOffsetX, "X", "Material left and right");
-            _offsetY = AddLengthbox(stock, IdOffsetY, "Y", "Material front and back");
-            _bottom = AddLengthbox(stock, IdBottom, "Bottom", "Material below the bottom of the model");
-            _width = AddLengthbox(stock, IdWidth, "Width", "Absolute stock size in X");
-            _depth = AddLengthbox(stock, IdDepth, "Depth", "Absolute stock size in Y");
-            _height = AddLengthbox(stock, IdHeight, "Height", "Absolute stock size in Z");
+            // Each box is created already showing or already hidden, because the page
+            // is rebuilt for every show. Nothing calls Visible on the way in - see the
+            // remarks on ShowControlsFor.
+            StockMode mode = _working?.Stock.Mode ?? StockMode.RelativeBox;
+            bool relative = mode != StockMode.FixedSizeBox;
+
+            _top = AddLengthbox(stock, IdTop, "Top", "Material above the top of the model", relative);
+            _side = AddLengthbox(stock, IdSide, "Side", "Material on all four sides",
+                mode == StockMode.RelativeBox);
+            _offsetX = AddLengthbox(stock, IdOffsetX, "X", "Material left and right",
+                mode == StockMode.RelativeBoxXY);
+            _offsetY = AddLengthbox(stock, IdOffsetY, "Y", "Material front and back",
+                mode == StockMode.RelativeBoxXY);
+            _bottom = AddLengthbox(stock, IdBottom, "Bottom", "Material below the bottom of the model", relative);
+            _width = AddLengthbox(stock, IdWidth, "Width", "Absolute stock size in X",
+                mode == StockMode.FixedSizeBox);
+            _depth = AddLengthbox(stock, IdDepth, "Depth", "Absolute stock size in Y",
+                mode == StockMode.FixedSizeBox);
+            _height = AddLengthbox(stock, IdHeight, "Height", "Absolute stock size in Z",
+                mode == StockMode.FixedSizeBox);
 
             var machine = AddGroup(page, GroupMachine, "Machine");
             _workOffset = AddCombobox(
@@ -141,9 +159,61 @@ namespace GCam.SolidWorks.PropertyPages
                 "Which work offset the toolpaths are output against");
         }
 
+        /// <summary>
+        /// Called before each show, while the page is closed. Everything that assigns to
+        /// a control belongs here rather than in <see cref="PageShown"/>.
+        /// </summary>
+        protected override void LoadControls()
+        {
+            _loading = true;
+
+            try
+            {
+                _name.Text = _working.Name ?? string.Empty;
+
+                _stockMode.CurrentSelection = (short)(int)_working.Stock.Mode;
+
+                _workOffset.CurrentSelection = (short)(_working.WorkOffset - WorkOffsets.First);
+
+                _top.Value = ToBoxLength(_working.Stock.TopOffset);
+                _bottom.Value = ToBoxLength(_working.Stock.BottomOffset);
+                _side.Value = ToBoxLength(_working.Stock.SideOffset);
+                _offsetX.Value = ToBoxLength(_working.Stock.OffsetX);
+                _offsetY.Value = ToBoxLength(_working.Stock.OffsetY);
+                _width.Value = ToBoxLength(_working.Stock.Width);
+                _depth.Value = ToBoxLength(_working.Stock.Depth);
+                _height.Value = ToBoxLength(_working.Stock.Height);
+            }
+            finally
+            {
+                _loading = false;
+            }
+
+            // Visibility is deliberately NOT set here. See PageShown.
+        }
+
+        /// <summary>
+        /// Runs once the page is on screen. Only work that needs a live page belongs
+        /// here.
+        /// </summary>
+        /// <remarks>
+        /// Two things do, for different reasons.
+        ///
+        /// <b>Visibility must be set on a live page.</b> Setting
+        /// IPropertyManagerPageControl.Visible on a page that has been shown and then
+        /// closed terminates SOLIDWORKS - no exception, no log, the process simply goes.
+        /// The help documents no such restriction; this was found by logging each
+        /// statement until one of them stopped coming back. Values are safe to set while
+        /// closed, which is why LoadControls still runs before Show2; only the show/hide
+        /// waits.
+        ///
+        /// <b>Selections need the page up too</b>, because SelectByID2 routes by mark and
+        /// the marks belong to selection boxes on a page that actually exists.
+        /// </remarks>
         protected override void PageShown()
         {
-            LoadFromJob();
+            // Selections only. Visibility was settled when the controls were created.
+            RestoreSelections();
         }
 
         protected override void PageClosed(swPropertyManagerPageCloseReasons_e reason)
@@ -160,26 +230,6 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         // ---- Loading ---------------------------------------------------------
-
-        private void LoadFromJob()
-        {
-            _name.Text = _working.Name ?? string.Empty;
-
-            _stockMode.CurrentSelection = (short)(int)_working.Stock.Mode;
-            _workOffset.CurrentSelection = (short)(_working.WorkOffset - WorkOffsets.First);
-
-            _top.Value = ToBoxLength(_working.Stock.TopOffset);
-            _bottom.Value = ToBoxLength(_working.Stock.BottomOffset);
-            _side.Value = ToBoxLength(_working.Stock.SideOffset);
-            _offsetX.Value = ToBoxLength(_working.Stock.OffsetX);
-            _offsetY.Value = ToBoxLength(_working.Stock.OffsetY);
-            _width.Value = ToBoxLength(_working.Stock.Width);
-            _depth.Value = ToBoxLength(_working.Stock.Depth);
-            _height.Value = ToBoxLength(_working.Stock.Height);
-
-            ShowControlsFor(_working.Stock.Mode);
-            RestoreSelections();
-        }
 
         /// <summary>
         /// Puts the job's saved bodies and coordinate system back into the selection
@@ -221,6 +271,11 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected override void OnTextboxChanged(int id, string text)
         {
+            if (_loading)
+            {
+                return;
+            }
+
             if (id == IdName)
             {
                 _working.Name = text;
@@ -229,6 +284,11 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected override void OnComboboxSelectionChanged(int id, int item)
         {
+            if (_loading)
+            {
+                return;
+            }
+
             if (id == IdStockMode)
             {
                 _working.Stock.Mode = (StockMode)item;
@@ -244,6 +304,11 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected override void OnNumberboxChanged(int id, double value)
         {
+            if (_loading)
+            {
+                return;
+            }
+
             double mm = FromBoxLength(value);
 
             switch (id)
@@ -285,6 +350,20 @@ namespace GCam.SolidWorks.PropertyPages
 
         // ---- Stock mode ------------------------------------------------------
 
+        /// <summary>
+        /// Shows the stock fields that belong to a mode and hides the rest.
+        /// </summary>
+        /// <remarks>
+        /// <b>Only ever called when the user changes the mode on a live page.</b> It is
+        /// deliberately not called when a page is loaded or shown.
+        ///
+        /// IPropertyManagerPageControl.Visible is the single most dangerous call in this
+        /// file. Setting it on each show killed SOLIDWORKS outright - reproducibly on
+        /// the fourth show, from any trigger, with no exception and nothing in the log.
+        /// Something accumulates; four was the limit. The page is now rebuilt for every
+        /// show and each control is created with the visibility it needs, so the normal
+        /// path never touches this property at all.
+        /// </remarks>
         private void ShowControlsFor(StockMode mode)
         {
             bool relative = mode != StockMode.FixedSizeBox;
@@ -317,31 +396,16 @@ namespace GCam.SolidWorks.PropertyPages
         /// Millimetres into whatever a length number box wants.
         /// </summary>
         /// <remarks>
-        /// SOLIDWORKS works in metres and the help does not say what a
-        /// swNumberBox_Length control exchanges, so this is the one place the assumption
-        /// lives: change these two methods and nothing else moves. The raw value is
-        /// logged once per page so the assumption can be checked against a known input -
-        /// type 10 into Top and the log should show 0.01.
+        /// A swNumberBox_Length control exchanges **metres** - SOLIDWORKS' system units,
+        /// not the document's display units, even though the box shows and accepts mm.
+        /// Measured, not assumed: typing 1 mm read back as 0.001. The help says nothing
+        /// either way, so this pair of methods is the one place that knowledge lives.
         ///
         /// This is the conversion the units rule in docs/architecture.md is about. Core
         /// is millimetres throughout; only the edge converts.
         /// </remarks>
         private static double ToBoxLength(double millimetres) => Units.MillimetresToMetres(millimetres);
 
-        private double FromBoxLength(double boxValue)
-        {
-            if (!_lengthUnitsLogged)
-            {
-                _lengthUnitsLogged = true;
-                Log.Debug(
-                    "Length number box raw value {0} read as {1} mm. If a typed 10 mm does not " +
-                    "show 0.01 here, the number box is not in metres and JobPropertyPage's " +
-                    "conversion is wrong.",
-                    boxValue,
-                    Units.MetresToMillimetres(boxValue));
-            }
-
-            return Units.MetresToMillimetres(boxValue);
-        }
+        private static double FromBoxLength(double boxValue) => Units.MetresToMillimetres(boxValue);
     }
 }

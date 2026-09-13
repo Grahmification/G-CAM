@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using GCam.Core.Diagnostics;
 using GCam.UI.ViewModels;
+using WinForms = System.Windows.Forms;
 
 namespace GCam.UI.Views
 {
@@ -15,9 +16,15 @@ namespace GCam.UI.Views
     /// through COM, so nothing can be injected here. The viewmodel arrives afterwards
     /// through <see cref="Bind"/>.
     ///
-    /// Menu items are named and wired to Click handlers, with enablement set in
-    /// <see cref="OnContextMenuOpened"/> - the same arrangement as the tool library
-    /// browser, rather than viewmodel commands, of which this codebase has none.
+    /// The context menu is WinForms rather than WPF. That was adopted while chasing a
+    /// crash which turned out to have nothing to do with it - the cause was
+    /// IPropertyManagerPageControl.Visible, see
+    /// docs/solidworks-api/property-manager-pages.md - so a WPF ContextMenu would very
+    /// probably work here now. It is left as it is because it works and is proven;
+    /// switching back is a safe thing to try, not a fix for anything.
+    ///
+    /// Enablement is set while the menu is built, rather than through viewmodel
+    /// commands, of which this codebase has none.
     ///
     /// Every handler here is an entry point in the sense of docs/error-handling.md: WPF
     /// calls them, so none of them may let an exception escape.
@@ -26,6 +33,7 @@ namespace GCam.UI.Views
     {
         private JobTreeViewModel _model;
         private ErrorHandler _errors;
+        private WinForms.ContextMenuStrip _nodeMenu;
 
         public JobTreeView()
         {
@@ -101,6 +109,20 @@ namespace GCam.UI.Views
             }
         }
 
+        /// <summary>Double-click opens the job's page - the usual CAM gesture.</summary>
+        private void OnNodeDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                _model?.EditJob(_model.SelectedJobNode);
+                e.Handled = true;
+            }
+            catch (Exception ex)
+            {
+                Handle(ex, nameof(OnNodeDoubleClick));
+            }
+        }
+
         private void OnTreeKeyDown(object sender, KeyEventArgs e)
         {
             try
@@ -108,6 +130,11 @@ namespace GCam.UI.Views
                 if (e.Key == Key.F2)
                 {
                     BeginRename();
+                    e.Handled = true;
+                }
+                else if (e.Key == Key.Enter)
+                {
+                    _model?.EditJob(_model.SelectedJobNode);
                     e.Handled = true;
                 }
                 else if (e.Key == Key.Delete)
@@ -124,86 +151,72 @@ namespace GCam.UI.Views
 
         // ---- Context menu ----------------------------------------------------
 
-        private void OnContextMenuOpened(object sender, RoutedEventArgs e)
+        /// <summary>
+        /// Shows the node menu on right-button *up*, once the selection made on the way
+        /// down has settled.
+        /// </summary>
+        private void OnNodeRightButtonUp(object sender, MouseButtonEventArgs e)
         {
             try
             {
-                JobNode job = _model?.SelectedJobNode;
-                bool onJob = job != null;
-
-                EditJobItem.IsEnabled = onJob;
-                RenameItem.IsEnabled = onJob;
-                NewOperationItem.IsEnabled = onJob;
-                DuplicateItem.IsEnabled = onJob;
-                DeleteItem.IsEnabled = onJob;
-
-                // Nothing to do for a job that is already the default.
-                MakeDefaultItem.IsEnabled = onJob && !job.IsDefault;
+                ShowNodeMenu();
+                e.Handled = true;
             }
             catch (Exception ex)
             {
-                Handle(ex, nameof(OnContextMenuOpened));
+                Handle(ex, nameof(OnNodeRightButtonUp));
             }
         }
 
-        private void OnEditJob(object sender, RoutedEventArgs e)
+        private void ShowNodeMenu()
         {
-            try
+            JobNode job = _model?.SelectedJobNode;
+            if (job == null)
             {
-                _model?.EditJob(_model.SelectedJobNode);
+                return;
             }
-            catch (Exception ex)
-            {
-                Handle(ex, nameof(OnEditJob));
-            }
+
+            // Rebuilt per click. The menu is small, and building it fresh is how
+            // enablement stays honest without a separate Opened handler.
+            _nodeMenu?.Dispose();
+            _nodeMenu = new WinForms.ContextMenuStrip();
+
+            AddMenuItem("Edit…", () => _model.EditJob(job));
+            AddMenuItem("Rename", BeginRename, shortcut: "F2");
+            _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
+            AddMenuItem("New Operation…", () => _model.NewOperation(job));
+            _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
+            AddMenuItem("Duplicate", () => _model.Duplicate(job));
+
+            // Nothing to do for a job that is already the default.
+            AddMenuItem("Make Default", () => _model.MakeDefault(job), enabled: !job.IsDefault);
+            AddMenuItem("Delete", DeleteSelected, shortcut: "Del");
+
+            _nodeMenu.Show(WinForms.Control.MousePosition);
         }
 
-        private void OnNewOperation(object sender, RoutedEventArgs e)
+        private void AddMenuItem(string text, Action action, bool enabled = true, string shortcut = null)
         {
-            try
+            var item = new WinForms.ToolStripMenuItem(text)
             {
-                _model?.NewOperation(_model.SelectedJobNode);
-            }
-            catch (Exception ex)
-            {
-                Handle(ex, nameof(OnNewOperation));
-            }
-        }
+                Enabled = enabled,
+                ShortcutKeyDisplayString = shortcut,
+            };
 
-        private void OnDuplicate(object sender, RoutedEventArgs e)
-        {
-            try
+            // Entry point: WinForms raises this, so nothing may escape.
+            item.Click += (sender, args) =>
             {
-                _model?.Duplicate(_model.SelectedJobNode);
-            }
-            catch (Exception ex)
-            {
-                Handle(ex, nameof(OnDuplicate));
-            }
-        }
+                try
+                {
+                    action();
+                }
+                catch (Exception ex)
+                {
+                    Handle(ex, "menu:" + text);
+                }
+            };
 
-        private void OnMakeDefault(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                _model?.MakeDefault(_model.SelectedJobNode);
-            }
-            catch (Exception ex)
-            {
-                Handle(ex, nameof(OnMakeDefault));
-            }
-        }
-
-        private void OnDelete(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                DeleteSelected();
-            }
-            catch (Exception ex)
-            {
-                Handle(ex, nameof(OnDelete));
-            }
+            _nodeMenu.Items.Add(item);
         }
 
         private void DeleteSelected()
@@ -232,18 +245,6 @@ namespace GCam.UI.Views
         }
 
         // ---- Rename ----------------------------------------------------------
-
-        private void OnRename(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                BeginRename();
-            }
-            catch (Exception ex)
-            {
-                Handle(ex, nameof(OnRename));
-            }
-        }
 
         private void BeginRename()
         {

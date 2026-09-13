@@ -25,6 +25,8 @@
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
             <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
             <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnNodeRightClick" />
+            <EventSetter Event="PreviewMouseRightButtonUp" Handler="OnNodeRightButtonUp" />
+            <EventSetter Event="MouseDoubleClick" Handler="OnNodeDoubleClick" />
         </Style>
 
         <!-- The label, which becomes a text box while the node is being renamed. -->
@@ -109,20 +111,6 @@
                   Background="Transparent"
                   Visibility="{Binding HasJobs, Converter={StaticResource BoolToVisibility}}"
                   SelectedItemChanged="OnTreeSelectionChanged"
-                  KeyDown="OnTreeKeyDown">
-
-            <TreeView.ContextMenu>
-                <ContextMenu x:Name="NodeContextMenu" Opened="OnContextMenuOpened">
-                    <MenuItem x:Name="EditJobItem" Header="Edit…" Click="OnEditJob" />
-                    <MenuItem x:Name="RenameItem" Header="Rename" InputGestureText="F2" Click="OnRename" />
-                    <Separator />
-                    <MenuItem x:Name="NewOperationItem" Header="New Operation…" Click="OnNewOperation" />
-                    <Separator />
-                    <MenuItem x:Name="DuplicateItem" Header="Duplicate" Click="OnDuplicate" />
-                    <MenuItem x:Name="MakeDefaultItem" Header="Make Default" Click="OnMakeDefault" />
-                    <MenuItem x:Name="DeleteItem" Header="Delete" InputGestureText="Del" Click="OnDelete" />
-                </ContextMenu>
-            </TreeView.ContextMenu>
-        </TreeView>
+                  KeyDown="OnTreeKeyDown" />
     </Grid>
 </UserControl>

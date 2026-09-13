@@ -10,12 +10,12 @@ The project structure for G-CAM and the rules that keep it intact.
 | `Core/Diagnostics` — logging, error policy, user exceptions | Done |
 | `Core/Settings` — XML settings store | Done |
 | `Core/Tooling` — tools, holders, cutter profiles, libraries, HSM import, edit sessions | Done |
-| `UI` — error dialog, tool library browser and editor, profile preview | Done |
+| `UI/Views` — error dialog, tool library browser and editor, profile preview | Done |
 | `AddIn` — CommandManager, COM registration | Done |
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done |
 | `Core/Model` — Job, Operation, Stock, JobDocument | Done, minus persistence |
 | `Core/Geometry/Primitives` — Vec3, Bounds | Started — only what stock needs |
-| `UI` — job tree with rename and context menu | Done |
+| `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done |
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job page | Done; Operation page is still a shell |
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done |
 | `Core/Strategies`, `Simulation`, `Commands`, `Posting` | Not started |
@@ -306,12 +306,18 @@ these COM objects may be released and which must not.
 `Events/` does not exist yet; `JobTreeTabs` subscribes directly. Factor the subscriptions
 out when persistence becomes a second subscriber, not before.
 
+**Property pages are rebuilt for every show, not cached.** Reusing one means reshaping it
+before each show, and reshaping means `IPropertyManagerPageControl.Visible`, which kills
+SOLIDWORKS after a handful of uses. Building is a dozen API calls; do not "optimise" it
+back. The job tree's context menu is WinForms for historical reasons only — it was swapped
+during that investigation and WPF turned out to be innocent.
+
 **Editing happens on a PropertyManager page, which cannot live inside the G-CAM tab.**
 `CreatePropertyManagerPage` takes no parent and no pane — SOLIDWORKS always renders a
 page on the PropertyManager tab. So editing is a round trip:
 `G-CAM tab → PropertyManager tab → OK/Cancel → G-CAM tab`. Only the last hop is ours;
 `GCamPropertyPage` makes it by recording `ActiveFeatureManagerTabIndex` before showing
-the page and setting it back in `AfterClose`. Details and the alternatives that were
+the page and setting it back after it closes. Details and the alternatives that were
 weighed are in
 [property-manager-pages.md](solidworks-api/property-manager-pages.md).
 

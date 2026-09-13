@@ -68,6 +68,18 @@ namespace GCam.SolidWorks.PropertyPages
         protected abstract void BuildControls(IPropertyManagerPage2 page);
 
         /// <summary>
+        /// Puts the current values into the controls. Called before every show, while
+        /// the page is closed.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately not called from AfterActivation. Assigning to a combobox or a
+        /// number box fires that control's change callback, and a page that reacts to
+        /// those by showing and hiding controls would be rearranging itself while
+        /// SOLIDWORKS is still building it.
+        /// </remarks>
+        protected virtual void LoadControls() { }
+
+        /// <summary>
         /// Displays the page, building it on first use.
         /// </summary>
         /// <exception cref="GCamUserException">
@@ -81,10 +93,22 @@ namespace GCam.SolidWorks.PropertyPages
                 return;
             }
 
-            if (_page == null)
-            {
-                _page = Build();
-            }
+            // Rebuilt every time rather than cached.
+            //
+            // A reused page has to be reshaped before each show, and reshaping means
+            // setting IPropertyManagerPageControl.Visible - which kills SOLIDWORKS after
+            // a handful of shows, silently. Building afresh lets every control be
+            // created with the visibility it needs, so that property is never touched on
+            // the way in. Building a page is a dozen API calls; it is not worth caching
+            // at this price.
+            ReleasePage();
+            _page = Build();
+
+            // Populated while the page is still closed. The help is explicit that a page
+            // is configured before it is displayed, and doing it from AfterActivation
+            // instead - nested inside Show2 - left the page blank: setting a combobox
+            // fires its change callback while SOLIDWORKS is still assembling the page.
+            LoadControls();
 
             RememberManagerPaneTab();
 
@@ -250,10 +274,10 @@ namespace GCam.SolidWorks.PropertyPages
         /// rather than assumed.
         /// </summary>
         protected static IPropertyManagerPageNumberbox AddLengthbox(
-            IPropertyManagerPageGroup group, int id, string caption, string tip)
+            IPropertyManagerPageGroup group, int id, string caption, string tip, bool visible = true)
         {
             var box = AddControl<IPropertyManagerPageNumberbox>(
-                group, id, swPropertyManagerPageControlType_e.swControlType_Numberbox, caption, tip);
+                group, id, swPropertyManagerPageControlType_e.swControlType_Numberbox, caption, tip, visible);
 
             // Units cannot be changed once the page is shown, so this has to happen here.
             // The upper bound is deliberately generous rather than a guess at machine
@@ -312,7 +336,8 @@ namespace GCam.SolidWorks.PropertyPages
             int id,
             swPropertyManagerPageControlType_e type,
             string caption,
-            string tip)
+            string tip,
+            bool visible = true)
             where T : class
         {
             // AddControl2, not AddControl: since 2014 the newer overload requires
@@ -323,7 +348,7 @@ namespace GCam.SolidWorks.PropertyPages
                 (short)type,
                 caption,
                 (short)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent,
-                (int)swAddControlOptions_e.swControlOptions_Visible |
+                (visible ? (int)swAddControlOptions_e.swControlOptions_Visible : 0) |
                 (int)swAddControlOptions_e.swControlOptions_Enabled,
                 tip ?? string.Empty) as T;
 
@@ -371,6 +396,11 @@ namespace GCam.SolidWorks.PropertyPages
         /// closing a page from inside its own callback is what the API help warns about.
         /// </summary>
         public void Dispose()
+        {
+            ReleasePage();
+        }
+
+        private void ReleasePage()
         {
             if (_page == null)
             {

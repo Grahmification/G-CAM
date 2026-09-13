@@ -205,6 +205,19 @@ It has since been removed on that reasoning, and `ActivateCommandTab` now sets
 ribbon ever stops following the tab again, **this is the first thing to suspect** and the
 deferral is in the history of this file.
 
+**A postscript, and a correction.** Deferral was later reintroduced across the add-in on
+the belief that showing a PropertyManager page from this tab's hosted control was unsafe.
+That belief was wrong. Pages were crashing SOLIDWORKS for an entirely unrelated reason —
+`IPropertyManagerPageControl.Visible`, see
+[property-manager-pages.md](property-manager-pages.md) — and deferral never fixed it in
+any of its four forms. All of that machinery has since been removed; pages are opened
+directly from the tree, exactly as they are from the toolbar.
+
+So the conclusion originally recorded here stands after all: the deferral was
+unnecessary. It is worth knowing that it was removed, reinstated on a misdiagnosis, and
+removed again — a reminder that "the symptom changed when I added this" is not evidence
+that the thing you added was right.
+
 Worth keeping in mind before reaching for `OnIdleNotify` in general: it fires
 continuously, so any subscription has to be one-shot, and that is a lot of moving parts
 to add on a hunch.

@@ -26,11 +26,11 @@ G-CAM tab  ->  (edit)  ->  PropertyManager tab  ->  (OK/Cancel)  ->  G-CAM tab
 ```
 
 **The last hop is the only one that is ours to arrange.**
-`IModelViewManager::ActiveFeatureManagerTabIndex` is a read/write property — get it
-before showing the page, set it back in `AfterClose`. `GCamPropertyPage` does exactly
-that, and deliberately restores *the tab that was active* rather than hunting for G-CAM's
-own index: it needs no way to identify our tab, and it does the right thing when a page
-was opened from somewhere else.
+`IModelViewManager::ActiveFeatureManagerTabIndex` is a read/write property — read it
+before showing the page, set it back after the page has closed. `GCamPropertyPage`
+deliberately restores *the tab that was active* rather than hunting for G-CAM's own
+index: it needs no way to identify our tab, and it does the right thing when a page was
+opened from somewhere else.
 
 Related, if you ever do need our tab's index: `GetFeatureManagerTabs` returns the tabs
 **right to left**, and there are `GetFeatureManagerTreeTabIndex`,
@@ -102,11 +102,12 @@ Two consequences worth keeping in mind:
 
 ## Building the page
 
-### Controls can only be added or changed while the page is closed — **From docs**
+### Controls can only be added while the page is closed — **From docs**
 
 `AddGroupBox` and `AddControl2` both carry the same Remark: use them before the page is
-shown or while it is closed. Changing a page from inside its own handler does not work,
-which is why anything dynamic has to happen between shows.
+shown or while it is closed. A page cannot grow a control while it is on screen, which is
+why G-CAM rebuilds a page per show rather than reshaping one — see the `Visible` section
+below, which is the other half of that story and much the more dangerous half.
 
 ### `AddControl2` hides controls you do not explicitly make visible — **From docs**
 
@@ -159,21 +160,69 @@ To put a saved selection back, `IModelDocExtension::SelectByID2` takes the name 
 type string — `"SOLIDBODY"`, `"COORDSYS"` — plus the mark, so a restored selection lands
 in the right box.
 
-## Controls are created once and then shown or hidden — **From docs**
+## `IPropertyManagerPageControl.Visible` is fatal after a few uses — **Verified (2025 SP3)**
 
-Both `AddGroupBox` and `AddControl2` carry the same Remark: use them before the page is
-shown or while it is closed. **A page cannot grow a control while it is on screen.**
+**This is the most important thing on this page.** Setting `Visible` on a page's control
+kills SOLIDWORKS outright — no exception, nothing in the log, no Windows Application
+Error entry, the process simply goes. It does not fail the first time. In testing it took
+**four shows of the page, reproducibly**, from any trigger, and the fault always landed on
+the first `Visible` write of the fourth show.
 
-So a page that changes shape creates everything up front and toggles
-`IPropertyManagerPageControl.Visible`. The job page's stock section builds all eight
-number boxes and shows the three or four the current mode uses.
+Something accumulates; four was the limit here. The help documents no restriction of any
+kind on this property.
 
-Doing that from inside a handler repaints the page per control and visibly flickers.
-`swPropertyManagerOptions_DisablePageBuildDuringHandlers` in the page options defers the
-repaint until control returns to SOLIDWORKS; `GCamPropertyPage` sets it for every page.
+So a page must not be reshaped on the way in. G-CAM's answer:
 
-Number box units are set with `SetRange2` and **cannot be changed once the page is
-shown** — the parameter is ignored if you try, so it has to happen at build time.
+- **Pages are rebuilt for every show.** `GCamPropertyPage.Show` releases the previous page
+  and calls `Build()` again. That is a dozen API calls and is not worth caching at this
+  price.
+- **Controls are created with the visibility they need**, by passing (or withholding)
+  `swControlOptions_Visible` in `AddControl2`. Creating a control hidden is safe; hiding
+  it later is not.
+- `ShowControlsFor` still exists and still calls `Visible`, but is reached only when the
+  user changes the stock mode on a live page. If that ever develops the same four-strikes
+  limit, the answer is to close and reopen the page on a mode change.
+
+### How it was found, because the symptoms were badly misleading
+
+Five wrong diagnoses came first, each plausible, each reinforced by a correlation:
+
+| Looked like | Actually |
+| --- | --- |
+| Showing a page from a WPF click handler | The click path just spent shows faster |
+| A missing deferral — tried `OnIdleNotify`, WPF `Background`, `SystemIdle`, a WinForms timer | The call stack was never involved |
+| Keyboard focus sitting in the hosted control | Moving it to the frame changed nothing |
+| WPF `ContextMenu` popups | A WinForms menu crashed identically |
+| The menu still dismissing as the page opened | Double-click crashed too, just later |
+
+What broke it open was a count. Double-click worked three times and failed on the fourth —
+and a failure that needs four attempts is not about *how* it is called, it is about
+history. Every earlier theory had been explaining a correlation: the context menu costs an
+extra show, so it tipped over on the first Edit rather than the fourth.
+
+The lesson worth keeping: **ask how many times it takes before asking what is different
+about the call.** A deterministic-looking crash that moves when you change unrelated
+things is a resource story, not a threading story.
+
+### Duplicate control ids are silently accepted
+
+A related self-inflicted bug found on the way: two controls on the same page were given
+id 21, because a label was added at `IdBodies + 1` and a constant elsewhere was also 21.
+SOLIDWORKS reports nothing — the page just behaves oddly. Ids are per page; keep them in
+one block and leave gaps.
+
+## Populate the page before showing it, not from `AfterActivation` — **Verified (2025 SP3)**
+
+`AfterActivation` fires from *inside* `Show2`, while SOLIDWORKS is still assembling the
+page. Assigning to a combobox there fires its own `OnComboboxSelectionChanged`, and a page
+that responds by reshaping itself is rearranging a page mid-build. The result was a page
+that flickered and then displayed nothing.
+
+`GCamPropertyPage.LoadControls` is called from `Show()` before `Show2`, and
+`JobPropertyPage` guards its change callbacks with a `_loading` flag so a load cannot be
+mistaken for the user typing. Only work that genuinely needs a live page belongs in
+`PageShown` — restoring selections is the one case, because `SelectByID2` routes by mark
+and the marks belong to selection boxes on a page that actually exists.
 
 ## Error handling
 
@@ -195,31 +244,30 @@ Every one of the thirty-seven handler methods is an entry point, and
 add-in can do no real work there. Commit in `AfterClose`.
 
 `GCamPropertyPage` seals `AfterActivation`, `OnClose` and `AfterClose` and offers
-`PageShown` / `PageClosed` in their place. That is not tidiness: the tab restore lives in
-`AfterClose`, and a page that overrode it and forgot to call `base` would leave the user
-stranded on the PropertyManager tab with no obvious cause.
+`PageShown` / `PageClosed` in their place, so a page cannot skip the Manager Pane tab
+restore by overriding one and forgetting to call `base`.
 
-## Open question: what units is a length number box in?
+## A length number box is in metres — **Verified (2025 SP3)**
 
-**Unmeasured, and it matters more than anything else on this page.** The help documents
-neither `IPropertyManagerPageNumberbox.Value` nor `SetRange2`'s unit parameter as being
-in any particular unit. SOLIDWORKS works in metres internally, so
-`JobPropertyPage.ToBoxLength` / `FromBoxLength` assume metres — and log the raw value the
-first time one is read, precisely so the assumption can be checked rather than believed:
+The help documents neither `IPropertyManagerPageNumberbox.Value` nor `SetRange2`'s unit
+parameter as being in any particular unit, which matters because getting it wrong is the
+1000× error and would show up as stock a metre thick rather than as a crash.
 
-```
-Length number box raw value 0.01 read as 10 mm.
-```
+Measured on a document in millimetres: typing **1 mm** read back as **0.001**. So the box
+exchanges **metres** — SOLIDWORKS' system units — not the document's display units, even
+though it shows and accepts mm. The conversion lives in `JobPropertyPage.ToBoxLength` /
+`FromBoxLength` and nowhere else.
 
-Type **10 mm** into the Top offset and that line should say `0.01`. If it says `10`, the
-box is in document units and those two methods are the only thing that needs changing —
-they exist as a pair for that reason. This is the 1000× error `architecture.md` warns
-about, and it would show up as stock a metre thick rather than as a crash.
+## What has been seen working
 
-## Not yet exercised
+Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
 
-The Job page and the tree compile, and the pieces they rest on — the `ref`/`out`
-signatures, the create-once rule, the assembly visibility — are compile-time or
-documented facts. But **none of the job work has been run inside SOLIDWORKS**: no page
-opened, no selection made, no number box read. The units question above is the first
-thing to settle when it is.
+| | |
+| --- | --- |
+| Job page opens, values round-trip, OK commits and Cancel does not | **Confirmed** |
+| Length boxes are in metres | **Confirmed** |
+| Editing repeatedly from double-click, Enter and the context menu | **Confirmed** after the `Visible` fix |
+| `Visible` on each show | **Confirmed fatal** — fourth show, every time |
+| Page rebuilt per show, controls created pre-hidden | **Confirmed** |
+| Selection boxes: bodies and coordinate systems | **Not yet exercised** |
+| `Visible` on a user-driven stock mode change | **Not yet exercised** — the one remaining caller |

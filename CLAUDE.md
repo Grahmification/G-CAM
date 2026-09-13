@@ -69,6 +69,8 @@ Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help
 
 **Job and operation editing happens on SOLIDWORKS-native PropertyManager pages, not WPF.** A page cannot be hosted inside G-CAM's own Manager Pane tab — SOLIDWORKS always renders it on the PropertyManager tab — so editing is a round trip back to the G-CAM tab, which `GCamPropertyPage` arranges. Derive from it; it seals the lifecycle callbacks on purpose. `PmpHandlerBase` underneath wraps all 37 `IPropertyManagerPage2Handler9` callbacks in the try/catch so a page cannot forget one. See `docs/solidworks-api/property-manager-pages.md`, including two parameters the help calls `out` that are actually `ref`.
 
+**Never set `IPropertyManagerPageControl.Visible` on a page you are about to show.** It kills SOLIDWORKS outright — silently, with nothing in any log, and only after about the fourth show, which makes it look like anything but what it is. Property pages are therefore **rebuilt for every show** and controls are created with the visibility they need via `AddControl2`'s options; `GCamPropertyPage.Show` does this and the reasons are in `docs/solidworks-api/property-manager-pages.md`. Related: populate a page from `LoadControls` before `Show2`, never from `AfterActivation`, and keep control ids unique per page — duplicates are accepted in silence.
+
 **Units: Core works in millimetres**, SOLIDWORKS in metres. Convert only at the edges. Conversion factors live in `GCam.Core.Units`; never write a bare `25.4` or `1000`.
 
 **Shared constants have one home**, named for their purpose — `GCam.Core.Units`, `GCam.Core.Precision.Epsilon`. Never a `Constants` junk drawer. A value used in one file stays private until a second caller appears.
