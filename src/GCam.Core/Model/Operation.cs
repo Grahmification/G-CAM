@@ -1,38 +1,171 @@
 using System;
+using System.Collections.Generic;
+using GCam.Core.Model.Heights;
+using GCam.Core.Strategies;
+using GCam.Core.Tooling;
 
 namespace GCam.Core.Model
 {
     /// <summary>
-    /// One machining operation inside a job.
+    /// One machining operation inside a job: a strategy, a tool, a depth, and the
+    /// toolpath that comes out.
     /// </summary>
     /// <remarks>
-    /// A placeholder. It carries only enough to exist as a node in the job tree; the
-    /// strategy, tool, geometry and heights arrive with the operation work. The type is
-    /// here now so the tree and the job model can be built and tested against something
-    /// real rather than against a gap.
+    /// This type carries what every operation has whatever its strategy - measured
+    /// against the four strategies in the HSMWorks export, 47 of 231 parameters. The other
+    /// four fifths live in <see cref="Settings"/>. See docs/design/operations.md.
+    ///
+    /// The strategy is fixed when the operation is created and never swapped. Changing
+    /// approach means a new operation, which is what keeps persistence, the property page
+    /// and undo from needing a rule for what survives a change between every pair of
+    /// strategies.
     /// </remarks>
     public sealed class Operation
     {
+        /// <summary>
+        /// Default chord tolerance, mm. A sensible starting point for 2D work; the
+        /// supplied HSMWorks templates use 0.001mm.
+        /// </summary>
+        public const double DefaultTolerance = 0.01;
+
+        public Operation(StrategySettings settings)
+        {
+            Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        }
+
         public string Id { get; set; } = Guid.NewGuid().ToString("D");
 
         public string Name { get; set; }
 
+        /// <summary>Free text, posted as a comment so it reaches whoever runs the job.</summary>
+        public string Comment { get; set; }
+
+        /// <summary>
+        /// False suppresses the operation: it keeps its toolpath, is drawn as disabled,
+        /// and posts nothing.
+        /// </summary>
+        public bool Enabled { get; set; } = true;
+
+        /// <summary>The strategy-specific parameters. Never null, never replaced.</summary>
+        public StrategySettings Settings { get; }
+
+        /// <summary>
+        /// Which strategy this is. Read from <see cref="Settings"/> rather than stored, so
+        /// the two cannot disagree.
+        /// </summary>
+        public StrategyId Strategy => Settings.Strategy;
+
+        /// <summary>
+        /// The part tool this operation cuts with - an id into
+        /// <see cref="JobDocument.Tools"/>, not a copy.
+        /// </summary>
+        /// <remarks>
+        /// Several operations routinely share one cutter, and they must not be able to
+        /// disagree about its shape. Geometry is shared; the feeds and speeds below are
+        /// this operation's own. See docs/decisions/0008-document-tool-list.md.
+        /// </remarks>
+        public string ToolId { get; set; }
+
+        /// <summary>
+        /// This operation's spindle speed, feeds and coolant, seeded from the tool's
+        /// defaults when the tool was chosen and free to diverge afterwards.
+        /// </summary>
+        public CuttingData Cutting { get; set; } = new CuttingData();
+
+        public OperationHeights Heights { get; set; } = new OperationHeights();
+
+        public OperationFrame Frame { get; set; } = new OperationFrame();
+
+        /// <summary>How far the toolpath may deviate from the model, mm.</summary>
+        public double Tolerance { get; set; } = DefaultTolerance;
+
+        public OperationState State { get; set; } = OperationState.NotGenerated;
+
+        /// <summary>Why the state is what it is. Null unless there is something to say.</summary>
+        public string StateMessage { get; set; }
+
+        /// <summary>
+        /// Fields G-CAM has no property for, preserved rather than dropped. Same contract
+        /// as <see cref="Tooling.Tool.Extra"/> and <see cref="Job.Extra"/>.
+        /// </summary>
+        public Dictionary<string, string> Extra { get; set; } =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>True when a toolpath exists and can be believed.</summary>
+        public bool HasUsableToolpath =>
+            State == OperationState.Generated || State == OperationState.Warning;
+
         /// <summary>Deep copy, keeping the id. For duplicating a whole job.</summary>
         public Operation Clone()
         {
-            return new Operation
+            return new Operation(Settings.Clone())
             {
                 Id = Id,
                 Name = Name,
+                Comment = Comment,
+                Enabled = Enabled,
+                ToolId = ToolId,
+                Cutting = Cutting?.Clone() ?? new CuttingData(),
+                Heights = Heights?.Clone() ?? new OperationHeights(),
+                Frame = Frame?.Clone() ?? new OperationFrame(),
+                Tolerance = Tolerance,
+                State = State,
+                StateMessage = StateMessage,
+                Extra = new Dictionary<string, string>(
+                    Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
             };
         }
 
         /// <summary>Deep copy with a fresh id, for a copy that stands on its own.</summary>
+        /// <remarks>
+        /// The copy has no toolpath of its own yet, so it starts <see cref="OperationState.NotGenerated"/>
+        /// rather than claiming the original's result.
+        /// </remarks>
         public Operation CloneAsNew()
         {
             Operation copy = Clone();
             copy.Id = Guid.NewGuid().ToString("D");
+            copy.State = OperationState.NotGenerated;
+            copy.StateMessage = null;
             return copy;
+        }
+
+        /// <summary>
+        /// Problems a user can act on. Empty when the operation is ready to generate.
+        /// </summary>
+        /// <param name="heightContext">
+        /// The stock and model extents, when they are available. Null skips the height
+        /// checks rather than inventing extents - a page being edited before the geometry
+        /// has been resolved is a normal state, not a broken operation.
+        /// </param>
+        public IReadOnlyList<string> Validate(HeightContext heightContext = null)
+        {
+            var problems = new List<string>();
+
+            if (string.IsNullOrWhiteSpace(Name))
+            {
+                problems.Add("An operation needs a name.");
+            }
+
+            if (string.IsNullOrWhiteSpace(ToolId))
+            {
+                problems.Add("Choose a tool for this operation.");
+            }
+
+            if (Tolerance <= Precision.Epsilon)
+            {
+                problems.Add("Tolerance must be greater than zero.");
+            }
+
+            if (heightContext != null)
+            {
+                problems.AddRange(Heights.Validate(heightContext));
+            }
+
+            problems.AddRange(Frame.Validate());
+            problems.AddRange(Settings.Validate());
+
+            return problems;
         }
 
         public override string ToString() => Name ?? "Operation";

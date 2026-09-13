@@ -1,6 +1,7 @@
 using System.Linq;
 using GCam.Core.Diagnostics;
 using GCam.Core.Model;
+using GCam.Core.Strategies.Contour2d;
 using Xunit;
 
 namespace GCam.Core.Tests.Model
@@ -154,7 +155,7 @@ namespace GCam.Core.Tests.Model
         {
             var document = new JobDocument();
             Job first = document.AddNew();
-            first.Operations.Add(new Operation { Name = "Contour1" });
+            first.Operations.Add(new Operation(new Contour2dSettings()) { Name = "Contour1" });
 
             Job copy = document.Duplicate(first);
 

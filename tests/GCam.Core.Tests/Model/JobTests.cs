@@ -1,5 +1,6 @@
 using System.Linq;
 using GCam.Core.Model;
+using GCam.Core.Strategies.Contour2d;
 using Xunit;
 
 namespace GCam.Core.Tests.Model
@@ -12,7 +13,7 @@ namespace GCam.Core.Tests.Model
             job.ModelBodyNames.Add("Boss-Extrude1");
             job.CoordinateSystemName = "Coordinate System1";
             job.Stock.SideOffset = 2;
-            job.Operations.Add(new Operation { Name = "Contour1" });
+            job.Operations.Add(new Operation(new Contour2dSettings()) { Name = "Contour1" });
             job.Extra["hsm.origin"] = "imported";
             return job;
         }

@@ -26,8 +26,9 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — coordinate system transforms, model extent | Started — bounding boxes only, no BRep | |
-| `Core/Model` — Operation beyond a placeholder, Toolpath, heights | Designed, not started | [Operations](design/operations.md) |
-| `Core/Strategies`, `Core/Generation` | Designed, not started | [Operations](design/operations.md) |
+| `Core/Model` — Operation, heights, geometry references | Done, minus the toolpath it will own | [Operations](design/operations.md) |
+| `Core/Strategies` — id, settings base, catalogue, Contour2d parameters | Started — no strategy computes anything yet | [Operations](design/operations.md) |
+| `Core/Generation` | Designed, not started | [Operations](design/operations.md) |
 | `SolidWorks/Persistence` | Designed, not started | [Operations](design/operations.md) |
 | `Core/Simulation`, `Commands`, `Posting` | Not started | |
 | `Core/Geometry` beyond the primitives | Not started | |
@@ -67,9 +68,9 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │
 ├── src/
 │   ├── GCam.Core/                     ★ netstandard2.0 — NO SolidWorks references. Ever.
-│   │   ├── Model/                     Job, Operation, Stock, JobDocument (owns the
-│   │   │                              part's tool list), WorkOffsets, OperationFrame,
-│   │   │                              GeometryRef, Toolpath, Move
+│   │   ├── Model/                     Job, Operation, OperationState, OperationFrame,
+│   │   │                              Stock, JobDocument (owns the part's tool list),
+│   │   │                              WorkOffsets, GeometryRef — later Toolpath, Move
 │   │   │                              (no Setup level — see decision 0004)
 │   │   │   └── Heights/               HeightSetting, HeightMode, HeightContext
 │   │   │                              — mode + offset, resolved against stock/model
@@ -89,9 +90,12 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │   ├── Faceting/              controlled-tolerance tessellation
 │   │   │   ├── Offset/                2D offsetting (Clipper2 behind an interface)
 │   │   │   └── Query/                 raycast, closest-point, containment
-│   │   ├── Strategies/                IToolpathStrategy, StrategySettings,
-│   │   │                              StrategyCatalog + Contour2d/, Face/,
-│   │   │                              Adaptive2d/, Drill/ — see design/operations.md
+│   │   ├── Strategies/                StrategyId, StrategySettings, StrategyCatalog,
+│   │   │                              later IToolpathStrategy
+│   │   │   ├── Shared/                groups some strategies have and others do not —
+│   │   │   │                          MultipleDepthsSettings, LeadSettings, CutDirection
+│   │   │   └── Contour2d/             + later Face/, Adaptive2d/, Drill/
+│   │   │                              — see design/operations.md
 │   │   ├── Generation/                GenerationQueue (off-thread, cancellable),
 │   │   │                              Staleness (what a change invalidates)
 │   │   ├── Simulation/                ISimulator, ZMap/, Verification/

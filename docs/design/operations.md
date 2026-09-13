@@ -235,12 +235,21 @@ public abstract class StrategySettings
 {
     public abstract StrategyId Strategy { get; }
     public abstract StrategySettings Clone();
-    public abstract IReadOnlyList<string> Validate(Operation owner);
+    public virtual IReadOnlyList<string> Validate();
 
     /// <summary>True when this strategy machines what earlier operations left.</summary>
     public virtual bool DependsOnPrecedingStock => false;
 }
 ```
+
+`Validate()` checks **self-consistency only** — a stepdown of zero while multiple depths
+are on, a negative lead radius, an empty selection. An earlier draft of this document had
+it take the owning `Operation`, which turned out to be worth nothing: the rules that want
+more context want the *tool* (is this stepdown deeper than the flute length?) and the
+*resolved heights* (is it deeper than the cut?), and neither is reachable from an
+`Operation` — the tool is an id into the part's list, and heights need a `HeightContext`.
+So the parameter bought a Model↔Strategies cycle and no information. Those cross-object
+rules are checked when an operation is generated, where both are in hand.
 
 Typed classes — `Contour2dSettings`, `DrillSettings` — with real properties, real enums
 and real defaults, because strategy code, posting and tests all read them directly and a
@@ -445,8 +454,8 @@ while they are still cheap to change.
 | # | Slice | Why here | State |
 | --- | --- | --- | --- |
 | 1 | `Heights/` + `FeedsAndSpeeds` + `GeometryRef` | The only parts of the base that are *logic* rather than data, so the only parts a test can prove. Pure Core, no dependencies on anything unbuilt | **Done** — 2026-09-13, 49 tests |
-| 2 | `Operation` rewrite + `StrategyId`/`StrategySettings`/`StrategyCatalog` + `Contour2dSettings` | The shape everything else binds to. Cheapest to change now, most expensive once persistence has written it into saved parts | **In progress** |
-| 3 | `JobDocument.Tools` + `ToolUsage`, seeding `Operation.Cutting` from a tool | Pure Core, and it unblocks the part-tool list in the library browser | Not started |
+| 2 | `Operation` rewrite + `StrategyId`/`StrategySettings`/`StrategyCatalog` + `Contour2dSettings` | The shape everything else binds to. Cheapest to change now, most expensive once persistence has written it into saved parts | **Done** — 2026-09-13, 59 tests |
+| 3 | `JobDocument.Tools` + `ToolUsage`, seeding `Operation.Cutting` from a tool | Pure Core, and it unblocks the part-tool list in the library browser | Next |
 | 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | Not started |
 | 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | Not started |
 | 6 | Persistence — `model.xml`, then the toolpath streams | Needs the model above it to be settled, and writing it into saved parts is what makes earlier slices expensive to revisit | Not started |
