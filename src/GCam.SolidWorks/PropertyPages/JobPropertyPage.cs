@@ -64,6 +64,11 @@ namespace GCam.SolidWorks.PropertyPages
         private const int MarkBodies = 1;
         private const int MarkCoordinateSystem = 2;
 
+        /// <summary>
+        /// What IFeature::GetTypeName2 returns for a coordinate system feature.
+        /// </summary>
+        private const string CoordinateSystemTypeName = "CoordSys";
+
         private static readonly string[] StockModeNames =
         {
             "Relative box",
@@ -276,6 +281,48 @@ namespace GCam.SolidWorks.PropertyPages
         /// <b>Selections need the page up too</b>, because SelectByID2 routes by mark and
         /// the marks belong to selection boxes on a page that actually exists.
         /// </remarks>
+        /// <summary>
+        /// Vets a candidate before it is allowed into a selection box, and names it.
+        /// </summary>
+        /// <remarks>
+        /// Clicking a coordinate system in the graphics area can land on one of its
+        /// parts, and the box then reads "CoordinateSystem1\Point". That is only ever
+        /// cosmetic here - the object behind it is the coordinate system feature, which
+        /// is why the job stores the right name regardless - but it reads like the wrong
+        /// thing was picked.
+        ///
+        /// <paramref name="itemText"/> is the cure. The help buries it: "ItemText is
+        /// returned to SOLIDWORKS and stored on the selected object and can be used by
+        /// your PropertyManager page selection list boxes for the life of that
+        /// selection." Returning the feature's own name makes the box show
+        /// "CoordinateSystem1" whichever part of it was clicked.
+        ///
+        /// Fires on every pre-select hover, so it stays cheap, takes no action and says
+        /// nothing.
+        /// </remarks>
+        protected override bool OnSubmitSelection(
+            int id, object selection, int selectionType, out string itemText)
+        {
+            itemText = null;
+
+            if (id != IdCoordinateSystem)
+            {
+                return true;
+            }
+
+            var feature = selection as Feature;
+
+            if (feature == null
+                || !string.Equals(
+                    feature.GetTypeName2(), CoordinateSystemTypeName, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            itemText = feature.Name;
+            return true;
+        }
+
         protected override void PageShown()
         {
             // Selections only. Visibility was settled when the controls were created.
@@ -284,15 +331,34 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected override void PageClosed(swPropertyManagerPageCloseReasons_e reason)
         {
-            if (reason != swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Okay)
+            if (reason == swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Okay)
             {
-                // Cancel, Escape, or the document closing underneath the page. The clone
-                // is simply dropped.
-                return;
+                CommitToJob();
+                Committed?.Invoke(this, _target);
             }
 
-            CommitToJob();
-            Committed?.Invoke(this, _target);
+            // Cancel, Escape, or the document closing underneath the page all land here
+            // too; the clone is simply dropped.
+            //
+            // Clearing last, not first: the edits are read from _working, which the
+            // selection callbacks have already filled in, and clearing the selection
+            // could otherwise fire one of those callbacks and empty it again.
+            ClearSelections();
+        }
+
+        /// <summary>
+        /// Drops what the page's selection boxes put on screen.
+        /// </summary>
+        /// <remarks>
+        /// The page selects the job's bodies and coordinate system so they are visible
+        /// while editing. Those are the page's selections, not the user's, and leaving
+        /// them behind means a part still lit up in the graphics area and a coordinate
+        /// system still highlighted in the feature tree after the page has gone.
+        /// </remarks>
+        private void ClearSelections()
+        {
+            var model = SwApp.ActiveDoc as ModelDoc2;
+            model?.ClearSelection2(true);
         }
 
         // ---- Loading ---------------------------------------------------------

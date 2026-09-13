@@ -31,6 +31,11 @@ namespace GCam.SolidWorks.PropertyPages
     /// </remarks>
     public abstract class GCamPropertyPage : PmpHandlerBase, IDisposable
     {
+        // Selection box heights, in dialog units rather than pixels. A box that can only
+        // ever hold one thing should not reserve three rows of empty space.
+        private const short SingleRowSelectionHeight = 14;
+        private const short ListSelectionHeight = 50;
+
         private readonly SldWorks _swApp;
         private readonly IGCamLog _log;
 
@@ -310,6 +315,10 @@ namespace GCam.SolidWorks.PropertyPages
             return combo;
         }
 
+        /// <param name="height">
+        /// Height in <b>dialog units</b>, not pixels. Zero picks a sensible default: one
+        /// row for a single-entity box, three for a list.
+        /// </param>
         /// <param name="mark">
         /// Distinguishes this box from every other selection box on the page. It is how
         /// SOLIDWORKS decides which box a click belongs to, and how
@@ -322,12 +331,15 @@ namespace GCam.SolidWorks.PropertyPages
             int mark,
             swSelectType_e[] filters,
             bool singleEntityOnly,
-            string tip)
+            string tip,
+            short height = 0)
         {
             var box = AddControl<IPropertyManagerPageSelectionbox>(
                 group, id, swPropertyManagerPageControlType_e.swControlType_Selectionbox, string.Empty, tip);
 
-            box.Height = 50;
+            box.Height = height > 0
+                ? height
+                : (singleEntityOnly ? SingleRowSelectionHeight : ListSelectionHeight);
             box.Mark = mark;
             box.SingleEntityOnly = singleEntityOnly;
             box.SetSelectionFilters(filters.Select(f => (int)f).ToArray());

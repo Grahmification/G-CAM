@@ -166,6 +166,27 @@ G-CAM's job page uses 1 for the model bodies and 2 for the coordinate system.
 
 Useful filters so far: `swSelSOLIDBODIES` (76) and `swSelCOORDSYS` (61).
 
+**What the box displays is not what you selected.** Clicking a coordinate system in the
+graphics area can land on one of its parts, and the box then reads
+`CoordinateSystem1\Point`. The object behind it is still the coordinate system feature —
+`IFeature.Name` returns `CoordinateSystem1` — so only the display is wrong, which is worse
+than it sounds because it looks like the wrong thing was picked.
+
+**`OnSubmitSelection`'s `ItemText` fixes that**, and the help buries the fact in its last
+Remarks line: *"ItemText is returned to SOLIDWORKS and stored on the selected object and
+can be used by your PropertyManager page selection list boxes for the life of that
+selection."* Return the feature's own name and the box shows it, whichever part was
+clicked.
+
+The same callback is where a selection is vetted: returning false refuses it exactly as if
+the filter had, so the job page also requires an `IFeature` reporting
+`GetTypeName2() == "CoordSys"`. It fires on every pre-select hover, so keep it cheap,
+take no action that touches the model, and say nothing.
+
+**Height is in dialog units, not pixels.** The help says so and it is easy to miss: `50`
+is about three rows. A single-entity box wants roughly `14`. `MapDialogRect` converts if
+you ever need real pixels.
+
 **Read selections through `ISelectionMgr`, not the box.** `GetSelectedObjectCount2(mark)`
 and `GetSelectedObject6(index, mark)` — one-based — are the pair that respect the mark.
 Pass the mark to *both*; asking for a count with one mark and fetching with another
