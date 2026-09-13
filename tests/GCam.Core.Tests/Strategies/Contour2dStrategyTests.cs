@@ -295,6 +295,102 @@ namespace GCam.Core.Tests.Strategies
         }
 
         [Fact]
+        public void The_plunge_lands_off_the_profile_when_there_is_a_lead_in()
+        {
+            // The bug this pins: the plunge used to land on the profile start and the
+            // lead-in arc then ran from that point back to itself - a zero-length arc,
+            // which the tessellator correctly reads as a full circle. So the cutter
+            // plunged onto the finished wall and looped all the way round it.
+            var settings = new Contour2dSettings();
+            settings.LeadIn.Enabled = true;
+            settings.LeadIn.Radius = 3;
+
+            Toolpath path = Generate(Context(settings));
+
+            Move plunge = path.Moves.First(m => m.Kind == MoveKind.Plunge);
+            Move lead = path.Moves.First(m => m.Kind == MoveKind.Lead);
+
+            // The touch-down is one radius back and one to the side: r * sqrt(2) away.
+            double away = Flat(lead.End, plunge.End).Length;
+
+            Assert.Equal(3 * Math.Sqrt(2), away, 3);
+        }
+
+        [Fact]
+        public void The_lead_in_arc_is_not_a_full_circle()
+        {
+            var settings = new Contour2dSettings();
+            settings.LeadIn.Enabled = true;
+            settings.LeadIn.Radius = 3;
+
+            Toolpath path = Generate(Context(settings));
+
+            int leadIndex = path.Moves.ToList().FindIndex(m => m.Kind == MoveKind.Lead);
+            Vec3 from = path.Moves[leadIndex - 1].End;
+            Vec3 to = path.Moves[leadIndex].End;
+
+            Assert.True(
+                Flat(from, to).Length > Precision.Epsilon,
+                "a lead arc that starts where it ends sweeps the whole way round");
+        }
+
+        [Fact]
+        public void The_lead_in_arrives_at_the_start_of_the_cut()
+        {
+            var settings = new Contour2dSettings();
+            settings.LeadIn.Enabled = true;
+            settings.LeadIn.Radius = 3;
+
+            Toolpath path = Generate(Context(settings));
+
+            int leadIndex = path.Moves.ToList().FindIndex(m => m.Kind == MoveKind.Lead);
+            Move firstCut = path.Moves.First(m => m.Kind == MoveKind.Cutting);
+
+            // Whatever the lead does, it has to hand over exactly where cutting begins.
+            Vec3 arrival = path.Moves[leadIndex].End;
+            Vec3 cutFrom = path.Moves[path.Moves.ToList().IndexOf(firstCut) - 1].End;
+
+            Assert.Equal(arrival, cutFrom);
+        }
+
+        [Fact]
+        public void The_lead_in_turns_about_a_centre_one_radius_from_the_profile()
+        {
+            var settings = new Contour2dSettings();
+            settings.LeadIn.Enabled = true;
+            settings.LeadIn.Radius = 3;
+
+            Toolpath path = Generate(Context(settings));
+
+            Move lead = path.Moves.First(m => m.Kind == MoveKind.Lead);
+
+            // Tangential arrival means the centre is exactly one radius from where it
+            // lands, square to the direction of travel.
+            Assert.Equal(3, Flat(lead.End, lead.Arc.Centre).Length, 6);
+        }
+
+        [Fact]
+        public void Without_a_lead_in_the_cutter_plunges_on_the_profile()
+        {
+            // Still legitimate, and still what happens when leads are off.
+            var settings = new Contour2dSettings();
+            settings.LeadIn.Enabled = false;
+            settings.LeadOutMatchesLeadIn = false;
+            settings.LeadOut.Enabled = false;
+
+            Toolpath path = Generate(Context(settings));
+
+            // Nothing between going down and starting to cut - which is what "plunges on
+            // the profile" means. Where that is depends on where Clipper2 chose to start
+            // the offset contour, which is not the input's start point and not worth
+            // asserting.
+            int firstCut = path.Moves.ToList().FindIndex(m => m.Kind == MoveKind.Cutting);
+
+            Assert.Equal(MoveKind.Plunge, path.Moves[firstCut - 1].Kind);
+            Assert.Equal(0, path.Moves[firstCut - 1].End.Z, 6);
+        }
+
+        [Fact]
         public void No_lead_is_produced_when_it_is_switched_off()
         {
             var settings = new Contour2dSettings();
@@ -383,6 +479,9 @@ namespace GCam.Core.Tests.Strategies
             Assert.True(d.HasStrategy);
             Assert.IsType<Contour2dStrategy>(d.CreateStrategy());
         }
+
+        /// <summary>The distance between two points in plan, ignoring depth.</summary>
+        private static Vec3 Flat(Vec3 a, Vec3 b) => new Vec3(a.X - b.X, a.Y - b.Y, 0);
 
         private static double Winding(IReadOnlyList<Vec3> points) =>
             Math.Sign(new Polyline(points, closed: true).SignedAreaXy2);

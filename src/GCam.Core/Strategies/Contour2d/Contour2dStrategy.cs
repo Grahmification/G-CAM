@@ -172,7 +172,19 @@ namespace GCam.Core.Strategies.Contour2d
             }
 
             Polyline atDepth = cutterPath.AtZ(depth);
-            Vec3 entry = atDepth.Points[0];
+            Vec3 profileStart = atDepth.Points[0];
+
+            LeadSettings leadIn = settings.LeadIn;
+            var entryArc = default(LeadArc);
+
+            bool leadingIn = leadIn.Enabled
+                             && leadIn.Radius > Precision.Epsilon
+                             && TryLeadIn(atDepth, leadIn.Radius, out entryArc);
+
+            // **The tool goes down off the profile when there is a lead.** That is the
+            // whole point of one: plunging onto the wall leaves the entry mark exactly
+            // where the finished surface is.
+            Vec3 entry = leadingIn ? entryArc.Away : profileStart;
 
             // Across at clearance, down to feed height, then into the material. Rapiding
             // straight to depth is how a cutter meets a clamp.
@@ -180,15 +192,14 @@ namespace GCam.Core.Strategies.Contour2d
             path.Add(Move.Rapid(new Vec3(entry.X, entry.Y, heights.Feed)));
             path.Add(Move.Plunge(entry, Feed(cutting.PlungeFeed, cutting.CuttingFeed)));
 
-            LeadSettings leadIn = settings.LeadIn;
-            if (leadIn.Enabled && leadIn.Radius > Precision.Epsilon)
+            if (leadingIn)
             {
-                // The lead is cut *before* the profile, so the entry mark lands off the
-                // wall. Its geometry is the arc that meets the profile tangentially.
-                foreach (Move move in LeadMoves(atDepth, leadIn, cutting, entering: true))
-                {
-                    path.Add(move);
-                }
+                // A quarter turn from the plunge point onto the profile, tangential where
+                // it arrives, so the cutter is already moving along the wall.
+                path.Add(Move.Lead(
+                    profileStart,
+                    Feed(cutting.EntryFeed, cutting.CuttingFeed),
+                    new ArcData(entryArc.Centre, clockwise: false)));
             }
 
             foreach (Move move in ProfileMoves(atDepth, cutting.CuttingFeed))
@@ -197,12 +208,16 @@ namespace GCam.Core.Strategies.Contour2d
             }
 
             LeadSettings leadOut = settings.EffectiveLeadOut;
-            if (leadOut.Enabled && leadOut.Radius > Precision.Epsilon)
+            var exitArc = default(LeadArc);
+
+            if (leadOut.Enabled
+                && leadOut.Radius > Precision.Epsilon
+                && TryLeadOut(atDepth, leadOut.Radius, out exitArc))
             {
-                foreach (Move move in LeadMoves(atDepth, leadOut, cutting, entering: false))
-                {
-                    path.Add(move);
-                }
+                path.Add(Move.Lead(
+                    exitArc.Away,
+                    Feed(cutting.ExitFeed, cutting.CuttingFeed),
+                    new ArcData(exitArc.Centre, clockwise: false)));
             }
 
             Vec3 end = path.Moves[path.Moves.Count - 1].End;
@@ -257,50 +272,77 @@ namespace GCam.Core.Strategies.Contour2d
         }
 
         /// <summary>
-        /// The arc that eases the cutter onto or off the profile.
+        /// A quarter-turn lead: where it touches down away from the profile, and what it
+        /// turns about.
+        /// </summary>
+        private struct LeadArc
+        {
+            /// <summary>The end of the lead that is off the profile.</summary>
+            public Vec3 Away;
+
+            public Vec3 Centre;
+        }
+
+        /// <summary>
+        /// The arc that brings the cutter onto the start of the profile.
         /// </summary>
         /// <remarks>
-        /// A quarter-turn of the lead radius, tangential to the first (or last) segment, so
-        /// the cutter is already moving along the wall when it reaches it. Entering, the
-        /// arc runs into the start point; leaving, it runs out of it.
+        /// Tangential where it arrives, so the cutter is already travelling along the wall
+        /// when it reaches it - which is what keeps the entry mark off the finished
+        /// surface.
         ///
-        /// The sweep setting is read but a quarter turn is what is produced. Arbitrary
-        /// sweeps, perpendicular approach and the vertical arc are not implemented, and
-        /// showing a wrong arc would be worse than showing a plain one.
+        /// A quarter turn of the lead radius. The centre sits one radius to the left of
+        /// travel at the profile start, and the arc begins one radius back along the
+        /// approach from there - so the touch-down point is r&#8730;2 away from the profile,
+        /// diagonally back and to the side.
+        ///
+        /// The sweep and perpendicular settings are read but not honoured: a quarter turn
+        /// is what comes out. A wrong arc would be worse than a plain one.
         /// </remarks>
-        private static IEnumerable<Move> LeadMoves(
-            Polyline profile, LeadSettings lead, CuttingData cutting, bool entering)
+        private static bool TryLeadIn(Polyline profile, double radius, out LeadArc arc)
         {
-            Vec3 at = entering ? profile[0] : LastPointOf(profile);
-            Vec3 along = entering
-                ? Direction(profile[0], profile[1 % profile.Count])
-                : Direction(SecondLastPointOf(profile), LastPointOf(profile));
+            arc = default(LeadArc);
+
+            Vec3 at = profile[0];
+            Vec3 along = Direction(at, profile[1 % profile.Count]);
 
             if (along.Length <= Precision.Epsilon)
             {
-                yield break;
+                return false;
             }
 
-            // Left of travel, which is the outside of a counter-clockwise contour.
-            var side = new Vec3(-along.Y, along.X, 0);
-            Vec3 centre = at + (side * lead.Radius);
+            Vec3 centre = at + (Left(along) * radius);
 
-            double feed = Feed(entering ? cutting.EntryFeed : cutting.ExitFeed, cutting.CuttingFeed);
-
-            // A quarter turn about that centre, starting (or ending) square to the profile.
-            Vec3 offPoint = centre + (along * (entering ? -lead.Radius : lead.Radius));
-
-            if (entering)
-            {
-                yield return Move.Lead(
-                    at, feed, new ArcData(centre, clockwise: false));
-            }
-            else
-            {
-                yield return Move.Lead(
-                    offPoint, feed, new ArcData(centre, clockwise: false));
-            }
+            arc = new LeadArc { Centre = centre, Away = centre - (along * radius) };
+            return true;
         }
+
+        /// <summary>
+        /// The arc that takes the cutter off the end of the profile.
+        /// </summary>
+        private static bool TryLeadOut(Polyline profile, double radius, out LeadArc arc)
+        {
+            arc = default(LeadArc);
+
+            Vec3 at = LastPointOf(profile);
+            Vec3 along = Direction(SecondLastPointOf(profile), at);
+
+            if (along.Length <= Precision.Epsilon)
+            {
+                return false;
+            }
+
+            Vec3 centre = at + (Left(along) * radius);
+
+            arc = new LeadArc { Centre = centre, Away = centre + (along * radius) };
+            return true;
+        }
+
+        /// <summary>
+        /// Ninety degrees left of travel, which is the side a counter-clockwise arc turns
+        /// about to meet the path tangentially.
+        /// </summary>
+        private static Vec3 Left(Vec3 along) => new Vec3(-along.Y, along.X, 0);
 
         private static Vec3 LastPointOf(Polyline profile) =>
             profile.IsClosed ? profile[0] : profile[profile.Count - 1];

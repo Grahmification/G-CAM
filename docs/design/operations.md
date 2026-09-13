@@ -389,6 +389,13 @@ clearance, rapid down to the feed height, plunge to depth, lead in, cut the prof
 out, retract. Depths repeat that, and the tool retracts between them because a contour is
 not guaranteed to be able to stay down — the profile may run outside the stock.
 
+**A lead-in means the tool goes down off the profile.** The plunge lands at the start of
+the lead arc — one radius back and one to the side, so r&#8730;2 from the wall — and the arc
+brings it onto the profile tangentially. Plunging onto the profile and then arcing is the
+bug that shipped first: a `Move` stores only its destination, so an arc from the profile
+start *to* the profile start is zero-length, which the tessellator correctly reads as a
+full circle. The cutter plunged onto the finished wall and looped right round it.
+
 Three things in it are worth knowing before changing it:
 
 - **Direction decides which way round, not which side.** The contour is oriented
