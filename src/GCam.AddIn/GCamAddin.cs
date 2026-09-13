@@ -275,7 +275,7 @@ namespace GCam.AddIn
                 Path.Combine(dir, "main40.png"),
             };
 
-            _jobTreeTabs = new JobTreeTabs(_swApp, tabIcons, _errors, _log);
+            _jobTreeTabs = new JobTreeTabs(_swApp, tabIcons, _errors, _log, ActivateCommandTab);
             _jobTreeTabs.Start();
         }
 

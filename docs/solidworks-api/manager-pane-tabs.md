@@ -60,6 +60,22 @@ delete a part's tab the moment it stopped being visible rather than when it clos
 the `FeatMgrView` without it drops our reference and leaves the tab sitting in the
 document with a dead control behind it. Do both, in that order.
 
+**Open question: `DeleteView` throws during `DisconnectFromSW`** — *Verified (2025 SP3),
+cause unknown*. Every session end so far logs:
+
+```
+Unhandled exception in Forget
+System.Runtime.InteropServices.SEHException (0x80004005): External component has thrown an exception.
+   at SolidWorks.Interop.sldworks.FeatMgrViewClass.DeleteView()
+```
+
+It is caught and the COM object is still released, so the unload completes — but the tab
+is presumably *not* deleted, which would leave a dead G-CAM tab behind when the add-in is
+disabled without SOLIDWORKS restarting. Not yet investigated. Candidates: the hosted
+ActiveX control is already being torn down by the time we ask; or `DeleteView` needs the
+owning document to be active. Worth checking whether deleting the tabs earlier — while
+the documents are still fully alive — avoids it.
+
 ## Do not release the `ModelDoc2` — **Reasoned, not measured**
 
 The house rule is to release COM objects explicitly rather than leave them to the GC, and
@@ -114,10 +130,99 @@ missing tab.
 `deploy\register.cmd`, reported **once per session** rather than once per document — with
 six parts open the same unfixable problem would otherwise be announced six times.
 
-## Not yet exercised
+## Making the ribbon follow the tab — **Verified (2025 SP3)**
 
-Written and compiling, but **not yet run inside SOLIDWORKS** — no tab has been seen
-appearing, and the notification-driven sync has not been watched working. The `ref`/`out`
-and `GetType` findings are compile-time facts and stand; the reasoning about why the old
-code produced no tab is read off the source and the documented API, not off a debugger.
-Re-tag once it has actually been loaded.
+Selecting the G-CAM tab in the Manager Pane brings the G-CAM CommandManager tab forward,
+so the toolbar matches what the pane is showing. Two API pieces:
+
+- `PartDoc::FeatureManagerTabActivatedNotify(int CommandIndex, string CommandTabName)`
+  fires whenever the active Manager Pane tab changes. It is a **document** event, so it
+  is subscribed per part, alongside the tab itself.
+- `ICommandTab::Active` is read/write. Setting it true selects that ribbon tab.
+
+### `CommandTabName` is the tooltip you passed
+
+The help's parameter descriptions for this delegate are copied and wrong — both
+`CommandIndex` and `CommandTabName` are documented as "Index of the active tab in the
+Manager Pane". Observed values:
+
+```
+Manager Pane tab activated: index 5, name 'G-CAM jobs, setups and operations'
+Manager Pane tab activated: index 0, name 'FeatureManager Design Tree'
+Manager Pane tab activated: index 6, name 'CAMManager'
+```
+
+So the name is the **tooltip string passed to `CreateFeatureMgrControl4`** — the only
+human-readable string SOLIDWORKS was ever given for the tab, since the call has no title
+parameter. The built-in tabs report their own display names. `JobTreeTabs.IsOurTab`
+matches case-insensitively on `"G-CAM"` as a substring, which is robust to the tooltip
+being reworded.
+
+Note that indices are not stable across installations — index 6 above is CAMWorks, which
+another machine will not have. Match on the name, not the index.
+
+### `ICommandTab.Active` tracks visibility, not selection — **Verified (2025 SP3)**
+
+This one cost three round trips, so it is worth stating plainly: **`Active` is not "is
+this the tab on screen", and must never be used to guard the assignment.**
+
+The help says only "Gets or sets whether this CommandManager tab is active". Observed, on
+a G-CAM tab that was *not* the selected ribbon tab in any of these cases:
+
+```
+visible true,  active before true,  after true
+visible false, active before false, after false
+```
+
+`Active` mirrored `Visible` every time. So the natural-looking
+
+```csharp
+if (!tab.Active) tab.Active = true;      // never runs when the tab exists
+```
+
+skips the assignment in exactly the case where the work is needed, and runs it only when
+the tab is hidden — where setting `Active` does not show the tab but *does* throw the
+ribbon to the first tab, Features. The symptom is perfectly inverted from the cause:
+nothing happens when the tab is enabled, and something wrong happens when it is disabled.
+
+Assign unconditionally, and guard on `Visible` instead — a user who has hidden the G-CAM
+tab should not be dragged to Features for their trouble.
+
+### The `OnIdleNotify` deferral was unnecessary — **cause verified, removal not retested**
+
+There is a wrong turn recorded here because it is an easy one to take twice. When the
+ribbon first refused to follow the tab, the theory was that SOLIDWORKS discards UI
+changes made part-way through its own Manager Pane update, and the fix was a one-shot
+`ISldWorks::OnIdleNotify` subscription that applied the change once SOLIDWORKS was idle.
+
+**That theory was never confirmed, and the real cause turned out to be the `Active` guard
+above.** Once the guard was fixed the ribbon followed correctly — though at that point
+the deferral was still in place, so what was proven is that the guard was the bug, not
+that the deferral was doing nothing.
+
+It has since been removed on that reasoning, and `ActivateCommandTab` now sets
+`ICommandTab.Active` directly from inside `FeatureManagerTabActivatedNotify`. If the
+ribbon ever stops following the tab again, **this is the first thing to suspect** and the
+deferral is in the history of this file.
+
+Worth keeping in mind before reaching for `OnIdleNotify` in general: it fires
+continuously, so any subscription has to be one-shot, and that is a lot of moving parts
+to add on a hunch.
+
+The callback into the ribbon is an `Action` handed to `JobTreeTabs` by `GCamAddin`, not a
+direct call: the CommandManager belongs to `GCam.AddIn`, and `GCam.SolidWorks` does not
+reference it.
+
+## What has and has not been seen working
+
+Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
+
+| | |
+| --- | --- |
+| Tab appears on an open part | **Confirmed** — `G-CAM tab added to …Test CAM Part.SLDPRT` |
+| `FeatureManagerTabActivatedNotify` fires, name matches the tooltip | **Confirmed** |
+| `ICommandTab.Active` mirrors `Visible`, not selection | **Confirmed** — logged in both states |
+| Setting `Active` on a *hidden* tab | **Confirmed harmful** — jumps the ribbon to Features |
+| Setting `Active` on a *visible* tab selects it | **Confirmed working** — with the idle deferral still in place |
+| Doing so from inside the notification, no deferral | **Not retested** — the deferral was removed after that confirmation |
+| `DeleteView` on disconnect | **Confirmed broken** — throws SEHException every session |

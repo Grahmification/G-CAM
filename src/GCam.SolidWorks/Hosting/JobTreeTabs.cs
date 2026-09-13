@@ -27,8 +27,10 @@ namespace GCam.SolidWorks.Hosting
     /// </remarks>
     public sealed class JobTreeTabs : IDisposable
     {
-        /// <summary>Caption on the tab. Shown when the pane is wide enough for text.</summary>
-        private const string TabTitle = "G-CAM";
+        /// <summary>
+        /// What marks a Manager Pane tab as ours when SOLIDWORKS names one back to us.
+        /// </summary>
+        private const string TabIdentity = "G-CAM";
 
         private const string TabToolTip = "G-CAM jobs, setups and operations";
 
@@ -36,6 +38,7 @@ namespace GCam.SolidWorks.Hosting
         private readonly string[] _tabIcons;
         private readonly ErrorHandler _errors;
         private readonly IGCamLog _log;
+        private readonly Action _onTabActivated;
 
         // Keyed on the ModelDoc2 itself. The CLR hands out one runtime callable wrapper
         // per COM identity, so the same document is the same key however we reached it -
@@ -51,12 +54,24 @@ namespace GCam.SolidWorks.Hosting
         /// draws on the tab. It reads them from disk, so they must exist next to the
         /// assembly rather than being embedded resources.
         /// </param>
-        public JobTreeTabs(SldWorks swApp, string[] tabIcons, ErrorHandler errors, IGCamLog log)
+        /// <param name="onTabActivated">
+        /// Raised when the user selects the G-CAM tab in the Manager Pane, so the
+        /// composition root can bring the matching CommandManager tab forward. A
+        /// callback rather than a direct call because the ribbon belongs to GCam.AddIn,
+        /// which this project does not know about.
+        /// </param>
+        public JobTreeTabs(
+            SldWorks swApp,
+            string[] tabIcons,
+            ErrorHandler errors,
+            IGCamLog log,
+            Action onTabActivated = null)
         {
             _swApp = swApp ?? throw new ArgumentNullException(nameof(swApp));
             _tabIcons = tabIcons ?? throw new ArgumentNullException(nameof(tabIcons));
             _errors = errors ?? throw new ArgumentNullException(nameof(errors));
             _log = log ?? NullLog.Instance;
+            _onTabActivated = onTabActivated;
         }
 
         /// <summary>
@@ -165,7 +180,53 @@ namespace GCam.SolidWorks.Hosting
             }
 
             _tabs[model] = view;
+
+            // Per-document, because the notification is: PartDoc raises it, not SldWorks.
+            var part = model as PartDoc;
+            if (part != null)
+            {
+                part.FeatureManagerTabActivatedNotify += OnManagerPaneTabActivated;
+            }
+
             _log.Debug("G-CAM tab added to {0}.", Describe(model));
+        }
+
+        /// <summary>
+        /// Entry point 8. Fires whenever the active Manager Pane tab changes, in any
+        /// part with a G-CAM tab. When the tab selected is ours, bring the G-CAM ribbon
+        /// tab forward so the toolbar matches what the pane is showing.
+        /// </summary>
+        /// <remarks>
+        /// The help's parameter descriptions for this delegate are copied and wrong -
+        /// both are documented as "Index of the active tab". Observed: CommandTabName is
+        /// the tooltip passed to CreateFeatureMgrControl4, which is the only
+        /// human-readable string SOLIDWORKS was ever given for the tab. Matching on it
+        /// beats matching on the index, which shifts with whatever other add-ins are
+        /// installed.
+        /// </remarks>
+        private int OnManagerPaneTabActivated(int commandIndex, string commandTabName)
+        {
+            try
+            {
+                if (IsOurTab(commandTabName))
+                {
+                    _onTabActivated?.Invoke();
+                }
+            }
+            catch (Exception ex)
+            {
+                // Quiet: this fires on every tab click, so a dialog here would follow
+                // the user around the Manager Pane.
+                _errors.Handle(ex, nameof(OnManagerPaneTabActivated), quiet: true);
+            }
+
+            return 0;
+        }
+
+        private static bool IsOurTab(string tabName)
+        {
+            return !string.IsNullOrEmpty(tabName)
+                   && tabName.IndexOf(TabIdentity, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>
@@ -180,6 +241,20 @@ namespace GCam.SolidWorks.Hosting
             }
 
             _tabs.Remove(model);
+
+            var part = model as PartDoc;
+            if (part != null)
+            {
+                try
+                {
+                    part.FeatureManagerTabActivatedNotify -= OnManagerPaneTabActivated;
+                }
+                catch (Exception ex)
+                {
+                    // Expected when the document has already gone.
+                    _errors.Handle(ex, nameof(Forget) + ".Unsubscribe", quiet: true);
+                }
+            }
 
             try
             {

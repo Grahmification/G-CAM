@@ -116,6 +116,46 @@ namespace GCam.AddIn
             box.AddCommands(_commandIds, styles);
         }
 
+        /// <summary>
+        /// Brings the G-CAM ribbon tab forward, so the toolbar matches what the Manager
+        /// Pane is showing. Called when the user selects the G-CAM tab.
+        /// </summary>
+        /// <remarks>
+        /// Does nothing if the ribbon tab was never built - a failure in
+        /// BuildCommandManager leaves the tree tab working, and this should not undo
+        /// that.
+        ///
+        /// The CommandTab is not released: it is SOLIDWORKS' object, not one we created.
+        /// See the note on borrowed COM objects in
+        /// docs/solidworks-api/manager-pane-tabs.md.
+        /// </remarks>
+        private void ActivateCommandTab()
+        {
+            CommandTab tab = _iCmdMgr?.GetCommandTab((int)swDocumentTypes_e.swDocPART, TabName);
+
+            if (tab == null)
+            {
+                _log.Warn("G-CAM ribbon tab '{0}' not found, so it cannot be activated.", TabName);
+                return;
+            }
+
+            // Visible is the guard, and Active is emphatically not. Setting Active on a
+            // hidden tab does not show it - SOLIDWORKS selects the first tab instead,
+            // which is how a user who had hidden the G-CAM tab ended up being thrown to
+            // Features every time they clicked the Manager Pane tab.
+            if (!tab.Visible)
+            {
+                _log.Debug("G-CAM ribbon tab is hidden; leaving the ribbon alone.");
+                return;
+            }
+
+            // Assigned unconditionally, and it must stay that way. Guarding this with
+            // `if (!tab.Active)` looks obviously right and silently does nothing: Active
+            // reads true whenever the tab is visible, whether or not it is the tab on
+            // screen, so the guard is false exactly when the work is needed.
+            tab.Active = true;
+        }
+
         private void RemoveCommandManager()
         {
             if (_iCmdMgr == null)
