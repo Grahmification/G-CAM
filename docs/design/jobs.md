@@ -82,14 +82,29 @@ does mean `JobTreeTabs` now has a second responsibility. When a third subscriber
 document notifications appears — persistence, most likely — that is the moment to factor
 `Events/` out of it.
 
-## Not yet persisted
+## Persisted, with one piece of debt now due
 
-**Jobs live only as long as the document is open.** That is what lets a job name its
-bodies and coordinate system as plain strings; when persistence lands, those become
-persistent reference ids from `IModelDocExtension::GetPersistReference3`, because renaming
-a body must not silently change what a proven job cuts. The comment at
-`Job.ModelBodyNames` says so at the point it matters.
+**Jobs are saved inside the part** and come back when it reopens — verified on 2025 SP3 on
+2026-09-13. How that works is in
+[third-party-storage.md](../solidworks-api/third-party-storage.md); what gets written is
+`Core/Persistence`. The one rule to remember while editing jobs: **an edit has to mark the
+document dirty**, or SOLIDWORKS never offers the save that would write it, and the user
+loses the work without being asked.
 
-The persistence constraints themselves — when SOLIDWORKS lets you write, and what it does
-not let you do — are under "Rules with teeth" in
-[architecture.md](../architecture.md).
+**A job still names its bodies and coordinate system as plain strings**, and that was
+justified only while jobs lasted a single session. It is not any more. A body renamed
+between sessions now silently repoints a proven job — the exact failure the original note
+promised to prevent, with its precondition removed.
+
+Three places carry the same debt:
+
+| Where | What it holds |
+| --- | --- |
+| `Job.ModelBodyNames` | Which solid bodies the job machines |
+| `Job.CoordinateSystemName` | The job's origin and orientation |
+| `OperationFrame.CoordinateSystemName` | A per-operation override of the same |
+
+All three should become persistent reference ids from
+`IModelDocExtension::GetPersistReference3`, which is what `GeometryRef` already does for
+the geometry an operation selects — so the mechanism exists and only the wiring is
+missing.

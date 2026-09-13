@@ -4,7 +4,7 @@ The project structure for G-CAM and the rules that keep it intact — what appli
 everywhere. How one subsystem hangs together is a design note in
 [design/](design/README.md), linked from the table below.
 
-**The tree below is the target layout, not a description of the repository.** Most of it does not exist yet. What is built as of 2026-09-12:
+**The tree below is the target layout, not a description of the repository.** Much of it does not exist yet. What is built as of 2026-09-13:
 
 **Follow the design note before reading code.** Where an area has one, it is the fastest
 way to find out how that part hangs together and which projects it spans.
@@ -18,7 +18,7 @@ way to find out how that part hangs together and which projects it spans.
 | `UI/Views` — error dialog, tool library browser and editor, profile preview | Done | [UI shells](design/ui-shells.md) |
 | `AddIn` — CommandManager, COM registration | Done | [UI shells](design/ui-shells.md) |
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done | [UI shells](design/ui-shells.md) |
-| `Core/Model` — Job, Operation, Stock, JobDocument | Done, minus persistence | [Jobs](design/jobs.md) |
+| `Core/Model` — Job, Operation, Stock, JobDocument | Done, and persisted | [Jobs](design/jobs.md) |
 | `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4 | Started — only what stock and rendering need | |
 | `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh | Done for what exists to draw | [Jobs](design/jobs.md) |
 | `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done | [Jobs](design/jobs.md) |
@@ -30,12 +30,12 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d parameters | Started — no strategy computes anything yet | [Operations](design/operations.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; waiting for a strategy to run | [Operations](design/operations.md) |
 | `Core/Persistence` — the stored document format and the toolpath bytes | Done, round-tripped headlessly | [Operations](design/operations.md) |
-| `SolidWorks/Persistence` — getting those bytes into the part | Written, **never run against a real part** | [Storage](solidworks-api/third-party-storage.md) |
+| `SolidWorks/Persistence` — getting those bytes into the part | Done; a job survives a close and reopen (2025 SP3). Toolpath streams still unexercised | [Storage](solidworks-api/third-party-storage.md) |
 | `Core/Simulation`, `Commands`, `Posting` | Not started | |
 | `Core/Geometry` beyond the primitives | Not started | |
 | `Posts` | Empty project | |
 
-No toolpath has been computed and nothing has been posted. The vertical slice below is still the plan — but step 5 of it, the OpenGL overlay, now exists and is drawing the stock box, so the toolpath work inherits a renderer rather than starting one.
+No toolpath has been computed and nothing has been posted. The vertical slice below is still the plan, but two of its later steps arrived early: step 5, the OpenGL overlay, draws the stock box and knows how to draw a toolpath, and step 7, persistence, is done — a job survives a close and reopen. The toolpath work inherits both rather than starting them.
 
 ## Decisions this rests on
 

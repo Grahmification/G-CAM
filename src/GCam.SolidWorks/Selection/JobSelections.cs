@@ -15,8 +15,9 @@ namespace GCam.SolidWorks.Selection
     /// is the route that reports each item's *mark* - the number identifying which box
     /// it belongs to. A page with two boxes cannot tell its selections apart otherwise.
     ///
-    /// Everything here deals in **names**. That is a deliberate, temporary choice: jobs
-    /// are not persisted yet, so a name that only has to survive the session is enough.
+    /// Everything here deals in **names**, which was justified while jobs lasted only as
+    /// long as the session. They are persisted now, so a name that changes between
+    /// sessions quietly repoints a proven job - see the note on Job.ModelBodyNames.
     /// When jobs start being written into the document these become persistent reference
     /// ids - see the note on Job.ModelBodyNames.
     /// </remarks>

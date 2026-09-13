@@ -15,8 +15,9 @@ namespace GCam.Core.Model
     /// both need - unique names, what the default is, what happens to it when a job is
     /// deleted - so that neither has to know them and both can be tested without either.
     ///
-    /// Nothing here is persisted yet. A document's jobs live for as long as it is open
-    /// and are lost when it closes.
+    /// Saved inside the SOLIDWORKS part and reloaded when it opens - see
+    /// docs/solidworks-api/third-party-storage.md. An edit has to mark the document
+    /// dirty, or SOLIDWORKS never offers the save that would write it.
     /// </remarks>
     public sealed class JobDocument
     {

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 G-CAM is a SOLIDWORKS 2025 add-in (C#, .NET Framework 4.8) that generates CAM toolpaths, in the spirit of HSMWorks or Fusion 360's CAM workspace. Internal team tool, 3-axis milling only.
 
-**No toolpath has been computed and nothing has been posted**, and **jobs are not saved into the document**, so they are lost when the part closes. `docs/architecture.md` opens with the status table — trust it over any impression of progress, including the one this file gives.
+**No toolpath has been computed and nothing has been posted** — no strategy computes one yet. Jobs and operations *are* saved inside the part and survive a reopen. `docs/architecture.md` opens with the status table — trust it over any impression of progress, including the one this file gives.
 
 ## Layout
 

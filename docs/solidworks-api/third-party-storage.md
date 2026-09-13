@@ -103,9 +103,20 @@ SwRootStorage
 - The format itself is in `GCam.Core/Persistence`, with no COM anywhere near it, so a full
   round trip is a headless test.
 
-## Not yet verified
+## Verified — **2025 SP3, 2026-09-13**
 
-**None of this has been exercised in SOLIDWORKS.** It compiles, the format round-trips in
-tests, and the API usage follows the 2025 help — but saving a part and reopening it has not
-been done once. Until it has, treat the interop as *plausible*, not working. The first run
-is worth doing with the log open: `JobDocumentStorage` logs what it loaded and saved.
+A round trip works: open a part, create a job, close the part, reopen it, and the job is
+still there. That exercises the whole chain — `SetSaveFlag` making the part dirty, the
+"Save Changes?" prompt, `SaveToStorageStoreNotify` arriving, `IGet3rdPartyStorageStore`
+handing over an `IStorage`, `model.xml` written and read back, and the release discipline
+not locking the node.
+
+Still unexercised, and worth checking when the chance comes:
+
+- **Toolpath streams.** Nothing generates a toolpath yet, so only `model.xml` has ever been
+  written. The numbered-stream path is untested.
+- **Several parts open at once**, which is what the one-subscriber-per-document design
+  exists for. A single part cannot show whether it was needed.
+- **Save All**, and auto-recover saves through `AutoSaveToStorageStoreNotify`.
+- **A part written by one build read by another**, including the skip-and-report path for
+  an operation whose strategy is missing.

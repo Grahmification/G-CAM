@@ -4,8 +4,9 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Nothing here is built yet. `Operation` is currently a placeholder carrying an id and a
-name, and this is the design that replaces it.
+Built as far as slice 6 of the build order at the end of this document: the model,
+strategy settings, generation and persistence all exist. No strategy computes a toolpath
+yet, so nothing has been generated.
 
 The four decisions underneath this document are recorded separately:
 [0006](../decisions/0006-operation-parameters-are-values.md) (values, not expressions),
@@ -243,9 +244,10 @@ implemented in `GCam.SolidWorks/Extraction`. A reference that no longer resolves
 `Warning` on the operation naming the missing entity — never a silent empty selection,
 which would generate an empty toolpath that looks like success.
 
-Persistent references, not names, from the start. `Job.ModelBodyNames` uses names today
-only because jobs are not persisted; operations are persisted from day one, and a renamed
-face must not silently change what a proven operation cuts.
+Persistent references, not names, from the start — which is what `Job.ModelBodyNames` and
+both `CoordinateSystemName`s still need to become. Their justification was that jobs did
+not survive a reopen; jobs are persisted now, so a renamed body silently changes what a
+proven job cuts. See [Jobs](jobs.md).
 
 ### Selection modifiers are stored as intent, not baked in
 
@@ -614,7 +616,7 @@ while they are still cheap to change.
 | 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | **Done** — 2026-09-13, 32 tests |
 | 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | **Done** — 2026-09-13, 35 tests |
 | 6a | The stored formats in Core — `GcamDocumentXml`, `ToolpathBinary`, `ParameterBag` | Needs the model above it to be settled. Pure Core, so a full round trip is a headless test | **Done** — 2026-09-13, 31 tests |
-| 6b | The SOLIDWORKS storage plumbing — third-party storage, the load/save notifications, release discipline | The half that cannot be tested headlessly, and the first code in `GCam.SolidWorks` for operations | **Written, unverified** — 2026-09-13. Compiles; never yet run against a real part. See [third-party-storage.md](../solidworks-api/third-party-storage.md) |
+| 6b | The SOLIDWORKS storage plumbing — third-party storage, the load/save notifications, release discipline | The half that cannot be tested headlessly, and the first code in `GCam.SolidWorks` for operations | **Done** — 2026-09-13, verified by hand on 2025 SP3. See [third-party-storage.md](../solidworks-api/third-party-storage.md) |
 | 7 | `Contour2d` strategy + the geometry extraction it needs | The first real toolpath. Everything above exists to be plugged into here | Not started |
 | 8 | The Operation property page | Last, because a page for a model that is still moving is written twice | Not started |
 

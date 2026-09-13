@@ -25,11 +25,16 @@ namespace GCam.Core.Model
         /// The solid bodies this job machines. Empty means every solid body in the part.
         /// </summary>
         /// <remarks>
-        /// Names, not persistent references, and that is a temporary choice tied to jobs
-        /// not being saved yet. Once a job survives a reopen these must become persistent
-        /// reference ids from IModelDocExtension::GetPersistReference3 - renaming a body
-        /// must not silently change what a proven job cuts. Same for
-        /// <see cref="CoordinateSystemName"/>.
+        /// Names, not persistent references - and this is now a real problem rather than a
+        /// deferred one. The justification was that jobs did not survive a reopen, so a
+        /// name only had to last the session. Jobs are persisted as of 2026-09-13, so a
+        /// body renamed between sessions now silently changes what a proven job cuts,
+        /// which is exactly the failure the note used to promise to prevent.
+        ///
+        /// These must become persistent reference ids from
+        /// IModelDocExtension::GetPersistReference3, the way <see cref="GeometryRef"/>
+        /// already does for the geometry an operation selects. Same for
+        /// <see cref="CoordinateSystemName"/> and <see cref="OperationFrame"/>.
         /// </remarks>
         public List<string> ModelBodyNames { get; set; } = new List<string>();
 

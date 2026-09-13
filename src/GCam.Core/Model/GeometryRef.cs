@@ -24,9 +24,9 @@ namespace GCam.Core.Model
     /// nothing else. <c>IModelDocExtension::GetPersistReference3</c> produces it and
     /// GCam.SolidWorks resolves it back to geometry at the edge.
     ///
-    /// Persistent ids rather than names from the start, unlike <see cref="Job.ModelBodyNames"/>
-    /// which uses names only because jobs are not persisted yet. A renamed face must not
-    /// silently change what a proven operation cuts.
+    /// Persistent ids rather than names from the start, which is what <see cref="Job.ModelBodyNames"/>
+    /// still needs to become: a renamed face must not silently change what a proven
+    /// operation cuts, and now that jobs survive a reopen, names can.
     ///
     /// <see cref="DisplayName"/> is a cached label for the UI and for error messages. It
     /// is allowed to go stale - it names what the reference was called when it was picked,
