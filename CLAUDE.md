@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 G-CAM is a SOLIDWORKS 2025 add-in (C#, .NET Framework 4.8) that generates CAM toolpaths, in the spirit of HSMWorks or Fusion 360's CAM workspace. Internal team tool, 3-axis milling only.
 
-Built so far: the add-in loads with a CommandManager tab; a G-CAM tab in the Manager Pane of every open part showing a tree of jobs with rename and a context menu; a Job PropertyManager page with model, stock, coordinate system and work offset; an empty Operation page; a tool library model with HSMWorks import; a tool library browser with create/edit/delete and a tabbed tool editor; an OpenGL overlay drawing the selected job's stock box in the 3D view; and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet, and **jobs are not saved into the document**, so they are lost when the part closes. `docs/architecture.md` has the full status table and the planned layout.
+Built so far: the add-in loads with a CommandManager tab; a G-CAM tab in the Manager Pane of every open part showing a tree of jobs with rename and a context menu; a Job PropertyManager page with model, stock, coordinate system and work offset; an empty Operation page; a tool library model with HSMWorks import; a tool library browser with create/edit/delete and a tabbed tool editor; an OpenGL overlay drawing the selected job's stock box and coordinate system triad in the 3D view; and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet, and **jobs are not saved into the document**, so they are lost when the part closes. `docs/architecture.md` has the full status table and the planned layout.
 
 ## Layout
 
@@ -37,7 +37,7 @@ so grepping for "error" reports failures on a clean build. Both have already cau
 wrong conclusions here.
 
 Underneath it is `dotnet build G-CAM.sln` and
-`dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj` (219 tests, headless).
+`dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj` (232 tests, headless).
 
 **Close SOLIDWORKS before building** if you intend to load the add-in afterwards — it
 holds the output DLLs open, so the code compiles but the add-in folder keeps the

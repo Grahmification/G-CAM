@@ -126,8 +126,8 @@ namespace GCam.SolidWorks.Hosting
         public void RefreshActiveDocument() => RefreshJobs(_swApp.ActiveDoc as ModelDoc2);
 
         /// <summary>
-        /// Selects a job in a document's tree, which is also what puts its stock on
-        /// screen.
+        /// Selects a job in a document's tree, which is also what puts its stock and
+        /// origin on screen.
         /// </summary>
         public void SelectJob(ModelDoc2 model, Job job)
         {
@@ -144,8 +144,8 @@ namespace GCam.SolidWorks.Hosting
         }
 
         /// <summary>
-        /// What draws a job's stock in a document's 3D view, or null if that document has
-        /// no G-CAM tab.
+        /// What draws a job in a document's 3D view, or null if that document has no
+        /// G-CAM tab.
         /// </summary>
         /// <remarks>
         /// For the Job property page, which is built once for the session but has to
@@ -163,7 +163,7 @@ namespace GCam.SolidWorks.Hosting
             return _tabs.TryGetValue(model, out tab) ? tab.Preview : null;
         }
 
-        /// <summary>The stock preview for whichever document is in front.</summary>
+        /// <summary>The job preview for whichever document is in front.</summary>
         public IJobPreview PreviewForActiveDocument() => PreviewFor(_swApp.ActiveDoc as ModelDoc2);
 
         /// <summary>
@@ -188,7 +188,7 @@ namespace GCam.SolidWorks.Hosting
 
             public ViewportRenderer Renderer { get; set; }
 
-            public StockPreview Preview { get; set; }
+            public JobPreview Preview { get; set; }
         }
 
         /// <summary>
@@ -299,7 +299,7 @@ namespace GCam.SolidWorks.Hosting
             var jobs = new JobDocument();
 
             var renderer = new ViewportRenderer(model, _errors, _log);
-            var preview = new StockPreview(_swApp, model, renderer, _errors, _log);
+            var preview = new JobPreview(_swApp, model, renderer, _errors, _log);
 
             _tabs[model] = new DocumentTab
             {

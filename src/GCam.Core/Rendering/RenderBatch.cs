@@ -62,7 +62,8 @@ namespace GCam.Core.Rendering
             IEnumerable<Vec3> vertices,
             RenderColour colour,
             double lineWidth = DefaultLineWidth,
-            double pointSize = DefaultPointSize)
+            double pointSize = DefaultPointSize,
+            bool alwaysOnTop = false)
         {
             if (vertices == null)
             {
@@ -74,6 +75,7 @@ namespace GCam.Core.Rendering
             Colour = colour;
             LineWidth = lineWidth;
             PointSize = pointSize;
+            AlwaysOnTop = alwaysOnTop;
         }
 
         public PrimitiveKind Kind { get; }
@@ -88,6 +90,19 @@ namespace GCam.Core.Rendering
 
         /// <summary>Pixels. Only read for <see cref="PrimitiveKind.Points"/>.</summary>
         public double PointSize { get; }
+
+        /// <summary>
+        /// Drawn without depth testing, so nothing in the scene can hide it.
+        /// </summary>
+        /// <remarks>
+        /// For annotations rather than for objects: a coordinate system triad inside the
+        /// stock, and later a toolpath buried in the material. The thing you most need to
+        /// see is usually the thing the model is covering up.
+        ///
+        /// These are drawn after everything else, so an always-on-top batch is on top of
+        /// other always-on-top batches in the order its producer listed them.
+        /// </remarks>
+        public bool AlwaysOnTop { get; }
 
         /// <summary>True when there is nothing to draw, or not enough to form a primitive.</summary>
         public bool IsEmpty => Vertices.Count < VerticesPerPrimitive(Kind);

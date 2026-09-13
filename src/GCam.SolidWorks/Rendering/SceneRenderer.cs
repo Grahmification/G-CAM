@@ -102,16 +102,14 @@ namespace GCam.SolidWorks.Rendering
         /// texture bound, and it would tint everything drawn here. Culling off so a
         /// translucent box shows both of its walls.
         ///
-        /// Depth testing stays on: the overlay belongs in the scene, behind whatever is
-        /// in front of it.
+        /// Depth testing is not set here - it is per batch, because an always-on-top
+        /// annotation turns it off and ordinary geometry needs it on.
         /// </remarks>
         private static void BeginOverlay()
         {
             Gl.Disable(Gl.GL_LIGHTING);
             Gl.Disable(Gl.GL_TEXTURE_2D);
             Gl.Disable(Gl.GL_CULL_FACE);
-
-            Gl.Enable(Gl.GL_DEPTH_TEST);
 
             Gl.Enable(Gl.GL_BLEND);
             Gl.BlendFunc(Gl.GL_SRC_ALPHA, Gl.GL_ONE_MINUS_SRC_ALPHA);
@@ -125,7 +123,27 @@ namespace GCam.SolidWorks.Rendering
         private static void DrawBatch(GlBatch batch)
         {
             Gl.Color4f(batch.Red, batch.Green, batch.Blue, batch.Alpha);
-            Gl.DepthMask(batch.Transparent ? GlFalse : GlTrue);
+
+            // Two separate things, easily confused. Depth *testing* is whether the model
+            // can hide this batch; the depth *mask* is whether this batch can hide what
+            // comes after it.
+            //
+            // An annotation wants neither. Visible through the part, obviously - but also
+            // leaving no trace in the depth buffer, because SOLIDWORKS renders Layer2
+            // (active sketches, annotations, the reference triad) *after* this
+            // notification and would then be depth-tested against a triad floating at
+            // whatever depth it happened to have. Writing depth from something drawn
+            // without depth testing corrupts the buffer for whoever reads it next.
+            Gl.DepthMask(batch.Transparent || batch.AlwaysOnTop ? GlFalse : GlTrue);
+
+            if (batch.AlwaysOnTop)
+            {
+                Gl.Disable(Gl.GL_DEPTH_TEST);
+            }
+            else
+            {
+                Gl.Enable(Gl.GL_DEPTH_TEST);
+            }
 
             if (batch.Mode == Gl.GL_LINES || batch.Mode == Gl.GL_LINE_STRIP)
             {
@@ -168,11 +186,18 @@ namespace GCam.SolidWorks.Rendering
                 .Where(layer => layer.Visible)
                 .SelectMany(layer => layer.Batches);
 
-            // False sorts before true, so opaque batches come first. OrderBy is a stable
-            // sort, so within each of those two groups the batches keep the order their
-            // producer gave them - a producer can still control what covers what,
-            // without being able to break the opaque-first rule it depends on.
-            foreach (RenderBatch batch in visible.OrderBy(b => b.Colour.IsTransparent))
+            // False sorts before true, so this is: the scene proper, opaque first, then
+            // the annotations that ignore depth. Both rules matter. Blending only
+            // composites correctly over what is already in the colour buffer, so opaque
+            // has to be down first; and an always-on-top batch drawn early would be
+            // painted over by the ordinary geometry it is supposed to sit above.
+            //
+            // OrderBy and ThenBy are stable, so within each group the batches keep the
+            // order their producer gave them - a producer still controls what covers
+            // what, without being able to break the two rules it depends on.
+            foreach (RenderBatch batch in visible
+                .OrderBy(b => b.AlwaysOnTop)
+                .ThenBy(b => b.Colour.IsTransparent))
             {
                 _batches.Add(Convert(batch));
             }
@@ -203,6 +228,7 @@ namespace GCam.SolidWorks.Rendering
                 Blue = (float)batch.Colour.Blue,
                 Alpha = (float)batch.Colour.Alpha,
                 Transparent = batch.Colour.IsTransparent,
+                AlwaysOnTop = batch.AlwaysOnTop,
                 LineWidth = (float)batch.LineWidth,
                 PointSize = (float)batch.PointSize,
             };
@@ -244,6 +270,8 @@ namespace GCam.SolidWorks.Rendering
             public float Alpha;
 
             public bool Transparent;
+
+            public bool AlwaysOnTop;
 
             public float LineWidth;
 

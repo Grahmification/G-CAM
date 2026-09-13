@@ -15,11 +15,11 @@ The project structure for G-CAM and the rules that keep it intact.
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done |
 | `Core/Model` — Job, Operation, Stock, JobDocument | Done, minus persistence |
 | `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4 | Started — only what stock and rendering need |
-| `Core/Rendering` — scene, layers, batches, colour, BoxMesh | Done for what exists to draw |
+| `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad | Done for what exists to draw |
 | `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done |
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job page | Done; Operation page is still a shell |
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done |
-| `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, stock preview | Done |
+| `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done |
 | `SolidWorks/Extraction` — coordinate system transforms, model extent | Started — bounding boxes only, no BRep |
 | `Core/Strategies`, `Simulation`, `Commands`, `Posting` | Not started |
 | `Core/Geometry` beyond the primitives | Not started |
@@ -67,7 +67,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │   └── Import/                native XML + HSMWorks (.hsmlib) readers
 │   │   ├── Rendering/                 RenderScene (named layers), RenderLayer,
 │   │   │                              RenderBatch, PrimitiveKind, RenderColour,
-│   │   │                              BoxMesh — what to draw, never how
+│   │   │                              BoxMesh, ConeMesh, AxisTriad
+│   │   │                              — what to draw, never how
 │   │   ├── Geometry/
 │   │   │   ├── Primitives/            Vec3, Plane, Bounds, Matrix4, Polyline
 │   │   │   ├── Brep/                  own face/edge/loop model, SW-independent
@@ -98,7 +99,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │   ├── SceneRenderer.cs       RenderScene → GL, mm → m, cached per version
 │   │   │   ├── ViewportRenderer.cs    implements Core's IViewportRenderer;
 │   │   │   │                          BufferSwapNotify subscription per window
-│   │   │   └── StockPreview.cs        implements Core's IJobPreview
+│   │   │   └── JobPreview.cs          implements Core's IJobPreview — stock box
+│   │   │                              and coordinate system triad
 │   │   ├── PropertyPages/             PmpHandlerBase (all 37 callbacks, wrapped),
 │   │   │                              GCamPropertyPage (build/show/tab restore),
 │   │   │                              JobPropertyPage, OperationPropertyPage
@@ -245,7 +247,9 @@ Use `IModelDocExtension::IGet3rdPartyStorageStore` (an `IStorage`, so multiple n
 
 **Core says what to draw; GCam.SolidWorks says how.** `Core/Rendering` describes graphics as a `RenderScene` of named layers of `RenderBatch`es — vertices in millimetres in part coordinates, a primitive kind, a colour. It contains no OpenGL, no matrices, no camera and no projection, which is what lets `BoxMesh` and everything after it be tested headlessly. `GCam.SolidWorks/Rendering` turns a scene into GL calls and nothing else.
 
-The layer name is the coordination mechanism. A producer owns a name, re-states everything under it whenever its model changes, and never has to know what else is on screen; the stock preview owns `"stock"` and a toolpath renderer will own its own beside it.
+The layer name is the coordination mechanism. A producer owns a name, re-states everything under it whenever its model changes, and never has to know what else is on screen; the job preview owns `"stock"` and `"job-origin"`, and a toolpath renderer will own its own beside them.
+
+**Annotations set `RenderBatch.AlwaysOnTop`; objects do not.** An always-on-top batch is drawn last, with depth testing off so nothing can hide it, and with depth *writing* off as well — SOLIDWORKS renders Layer2 (active sketches, its own reference triad) after our notification, and would otherwise be depth-tested against geometry that was never depth-tested itself. The coordinate triad uses it because a job origin inside the stock is exactly the one worth seeing; the stock box does not, because it is a thing in the scene.
 
 **Draw only from `BufferSwapNotify`.** That is the one moment SolidWorks has made its context current and set up the matrices so part coordinates land correctly — the help says so explicitly. Drawing from anywhere else means no context, or somebody else's. It also means G-CAM never computes a projection: vertices go straight out.
 
@@ -374,26 +378,45 @@ is WPF in `GCam.UI`, which never references SOLIDWORKS. The property pages are i
 creating the tab and calls `Bind` on the view inside it. One `JobDocument` and one
 viewmodel per open part, held together in `JobTreeTabs`.
 
-**Selecting a job in the tree is what shows its stock.** Selection is the one signal that
-means "this is the job I am looking at" — it covers clicking, arrowing through the tree,
-and the reselection after a refresh, without any of them knowing a preview exists. An
-operation node stands in for its job here as it does for the context menu, so drilling
-into a job does not make its stock disappear.
+**Selecting a job in the tree is what shows it.** Selection is the one signal that means
+"this is the job I am looking at" — it covers clicking, arrowing through the tree, and the
+reselection after a refresh, without any of them knowing a preview exists. An operation
+node stands in for its job here as it does for the context menu, so drilling into a job
+does not make its stock disappear.
 
-The Job property page previews its *clone* as it is edited, so the box follows what is
-being typed and Cancel leaves nothing behind. The page is built once for the session and
-finds the preview for whichever part is in front, which is why it takes a
-`Func<IJobPreview>` rather than one instance.
+What appears is the stock as a translucent yellow box and the job's coordinate system as a
+red/green/blue triad at its origin — **two scene layers, not one**, so a stock box that
+cannot be computed still leaves the origin on screen. That is the half a user is more
+likely to be checking when the stock is wrong.
+
+The Job property page previews its *clone* as it is edited, so both follow what is being
+typed and Cancel leaves nothing behind. The page is built once for the session and finds
+the preview for whichever part is in front, which is why it takes a `Func<IJobPreview>`
+rather than one instance.
 
 Three parts again, none of which can see the other two: `Core/Abstractions/IJobPreview`
-is what the tree and the page both state intent through, and `StockPreview` in
+is what the tree and the page both state intent through, and `JobPreview` in
 GCam.SolidWorks is what answers it. The same arrangement as `IJobEditor`. Unlike
 `IJobEditor` it is implemented in GCam.SolidWorks rather than in the add-in, because
 everything it needs — the document, its bodies, its coordinate systems, its windows — is
 COM, and `JobTreeTabs` already holds one per open part.
 
+**The triad is sized proportionally, not screen-constant.** Its arms are 30% of the
+largest dimension of the stock — or of the model, when the stock is not usable yet, since
+a job with no stock set up is exactly when someone is checking where the origin is. That
+keeps it legible on a 20mm part and on a two-metre one with nothing to configure, and it
+costs nothing per frame because it is rebuilt only when the job changes.
+
+The alternative, HSMWorks' constant apparent size, was considered and rejected *for now*:
+it needs `IModelView.Scale2` and `FrameHeight` read per view, the geometry rebuilt on
+every `ViewChangeNotify` — continuously, while rotating or zooming — and, because two
+windows on one part can sit at different zooms, a scene per *view* rather than per
+document. That last part is the real cost: it would change the shape of the renderer, not
+just add a subscription. Revisit if the proportional triad turns out to be annoying in
+practice.
+
 **Rendering rides on the G-CAM tab's lifetime.** `JobTreeTabs.DocumentTab` owns the
-document's `ViewportRenderer` and `StockPreview` alongside its viewmodel, and disposes
+document's `ViewportRenderer` and `JobPreview` alongside its viewmodel, and disposes
 them in `Forget` *before* the tab's view goes — unsubscribing from a window needs the
 window still to be there. The two cover exactly the same set of documents: a part with a
 G-CAM tab is a part that can have jobs, and a job is the only thing there is to draw. This

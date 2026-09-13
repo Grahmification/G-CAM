@@ -149,14 +149,35 @@ The state `SceneRenderer.BeginOverlay` sets, and why each one:
 | `glDisable(GL_LIGHTING)` | A lit primitive takes its colour from the material state, not from `glColor`. Overlays are flat annotations, not modelled surfaces. |
 | `glDisable(GL_TEXTURE_2D)` | SOLIDWORKS may have a texture bound; it would tint everything drawn here. |
 | `glDisable(GL_CULL_FACE)` | A translucent box has to show both of its walls. |
-| `glEnable(GL_DEPTH_TEST)` | The overlay belongs in the scene, behind whatever is in front of it. |
 | `glEnable(GL_BLEND)`, `glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` | Ordinary alpha compositing. |
-| `glDepthMask(GL_FALSE)` per transparent batch | Stops the box's near wall from occluding its far wall, and lets the model show through. |
+| `glEnable/glDisable(GL_DEPTH_TEST)` per batch | On for scene objects, which belong behind whatever is in front of them; off for annotations that must never be hidden. |
+| `glDepthMask(GL_FALSE)` per transparent *or* always-on-top batch | Stops the box's near wall from occluding its far wall, lets the model show through, and — see below — keeps annotations out of the depth buffer entirely. |
 
-**Opaque batches are drawn before transparent ones.** Blending only composites correctly
-over what is already in the colour buffer. `SceneRenderer.Rebuild` sorts on
-`RenderColour.IsTransparent`, which is a stable sort, so a producer still controls the
-order within each group.
+### Depth testing and depth writing are different questions
+
+Easy to conflate, and they have different answers per batch:
+
+- **Depth testing** is whether the model can hide *this* batch.
+- **The depth mask** is whether this batch can hide what comes *after* it.
+
+An annotation — G-CAM's coordinate triad, and later a toolpath buried in material — wants
+neither. Visible through the part, obviously. But it must also leave no trace in the depth
+buffer, because **SOLIDWORKS renders Layer2 after this notification** (active sketches,
+annotations, its own reference triad, per the `BufferSwapNotify` Remarks). Writing depth
+from something that was itself drawn without depth testing leaves those values at whatever
+depth the annotation happened to sit at, and SOLIDWORKS' own later drawing is then tested
+against them. So `AlwaysOnTop` turns off both.
+
+### Drawing order
+
+**Scene geometry first — opaque, then transparent — then the always-on-top annotations.**
+Two separate rules, both load-bearing: blending only composites correctly over what is
+already in the colour buffer, so opaque has to be down first; and an always-on-top batch
+drawn early would simply be painted over by the ordinary geometry it is meant to sit above
+— depth testing is not what keeps it on top, draw order is.
+
+`SceneRenderer.Rebuild` sorts on `AlwaysOnTop` then `IsTransparent`. Both are stable sorts,
+so a producer still controls the order within each group.
 
 ## Asking for a repaint
 

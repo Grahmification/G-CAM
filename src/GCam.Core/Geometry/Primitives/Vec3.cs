@@ -39,6 +39,32 @@ namespace GCam.Core.Geometry.Primitives
 
         public double Length => Math.Sqrt(X * X + Y * Y + Z * Z);
 
+        public double Dot(Vec3 other) => (X * other.X) + (Y * other.Y) + (Z * other.Z);
+
+        /// <summary>
+        /// The vector perpendicular to both, right-handed: X cross Y gives Z.
+        /// </summary>
+        public Vec3 Cross(Vec3 other) => new Vec3(
+            (Y * other.Z) - (Z * other.Y),
+            (Z * other.X) - (X * other.Z),
+            (X * other.Y) - (Y * other.X));
+
+        /// <summary>
+        /// Some unit vector at right angles to this one.
+        /// </summary>
+        /// <remarks>
+        /// Which one is unspecified and callers must not care - it exists to start a
+        /// basis, as when sweeping a circle around an axis. The reference vector is
+        /// chosen to be the axis this one leans on least, because crossing with a nearly
+        /// parallel vector gives something short and numerically poor.
+        /// </remarks>
+        public Vec3 AnyPerpendicular()
+        {
+            Vec3 reference = Math.Abs(X) < 0.9 ? new Vec3(1, 0, 0) : new Vec3(0, 1, 0);
+
+            return Cross(reference).Normalised();
+        }
+
         /// <summary>
         /// The same direction with unit length.
         /// </summary>
