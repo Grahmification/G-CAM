@@ -38,7 +38,9 @@ COMPILE = re.compile(r": error (CS\d+): (.*)")
 RULE = re.compile(r"([^\\/]+\.csproj)\((\d+),\d+\): error : (.*)")
 LOCKED_BY = re.compile(r'locked by: "([^"]+)"')
 TEST_SUMMARY = re.compile(r"(Passed|Failed)!\s+-\s+Failed:\s+(\d+),\s+Passed:\s+(\d+).*?Total:\s+(\d+)")
-FAILED_TEST = re.compile(r"^\s*(\S+\.\S+)\s+\[FAIL\]")
+# xUnit prefixes these with a timestamp - "[xUnit.net 00:00:01.55]   Some.Test [FAIL]" -
+# so the name is matched anywhere on the line rather than anchored to the start.
+FAILED_TEST = re.compile(r"(\S+\.\S+)\s+\[FAIL\]")
 
 GREEN, RED, YELLOW, DIM, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[2m", "\033[0m"
 
@@ -111,7 +113,7 @@ def parse_tests(output):
             "total": int(match.group(4)),
         }
 
-    failures = sorted({m.group(1) for m in (FAILED_TEST.match(l) for l in output.splitlines()) if m})
+    failures = sorted({m.group(1) for m in (FAILED_TEST.search(l) for l in output.splitlines()) if m})
     return totals, failures
 
 
@@ -175,8 +177,15 @@ def main():
             problems.append(("tests", "no test results were produced - see --verbose"))
         elif totals:
             if totals["failed"]:
+                # The count decides the verdict, never the name matching. A parser that
+                # stopped recognising the failure lines once turned two failing tests
+                # into a green OK and an exit code of 0.
                 for name in failures:
                     problems.append(("test failed", name))
+                if not failures:
+                    problems.append((
+                        "test failed",
+                        f"{totals['failed']} test(s) failed, names not parsed - see --verbose"))
             notes.append(f"{totals['passed']}/{totals['total']} tests passed")
 
     print()

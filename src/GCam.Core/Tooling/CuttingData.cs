@@ -97,15 +97,13 @@ namespace GCam.Core.Tooling
         /// Feed per tooth, derived. Zero when the inputs are missing rather than
         /// throwing - this is display arithmetic, not a validation gate.
         /// </summary>
-        public double FeedPerTooth(int fluteCount)
-        {
-            if (fluteCount <= 0 || SpindleRpm <= 0)
-            {
-                return 0;
-            }
-
-            return CuttingFeed / (SpindleRpm * fluteCount);
-        }
+        /// <remarks>
+        /// Derived, never stored: the flute count lives on the tool, so a chip load kept
+        /// here would go stale the moment that changed. <see cref="FeedsAndSpeeds"/> owns
+        /// the arithmetic and the inverse, so the page can offer both ends.
+        /// </remarks>
+        public double FeedPerTooth(int fluteCount) =>
+            FeedsAndSpeeds.FeedPerTooth(CuttingFeed, SpindleRpm, fluteCount);
 
         public CuttingData Clone()
         {
