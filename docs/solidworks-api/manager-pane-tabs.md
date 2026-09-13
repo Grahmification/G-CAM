@@ -188,7 +188,7 @@ nothing happens when the tab is enabled, and something wrong happens when it is 
 Assign unconditionally, and guard on `Visible` instead — a user who has hidden the G-CAM
 tab should not be dragged to Features for their trouble.
 
-### The `OnIdleNotify` deferral was unnecessary — **cause verified, removal not retested**
+### The `OnIdleNotify` deferral was unnecessary — **Verified (2025 SP3)**
 
 There is a wrong turn recorded here because it is an easy one to take twice. When the
 ribbon first refused to follow the tab, the theory was that SOLIDWORKS discards UI
@@ -200,10 +200,11 @@ above.** Once the guard was fixed the ribbon followed correctly — though at th
 the deferral was still in place, so what was proven is that the guard was the bug, not
 that the deferral was doing nothing.
 
-It has since been removed on that reasoning, and `ActivateCommandTab` now sets
-`ICommandTab.Active` directly from inside `FeatureManagerTabActivatedNotify`. If the
-ribbon ever stops following the tab again, **this is the first thing to suspect** and the
-deferral is in the history of this file.
+It has since been removed, and `ActivateCommandTab` now sets `ICommandTab.Active`
+directly from inside `FeatureManagerTabActivatedNotify`. That has been in constant use
+across many sessions since without the ribbon failing to follow — not a deliberate
+regression test, but a lot of evidence. If it ever does stop following, **this is the
+first thing to suspect**, and the deferral is in this file's history.
 
 **A postscript, and a correction.** Deferral was later reintroduced across the add-in on
 the belief that showing a PropertyManager page from this tab's hosted control was unsafe.

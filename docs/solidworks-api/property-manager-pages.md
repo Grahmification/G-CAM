@@ -200,6 +200,13 @@ To put a saved selection back, `IModelDocExtension::SelectByID2` takes the name 
 type string — `"SOLIDBODY"`, `"COORDSYS"` — plus the mark, so a restored selection lands
 in the right box.
 
+**Clear the selection when the page closes.** A page that selects things to show the user
+what it is editing owns those selections, and they outlive the page otherwise: a body
+still lit up in the graphics area, a coordinate system still highlighted in the feature
+tree. `JobPropertyPage.PageClosed` calls `ClearSelection2(true)` on every close reason,
+and does it *after* committing — clearing can itself fire `OnSelectionboxListChanged`,
+which would empty the values on their way out.
+
 ## `IPropertyManagerPageControl.Visible` is fatal after a few uses — **Verified (2025 SP3)**
 
 **This is the most important thing on this page.** Setting `Visible` on a page's control

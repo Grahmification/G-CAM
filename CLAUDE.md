@@ -37,7 +37,7 @@ so grepping for "error" reports failures on a clean build. Both have already cau
 wrong conclusions here.
 
 Underneath it is `dotnet build G-CAM.sln` and
-`dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj` (123 tests, headless).
+`dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj` (181 tests, headless).
 
 **Close SOLIDWORKS before building** if you intend to load the add-in afterwards — it
 holds the output DLLs open, so the code compiles but the add-in folder keeps the
