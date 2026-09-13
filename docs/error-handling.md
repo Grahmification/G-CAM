@@ -1,6 +1,9 @@
 # Error handling
 
-Plan for catching, logging and reporting exceptions. Decided 2026-09-12; not yet implemented.
+Policy for catching, logging and reporting exceptions. Decided 2026-09-12.
+
+`ErrorHandler`, the Serilog log, the WPF error dialog and entry points 1–8 are built.
+Entry points 9–12 arrive with the subsystems they belong to, which do not exist yet.
 
 ## Why an add-in needs this more than an ordinary app
 
@@ -86,7 +89,7 @@ public int OnCommandEnable(int id)
 
 An earlier draft of this document had a `Boundary.Run(context, () => ...)` wrapper with overloads for void, `T`, async and quiet. It was rejected:
 
-- **It does not compile on some entry points.** `IPropertyManagerPage2Handler9.OnSubmitSelection` takes `out string ItemText`, and C# cannot capture `ref`/`out` parameters in a lambda. Several SOLIDWORKS callbacks are shaped this way, so the wrapper would cover most entry points and force plain try/catch on the rest — two styles to maintain instead of one.
+- **It does not compile on some entry points.** `IPropertyManagerPage2Handler9.OnSubmitSelection` takes `ref string ItemText` (the help says `out`; the interop disagrees — see [property-manager-pages.md](solidworks-api/property-manager-pages.md)), and C# cannot capture `ref`/`out` parameters in a lambda. Several SOLIDWORKS callbacks are shaped this way, so the wrapper would cover most entry points and force plain try/catch on the rest — two styles to maintain instead of one.
 - **It needs an overload per signature shape.** try/catch needs none: one `Handle` serves every return type, `out` parameter and async method in the codebase.
 - **It allocates a closure per call.** Irrelevant almost everywhere, but `BufferSwapNotify` runs on every redraw.
 - **It puts lambda frames in the stack trace**, directly above the thing you are trying to read.
@@ -135,7 +138,7 @@ Every one of these is called *by* something outside G-CAM, so every one needs a 
 | 4 | `OnCommand` | `GCamAddin.Callbacks` | Full reporting — this is the main user-facing path |
 | 5 | `OnCommandEnable` | `GCamAddin.Callbacks` | `quiet: true`, return `0` (disabled). Called constantly, so **never** show UI; repeat suppression keeps it to one log line |
 | 6 | `JobTreeTabHost` constructor | `GCam.SolidWorks.Hosting` | Catch in the ctor; on failure host a plain error label so the tab appears but empty. An exception here means no tab and no explanation |
-| 7 | PropertyManager page handlers | `PropertyPages/` | `PmpHandlerBase` implements every `IPropertyManagerPage2Handler9` method with the try/catch and delegates to a protected virtual, so pages cannot forget. Note several take `out` parameters |
+| 7 | PropertyManager page handlers | `PropertyPages/` | `PmpHandlerBase` implements all 37 `IPropertyManagerPage2Handler9` methods with the try/catch and delegates to a protected virtual of the same name, so pages cannot forget. The per-callback defaults are tabulated in [property-manager-pages.md](solidworks-api/property-manager-pages.md) |
 | 8 | Document events (`ActiveModelDocChangeNotify`, `FileCloseNotify` in `Hosting/JobTreeTabs`; later `SaveToStorageNotify`, `LoadFromStorageNotify` in `Events/`) | `Hosting/`, `Events/` | Return `0` on failure. A throw during save risks corrupting the document's third-party storage |
 | 9 | `BufferSwapNotify` render callback | `Rendering/ViewHooks` | `quiet: true`. The renderer counts its own consecutive failures and unhooks after 3, reporting once. Fires on every redraw — a dialog here is an unkillable modal storm |
 | 10 | WPF event handlers and commands | `GCam.UI` | Wrap in viewmodel command bodies; `Dispatcher.UnhandledException` as backstop |

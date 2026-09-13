@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 G-CAM is a SOLIDWORKS 2025 add-in (C#, .NET Framework 4.8) that generates CAM toolpaths, in the spirit of HSMWorks or Fusion 360's CAM workspace. Internal team tool, 3-axis milling only.
 
-Built so far: the add-in loads with a CommandManager tab and a G-CAM tab in the Manager Pane of every open part (empty — it is where jobs will go); a tool library model with HSMWorks import; a tool library browser with create/edit/delete and a tabbed tool editor; and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet. `docs/architecture.md` has the full status table and the planned layout.
+Built so far: the add-in loads with a CommandManager tab, a G-CAM tab in the Manager Pane of every open part (empty — it is where jobs will go), and empty Job and Operation PropertyManager pages; a tool library model with HSMWorks import; a tool library browser with create/edit/delete and a tabbed tool editor; and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet. `docs/architecture.md` has the full status table and the planned layout.
 
 ## Layout
 
@@ -66,6 +66,8 @@ Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help
 **`GCam.Core` never references SolidWorks.** Enforced by an MSBuild target in `GCam.Core.csproj`, not left to discipline. It keeps the toolpath math testable without a licence, lets calculation run off the STA thread, and preserves the out-of-process escape hatch. Core declares interfaces; `GCam.SolidWorks` implements them; `GCam.AddIn` wires them together.
 
 **No exception leaves G-CAM code.** Every method SOLIDWORKS, WPF or the task scheduler can call wraps its body in try/catch and calls `ErrorHandler.Handle`. Interior code throws freely. An exception escaping `ConnectToSW` unloads the add-in silently. See `docs/error-handling.md` for the entry-point list.
+
+**Job and operation editing happens on SOLIDWORKS-native PropertyManager pages, not WPF.** A page cannot be hosted inside G-CAM's own Manager Pane tab — SOLIDWORKS always renders it on the PropertyManager tab — so editing is a round trip back to the G-CAM tab, which `GCamPropertyPage` arranges. Derive from it; it seals the lifecycle callbacks on purpose. `PmpHandlerBase` underneath wraps all 37 `IPropertyManagerPage2Handler9` callbacks in the try/catch so a page cannot forget one. See `docs/solidworks-api/property-manager-pages.md`, including two parameters the help calls `out` that are actually `ref`.
 
 **Units: Core works in millimetres**, SOLIDWORKS in metres. Convert only at the edges. Conversion factors live in `GCam.Core.Units`; never write a bare `25.4` or `1000`.
 

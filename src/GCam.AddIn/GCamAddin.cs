@@ -6,6 +6,7 @@ using GCam.AddIn.Composition;
 using GCam.Core.Diagnostics;
 using GCam.Core.Settings;
 using GCam.SolidWorks.Hosting;
+using GCam.SolidWorks.PropertyPages;
 using GCam.UI.Diagnostics;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -27,6 +28,8 @@ namespace GCam.AddIn
         private int _addinID = -1;
         private ICommandManager _iCmdMgr;
         private JobTreeTabs _jobTreeTabs;
+        private JobPropertyPage _jobPage;
+        private OperationPropertyPage _operationPage;
 
         private IGCamLog _log = NullLog.Instance;
         private ErrorHandler _errors;
@@ -100,6 +103,15 @@ namespace GCam.AddIn
         /// </summary>
         public bool DisconnectFromSW()
         {
+            try
+            {
+                DisposePropertyPages();
+            }
+            catch (Exception ex)
+            {
+                _errors?.Handle(ex, nameof(DisposePropertyPages), quiet: true);
+            }
+
             try
             {
                 StopJobTreeTabs();
@@ -210,6 +222,29 @@ namespace GCam.AddIn
             {
                 // If even this fails there is genuinely nothing further to try.
             }
+        }
+
+        /// <summary>
+        /// The PropertyManager pages, each built on first use.
+        /// </summary>
+        /// <remarks>
+        /// Lazy rather than created in ConnectToSW because a PropertyManager page is a
+        /// COM object SOLIDWORKS keeps for the session, and there is no reason to hold
+        /// one for a session in which nobody edits anything.
+        /// </remarks>
+        private JobPropertyPage JobPage =>
+            _jobPage ?? (_jobPage = new JobPropertyPage(_swApp, _errors, _log));
+
+        private OperationPropertyPage OperationPage =>
+            _operationPage ?? (_operationPage = new OperationPropertyPage(_swApp, _errors, _log));
+
+        private void DisposePropertyPages()
+        {
+            _jobPage?.Dispose();
+            _jobPage = null;
+
+            _operationPage?.Dispose();
+            _operationPage = null;
         }
 
         /// <summary>

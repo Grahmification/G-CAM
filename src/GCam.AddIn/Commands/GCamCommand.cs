@@ -12,8 +12,9 @@ namespace GCam.AddIn.Commands
     public enum GCamCommand
     {
         NewJob = 0,
-        ToolLibrary = 1,
-        PostProcess = 2,
-        Simulate = 3,
+        NewOperation = 1,
+        ToolLibrary = 2,
+        PostProcess = 3,
+        Simulate = 4,
     }
 }

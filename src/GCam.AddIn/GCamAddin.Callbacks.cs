@@ -21,13 +21,23 @@ namespace GCam.AddIn
             {
                 switch ((GCamCommand)commandId)
                 {
+                    // Both pages are shells. Opening them from the toolbar is temporary
+                    // scaffolding - the real trigger is selecting a node in the G-CAM
+                    // tab, which needs a job model to select from.
+                    case GCamCommand.NewJob:
+                        JobPage.Show();
+                        break;
+
+                    case GCamCommand.NewOperation:
+                        OperationPage.Show();
+                        break;
+
                     case GCamCommand.ToolLibrary:
                         ToolLibraryDialog.ShowBrowser(MainWindowHandle(), _settings, _log);
                         break;
 
                     // Deliberately empty: the UI exists so the wiring can be verified,
                     // the behaviour arrives with the first vertical slice.
-                    case GCamCommand.NewJob:
                     case GCamCommand.PostProcess:
                     case GCamCommand.Simulate:
                     default:

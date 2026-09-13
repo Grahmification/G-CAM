@@ -18,7 +18,7 @@ namespace GCam.AddIn
         // Must be unique among all add-ins and stable across releases. Per the API
         // docs, changing a CommandGroup's contents without changing this ID leaves
         // users with a stale cached toolbar, so bump it if the buttons change.
-        private const int CommandGroupId = 4620;
+        private const int CommandGroupId = 4621;
 
         private const string TabName = "G-CAM";
 
@@ -48,6 +48,7 @@ namespace GCam.AddIn
             _cmdGroup.MainIconList = IconPaths("main");
 
             AddButton(GCamCommand.NewJob, "New Job", "Create a CAM job for this part");
+            AddButton(GCamCommand.NewOperation, "New Operation", "Add a machining operation");
             AddButton(GCamCommand.ToolLibrary, "Tool Library", "Open the tool library");
             AddButton(GCamCommand.PostProcess, "Post Process", "Post toolpaths to G-code");
             AddButton(GCamCommand.Simulate, "Simulate", "Simulate material removal");

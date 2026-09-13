@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 # Keep in step with GCamCommands.cs - order defines the image index of each button.
 BUTTONS = [
     ("J", (0x2D, 0x7D, 0xD2)),  # New Job
+    ("O", (0x1F, 0x8A, 0x9B)),  # New Operation
     ("T", (0x3F, 0x9E, 0x5C)),  # Tool Library
     ("P", (0xC6, 0x6A, 0x1E)),  # Post Process
     ("S", (0x7A, 0x4D, 0xB0)),  # Simulate
