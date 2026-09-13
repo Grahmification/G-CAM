@@ -30,7 +30,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d parameters | Started — no strategy computes anything yet | [Operations](design/operations.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; waiting for a strategy to run | [Operations](design/operations.md) |
 | `Core/Persistence` — the stored document format and the toolpath bytes | Done, round-tripped headlessly | [Operations](design/operations.md) |
-| `SolidWorks/Persistence` — getting those bytes into the part | Designed, not started | [Operations](design/operations.md) |
+| `SolidWorks/Persistence` — getting those bytes into the part | Written, **never run against a real part** | [Storage](solidworks-api/third-party-storage.md) |
 | `Core/Simulation`, `Commands`, `Posting` | Not started | |
 | `Core/Geometry` beyond the primitives | Not started | |
 | `Posts` | Empty project | |
@@ -275,13 +275,15 @@ The line to hold: Core owns *rules*, the viewmodel owns *presentation state* (wh
 **Threading.** Core touches no COM, so it runs freely on background threads with `IProgress<T>` and `CancellationToken`. Any SolidWorks call goes through `SwDispatcher` back to the main STA thread. Calling SW from a worker thread appears to work and then corrupts state later.
 
 **Persistence.** Verified in the 2025 help, and it constrains the design more than you'd expect:
-- Read and write only in reaction to `LoadFromStorageNotify` / `SaveToStorageNotify` — *not* `FileSaveNotify` / `FileOpenNotify2`.
-- **Writing is locked unless `SaveToStorageNotify` has fired.** You cannot flush CAM data whenever you like; you mark the document dirty with `IModelDoc2::SetSaveFlag` and write when SolidWorks asks.
-- Every `IGet3rdPartyStorage` must be matched by `IRelease3rdPartyStorage`, *including when it returns null*, or the node stays locked for the session.
-- Stream names must be under 30 characters and globally unique across add-ins.
+- G-CAM uses `IModelDocExtension::IGet3rdPartyStorageStore` (an `IStorage`, so multiple named sub-streams) over the flat `IModelDoc2::IGet3rdPartyStorage` — versioned CAM data benefits from the structure.
+- **That means the *store* notifications**, `LoadFromStorageStoreNotify` / `SaveToStorageStoreNotify`, not the stream ones whose names differ by a word. Never `FileSaveNotify` / `FileOpenNotify2`.
+- **Writing is locked unless `SaveToStorageStoreNotify` has fired.** You cannot flush CAM data whenever you like; you mark the document dirty with `IModelDoc2::SetSaveFlag` and write when SolidWorks asks.
+- Reading, by contrast, is safe at any time once a document is fully open — so loading need not race the notification.
+- Every get must be matched by a release, *including when it returns null*, or the node stays locked for the session.
+- Storage names are under 30 characters and global across add-ins; element names inside are capped near 31, which is why toolpath streams are numbered rather than named after a 36-character operation id.
 - If the add-in loads mid-session, walk open documents with `EnumDocuments2` to pick up storage that was never notified.
 
-Use `IModelDocExtension::IGet3rdPartyStorageStore` (an `IStorage`, so multiple named sub-streams) over the flat `IModelDoc2::IGet3rdPartyStorage` stream — versioned CAM data benefits from the structure.
+Full detail, including the signatures and the one-subscriber-per-document rule, is in [third-party-storage.md](solidworks-api/third-party-storage.md).
 
 **COM lifetime.** Release COM objects explicitly rather than leaving them to the GC; `DisconnectFromSW` already sets the pattern. This matters more as the extraction code starts walking thousands of faces.
 

@@ -5,7 +5,9 @@ using System.Runtime.InteropServices;
 using GCam.AddIn.Composition;
 using GCam.Core.Diagnostics;
 using GCam.Core.Settings;
+using GCam.Core.Strategies;
 using GCam.SolidWorks.Hosting;
+using GCam.SolidWorks.Persistence;
 using GCam.SolidWorks.PropertyPages;
 using GCam.UI.Diagnostics;
 using SolidWorks.Interop.sldworks;
@@ -28,6 +30,7 @@ namespace GCam.AddIn
         private int _addinID = -1;
         private ICommandManager _iCmdMgr;
         private JobTreeTabs _jobTreeTabs;
+        private StrategyCatalog _strategies;
         private JobPropertyPage _jobPage;
         private OperationPropertyPage _operationPage;
 
@@ -275,8 +278,19 @@ namespace GCam.AddIn
                 Path.Combine(dir, "main40.png"),
             };
 
+            // One catalogue for the session: the storage layer needs it to rebuild a
+            // stored operation's settings, and New Operation will need the same one.
+            _strategies = StrategyCatalog.CreateDefault();
+
             _jobTreeTabs = new JobTreeTabs(
-                _swApp, tabIcons, _errors, _log, ActivateCommandTab, jobEditor: this);
+                _swApp,
+                tabIcons,
+                _errors,
+                _log,
+                ActivateCommandTab,
+                jobEditor: this,
+                storage: new JobDocumentStorage(_strategies, _log));
+
             _jobTreeTabs.Start();
         }
 

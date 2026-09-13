@@ -120,6 +120,12 @@ namespace GCam.AddIn
 
                 _jobTreeTabs.RefreshActiveDocument();
 
+                // The jobs live inside the part, so a CAM change is an unsaved change to
+                // it. Without this the user closes the part, is never asked, and the work
+                // is gone - SOLIDWORKS only offers us a chance to write during a save it
+                // has already decided to do.
+                _jobTreeTabs.MarkDirty(_swApp.ActiveDoc as ModelDoc2);
+
                 // Land the selection on the job that was just accepted. The tree is what
                 // decides which job the 3D view shows, so without this a job goes
                 // straight from having its stock set up to showing nothing - which reads

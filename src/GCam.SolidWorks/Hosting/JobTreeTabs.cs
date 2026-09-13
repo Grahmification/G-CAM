@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
 using GCam.Core.Model;
+using GCam.SolidWorks.Persistence;
 using GCam.SolidWorks.Rendering;
 using GCam.UI.ViewModels;
 using SolidWorks.Interop.sldworks;
@@ -44,6 +45,7 @@ namespace GCam.SolidWorks.Hosting
         private readonly IGCamLog _log;
         private readonly Action _onTabActivated;
         private readonly IJobEditor _jobEditor;
+        private readonly JobDocumentStorage _storage;
 
         // Keyed on the ModelDoc2 itself. The CLR hands out one runtime callable wrapper
         // per COM identity, so the same document is the same key however we reached it -
@@ -75,7 +77,8 @@ namespace GCam.SolidWorks.Hosting
             ErrorHandler errors,
             IGCamLog log,
             Action onTabActivated = null,
-            IJobEditor jobEditor = null)
+            IJobEditor jobEditor = null,
+            JobDocumentStorage storage = null)
         {
             _swApp = swApp ?? throw new ArgumentNullException(nameof(swApp));
             _tabIcons = tabIcons ?? throw new ArgumentNullException(nameof(tabIcons));
@@ -83,6 +86,24 @@ namespace GCam.SolidWorks.Hosting
             _log = log ?? NullLog.Instance;
             _onTabActivated = onTabActivated;
             _jobEditor = jobEditor;
+            _storage = storage;
+        }
+
+        /// <summary>
+        /// Tells SOLIDWORKS a document has unsaved CAM changes.
+        /// </summary>
+        /// <remarks>
+        /// Without this there is no "Save Changes?" prompt, no
+        /// <c>SaveToStorageStoreNotify</c>, and the jobs never reach the file - the user
+        /// loses them without ever being asked. Every edit path has to end here, which is
+        /// why it is public rather than something this class works out for itself.
+        /// </remarks>
+        public void MarkDirty(ModelDoc2 model)
+        {
+            if (model != null && _tabs.ContainsKey(model))
+            {
+                _storage?.MarkDirty(model);
+            }
         }
 
         /// <summary>
@@ -189,6 +210,9 @@ namespace GCam.SolidWorks.Hosting
             public ViewportRenderer Renderer { get; set; }
 
             public JobPreview Preview { get; set; }
+
+            /// <summary>Saves this document's jobs into it. Null for a part that has none.</summary>
+            public JobStorageHook Storage { get; set; }
         }
 
         /// <summary>
@@ -301,7 +325,7 @@ namespace GCam.SolidWorks.Hosting
             var renderer = new ViewportRenderer(model, _errors, _log);
             var preview = new JobPreview(_swApp, model, renderer, _errors, _log);
 
-            _tabs[model] = new DocumentTab
+            var tab = new DocumentTab
             {
                 View = view,
                 Jobs = jobs,
@@ -310,16 +334,63 @@ namespace GCam.SolidWorks.Hosting
                 Preview = preview,
             };
 
-            BindView(view, _tabs[model]);
+            _tabs[model] = tab;
+
+            BindView(view, tab);
 
             // Per-document, because the notification is: PartDoc raises it, not SldWorks.
             var part = model as PartDoc;
             if (part != null)
             {
                 part.FeatureManagerTabActivatedNotify += OnManagerPaneTabActivated;
+
+                // Read now rather than waiting for LoadFromStorageStoreNotify. The help is
+                // explicit that a fully open document can be read at any time, and this
+                // avoids racing the notification: by the time a tab is built the document
+                // is open, and the same path serves a part opened normally and the ten
+                // already up when the add-in was switched on.
+                LoadJobs(model, tab);
+
+                if (_storage != null)
+                {
+                    tab.Storage = new JobStorageHook(
+                        part, model, _storage, () => tab.Jobs, _errors, _log);
+                }
             }
 
             _log.Debug("G-CAM tab added to {0}.", Describe(model));
+        }
+
+        /// <summary>
+        /// Reads whatever CAM data the part already carries into its fresh job document.
+        /// </summary>
+        /// <remarks>
+        /// Problems are logged rather than shown. A part that opens with a warning dialog
+        /// every time is a part nobody opens; the operations that could not be read are
+        /// reported on themselves, where the user is looking when they care.
+        /// </remarks>
+        private void LoadJobs(ModelDoc2 model, DocumentTab tab)
+        {
+            if (_storage == null)
+            {
+                return;
+            }
+
+            try
+            {
+                foreach (string problem in _storage.Load(model, tab.Jobs))
+                {
+                    _log.Warn("{0}: {1}", Describe(model), problem);
+                }
+
+                tab.Model?.Refresh();
+            }
+            catch (Exception ex)
+            {
+                // The part still opens, with no jobs. Losing the CAM data is bad; refusing
+                // to open the part over it would be worse.
+                _errors.Handle(ex, nameof(LoadJobs));
+            }
         }
 
         /// <summary>
@@ -402,6 +473,11 @@ namespace GCam.SolidWorks.Hosting
             // Before the view goes: the renderer is subscribed to this document's
             // windows, and unsubscribing needs them still to be there.
             tab.Renderer?.Dispose();
+
+            // The document is closing, so the last save has already happened or been
+            // declined. Nothing to flush here - writing is only legal inside the
+            // notification this is unsubscribing from.
+            tab.Storage?.Dispose();
 
             var part = model as PartDoc;
             if (part != null)

@@ -614,7 +614,7 @@ while they are still cheap to change.
 | 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | **Done** — 2026-09-13, 32 tests |
 | 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | **Done** — 2026-09-13, 35 tests |
 | 6a | The stored formats in Core — `GcamDocumentXml`, `ToolpathBinary`, `ParameterBag` | Needs the model above it to be settled. Pure Core, so a full round trip is a headless test | **Done** — 2026-09-13, 31 tests |
-| 6b | The SOLIDWORKS storage plumbing — third-party storage, the load/save notifications, release discipline | The half that cannot be tested headlessly, and the first code in `GCam.SolidWorks` for operations | Next |
+| 6b | The SOLIDWORKS storage plumbing — third-party storage, the load/save notifications, release discipline | The half that cannot be tested headlessly, and the first code in `GCam.SolidWorks` for operations | **Written, unverified** — 2026-09-13. Compiles; never yet run against a real part. See [third-party-storage.md](../solidworks-api/third-party-storage.md) |
 | 7 | `Contour2d` strategy + the geometry extraction it needs | The first real toolpath. Everything above exists to be plugged into here | Not started |
 | 8 | The Operation property page | Last, because a page for a model that is still moving is written twice | Not started |
 

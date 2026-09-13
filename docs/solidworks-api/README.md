@@ -12,6 +12,7 @@ Official reference: the SolidWorks API Help installed alongside SolidWorks, and 
 - [Showing WPF windows from an add-in](wpf-in-solidworks.md) — owners, modality, the 64-bit HWND, and drawing.
 - [Tabs in the Manager Pane](manager-pane-tabs.md) — why a tab created at connect time never appears, keeping one per document, and which COM objects you may release.
 - [PropertyManager pages](property-manager-pages.md) — why a page cannot live inside your own tab and how to get the user back to it, `ref` where the help says `out`, and the handler QI that fails silently.
+- [Storing data inside a SOLIDWORKS document](third-party-storage.md) — the store API and its own notifications, why writing is only legal during a save, and why each open document needs its own subscriber.
 - [NuGet dependencies in an add-in](addin-dependencies.md) — why packages fail to load with no app.config, and why a try/catch cannot save you.
 - [Drawing OpenGL over the 3D view](opengl-overlay.md) — `BufferSwapNotify` and the type you must cast to, why only OpenGL 1.1 is safely reachable, leaving the context as you found it, and why the Performance option everyone blames turns out to be innocent.
 - [Coordinate systems and bounding boxes](coordinate-systems.md) — why the transform is measured rather than read out of `ArrayData`, and why `GetExtremePoint` rather than `GetBodyBox` or tessellation.
