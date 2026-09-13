@@ -13,9 +13,14 @@ The project structure for G-CAM and the rules that keep it intact.
 | `UI` — error dialog, tool library browser and editor, profile preview | Done |
 | `AddIn` — CommandManager, COM registration | Done |
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done |
-| `SolidWorks/PropertyPages` — handler base, shared page base, empty Job and Operation pages | Shell only |
-| `Core/Geometry`, `Strategies`, `Simulation`, `Commands`, `Posting` | Not started |
-| `SolidWorks/Extraction`, `Rendering`, `PropertyPages`, `Persistence` | Not started |
+| `Core/Model` — Job, Operation, Stock, JobDocument | Done, minus persistence |
+| `Core/Geometry/Primitives` — Vec3, Bounds | Started — only what stock needs |
+| `UI` — job tree with rename and context menu | Done |
+| `SolidWorks/PropertyPages` — handler base, shared page base, Job page | Done; Operation page is still a shell |
+| `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done |
+| `Core/Strategies`, `Simulation`, `Commands`, `Posting` | Not started |
+| `Core/Geometry` beyond Vec3/Bounds | Not started |
+| `SolidWorks/Extraction`, `Rendering`, `Persistence` | Not started |
 | `Posts` | Empty project |
 
 No toolpath has been computed and nothing has been posted. The vertical slice at the end of this document is still the plan.
@@ -50,7 +55,9 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │
 ├── src/
 │   ├── GCam.Core/                     ★ netstandard2.0 — NO SolidWorks references. Ever.
-│   │   ├── Model/                     Job, Setup, Operation, Toolpath, Move, Stock
+│   │   ├── Model/                     Job, Operation, Stock, JobDocument,
+│   │   │                              WorkOffsets — later Toolpath, Move
+│   │   │                              (no Setup level — see decision 0004)
 │   │   ├── Tooling/                   Tool, Holder, CuttingData, MachineData,
 │   │   │                              CutterProfile, ToolSearch, IToolLibrary,
 │   │   │                              LibrarySession (open libraries + dirty state)
@@ -247,7 +254,7 @@ by 23mm. See [the HSM format notes](cam/hsm-tool-library-format.md).
 One 2D contour operation, all the way through, before breadth:
 
 1. `GCam.AddIn` skeleton — DI composition root, CommandManager tab with buttons
-2. `GCam.Core.Model` — Job → Setup → Operation → Toolpath
+2. `GCam.Core.Model` — Job → Operation → Toolpath (see [0004](decisions/0004-jobs-own-operations-directly.md))
 3. `Extraction/` — one planar face out of SolidWorks into Core geometry
 4. `Strategies/Contour2D` — offset with Clipper2, with headless tests
 5. `Rendering/` — GL overlay drawing the path
@@ -278,7 +285,7 @@ The three custom UI surfaces exist and are wired, with no behaviour behind them.
 | --- | --- | --- |
 | CommandManager tab, toolbar and menu | `GCamAddin.CommandManager.cs` | Five buttons: New Job, New Operation, Tool Library, Post Process, Simulate |
 | Manager Pane tab | `JobTreeTabs` → `JobTreeTabHost` → `JobTreeView` | ActiveX → WinForms → ElementHost → WPF; selecting it brings the G-CAM ribbon tab forward |
-| Job and Operation PropertyManager pages | `GCamPropertyPage` → `JobPropertyPage` / `OperationPropertyPage` | SOLIDWORKS-native, built by the API rather than WPF |
+| Job and Operation PropertyManager pages | `GCamPropertyPage` → `JobPropertyPage` / `OperationPropertyPage` | SOLIDWORKS-native, built by the API rather than WPF. The Job page is real; the Operation page is still a shell |
 | Tool library window | `ToolLibraryDialog.Show` → `ToolLibraryWindow` | Modal, parented to the SW frame |
 
 Post Process and Simulate are deliberate no-ops. The rest open their empty surfaces so the hosting chain can be verified.
@@ -307,6 +314,45 @@ page on the PropertyManager tab. So editing is a round trip:
 the page and setting it back in `AfterClose`. Details and the alternatives that were
 weighed are in
 [property-manager-pages.md](solidworks-api/property-manager-pages.md).
+
+## Jobs
+
+A **job** is what HSMWorks calls a Setup: it owns the model selection, the stock, the
+coordinate system and the work offset, and operations sit directly inside it. There is no
+Setup level — see [0004](decisions/0004-jobs-own-operations-directly.md).
+
+```
+GCam.Core.Model
+  JobDocument      the jobs of one part, and which is the default
+    Job            model bodies, stock, coordinate system, work offset
+      Operation    placeholder until the operation work
+  Stock            three modes, computing a box from the model extent
+  WorkOffsets      G54–G59
+```
+
+**`JobDocument` owns the rules, not the viewmodel.** Unique names, what the default is,
+where the default goes when the job holding it is deleted, what a duplicate is called —
+all of it is in Core, where headless tests reach it. The same reasoning that put
+`ToolSearch` there. `JobTreeViewModel` turns that model into nodes and holds selection
+and edit state, and nothing else.
+
+**Three things meet at the job tree, and none of them can see the other two.** The tree
+is WPF in `GCam.UI`, which never references SOLIDWORKS. The property pages are in
+`GCam.SolidWorks`, which does not know the tree exists. So the tree states intent through
+`Core/Abstractions/IJobEditor`, and `GCamAddin` — the only project that knows everything
+— implements it.
+
+**Getting the viewmodel into the tab is not constructor injection.** SOLIDWORKS activates
+`JobTreeTabHost` through COM, so it has a parameterless constructor and no dependencies.
+`JobTreeTabs` recovers the instance with `IFeatMgrView::GetControl` straight after
+creating the tab and calls `Bind` on the view inside it. One `JobDocument` and one
+viewmodel per open part, held together in `JobTreeTabs`.
+
+**Jobs are not persisted yet.** They live for as long as the document is open. That is
+what lets a job name its bodies and coordinate system as plain strings; when persistence
+lands, those become persistent reference ids from `IModelDocExtension::GetPersistReference3`,
+because renaming a body must not silently change what a proven job cuts. The comment at
+`Job.ModelBodyNames` says so at the point it matters.
 
 **Icons.** `ICommandGroup.IconList` wants a *strip* per size containing every button's icon side by side; `MainIconList` wants a single icon per size. Both need files at 20/32/40/64/96/128 px. Placeholders are generated by `tools/make-placeholder-icons.py` — the button order there must match the `GCamCommand` enum, since a command's value is its index into the strip. The files are copied next to the assembly because SOLIDWORKS reads them from disk by path, not as embedded resources.
 

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.InteropServices;
 using GCam.Core.Diagnostics;
 using SolidWorks.Interop.sldworks;
@@ -50,6 +52,8 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         protected IGCamLog Log => _log;
+
+        protected SldWorks SwApp => _swApp;
 
         /// <summary>Text in the page's title bar.</summary>
         protected abstract string Title { get; }
@@ -108,7 +112,11 @@ namespace GCam.SolidWorks.PropertyPages
             const int pageOptions =
                 (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_OkayButton |
                 (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_CancelButton |
-                (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_LockedPage;
+                (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_LockedPage |
+                // Pages here show and hide controls from inside their own handlers - the
+                // stock mode dropdown does it on every change. Without this the page
+                // repaints per control and visibly flickers.
+                (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_DisablePageBuildDuringHandlers;
 
             // `ref`, not `out`, despite the help documenting it as an output parameter -
             // the interop declares it [In, Out]. Initialise it rather than trusting it.
@@ -227,6 +235,119 @@ namespace GCam.SolidWorks.PropertyPages
             }
 
             return group;
+        }
+
+        protected static IPropertyManagerPageTextbox AddTextbox(
+            IPropertyManagerPageGroup group, int id, string tip)
+        {
+            return AddControl<IPropertyManagerPageTextbox>(
+                group, id, swPropertyManagerPageControlType_e.swControlType_Textbox, string.Empty, tip);
+        }
+
+        /// <summary>
+        /// A length box. Values are in whatever units SOLIDWORKS hands back - see
+        /// <see cref="JobPropertyPage"/> for the conversion and why it is measured
+        /// rather than assumed.
+        /// </summary>
+        protected static IPropertyManagerPageNumberbox AddLengthbox(
+            IPropertyManagerPageGroup group, int id, string caption, string tip)
+        {
+            var box = AddControl<IPropertyManagerPageNumberbox>(
+                group, id, swPropertyManagerPageControlType_e.swControlType_Numberbox, caption, tip);
+
+            // Units cannot be changed once the page is shown, so this has to happen here.
+            // The upper bound is deliberately generous rather than a guess at machine
+            // capacity; it exists to stop a typo becoming a kilometre of stock.
+            box.SetRange2(
+                (int)swNumberboxUnitType_e.swNumberBox_Length,
+                Minimum: 0,
+                Maximum: 10000,
+                Inclusive: true,
+                Increment: 1,
+                FastIncr: 10,
+                SlowIncr: 0.1);
+
+            return box;
+        }
+
+        protected static IPropertyManagerPageCombobox AddCombobox(
+            IPropertyManagerPageGroup group, int id, string caption, IEnumerable<string> items, string tip)
+        {
+            var combo = AddControl<IPropertyManagerPageCombobox>(
+                group, id, swPropertyManagerPageControlType_e.swControlType_Combobox, caption, tip);
+
+            combo.Height = 0;    // 0 lets SOLIDWORKS size the drop-down to its content.
+            combo.AddItems(items.ToArray());
+
+            return combo;
+        }
+
+        /// <param name="mark">
+        /// Distinguishes this box from every other selection box on the page. It is how
+        /// SOLIDWORKS decides which box a click belongs to, and how
+        /// ISelectionMgr::GetSelectedObject6 later tells them apart, so each box on a
+        /// page needs its own.
+        /// </param>
+        protected static IPropertyManagerPageSelectionbox AddSelectionbox(
+            IPropertyManagerPageGroup group,
+            int id,
+            int mark,
+            swSelectType_e[] filters,
+            bool singleEntityOnly,
+            string tip)
+        {
+            var box = AddControl<IPropertyManagerPageSelectionbox>(
+                group, id, swPropertyManagerPageControlType_e.swControlType_Selectionbox, string.Empty, tip);
+
+            box.Height = 50;
+            box.Mark = mark;
+            box.SingleEntityOnly = singleEntityOnly;
+            box.SetSelectionFilters(filters.Select(f => (int)f).ToArray());
+
+            return box;
+        }
+
+        private static T AddControl<T>(
+            IPropertyManagerPageGroup group,
+            int id,
+            swPropertyManagerPageControlType_e type,
+            string caption,
+            string tip)
+            where T : class
+        {
+            // AddControl2, not AddControl: since 2014 the newer overload requires
+            // swControlOptions_Visible explicitly, so an omitted option produces an
+            // invisible control rather than a missing one.
+            var control = group.AddControl2(
+                id,
+                (short)type,
+                caption,
+                (short)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent,
+                (int)swAddControlOptions_e.swControlOptions_Visible |
+                (int)swAddControlOptions_e.swControlOptions_Enabled,
+                tip ?? string.Empty) as T;
+
+            if (control == null)
+            {
+                throw new InvalidOperationException(
+                    $"AddControl2 returned null or the wrong type for {type} with id {id}.");
+            }
+
+            return control;
+        }
+
+        /// <summary>
+        /// Shows or hides a control. Every control is created up front, because they
+        /// cannot be added to a page that is already on screen; this is how a page
+        /// changes shape afterwards.
+        /// </summary>
+        protected static void SetVisible(object control, bool visible)
+        {
+            var asControl = control as IPropertyManagerPageControl;
+            if (asControl != null)
+            {
+                asControl.Visible = visible;
+            }
         }
 
         protected static void AddLabel(IPropertyManagerPageGroup group, int id, string text)

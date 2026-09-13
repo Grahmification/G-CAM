@@ -36,6 +36,17 @@ namespace GCam.SolidWorks.Hosting
         public const string ProgIdValue = "GCam.SolidWorks.JobTreeTabHost";
 
         /// <summary>
+        /// The hosted WPF view, so that whoever created the tab can give it a document
+        /// to show. Null if construction failed and the error label is showing instead.
+        /// </summary>
+        /// <remarks>
+        /// This is the way round the fact that COM constructs this control with no
+        /// dependencies: JobTreeTabs recovers the instance through
+        /// IFeatMgrView::GetControl and binds it afterwards.
+        /// </remarks>
+        public JobTreeView View { get; private set; }
+
+        /// <summary>
         /// Entry point 6. SOLIDWORKS activates this through COM, so an exception here
         /// would surface as "the tab simply did not appear" with nothing explaining why.
         /// On failure the tab still opens, showing the error instead of the tree.
@@ -44,10 +55,12 @@ namespace GCam.SolidWorks.Hosting
         {
             try
             {
+                View = new JobTreeView();
+
                 Controls.Add(new ElementHost
                 {
                     Dock = DockStyle.Fill,
-                    Child = new JobTreeView(),
+                    Child = View,
                 });
             }
             catch (Exception ex)

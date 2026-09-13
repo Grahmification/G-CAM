@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
+using GCam.Core.Model;
+using GCam.UI.ViewModels;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -39,12 +42,13 @@ namespace GCam.SolidWorks.Hosting
         private readonly ErrorHandler _errors;
         private readonly IGCamLog _log;
         private readonly Action _onTabActivated;
+        private readonly IJobEditor _jobEditor;
 
         // Keyed on the ModelDoc2 itself. The CLR hands out one runtime callable wrapper
         // per COM identity, so the same document is the same key however we reached it -
         // which is what the stock SOLIDWORKS add-in template relies on too.
-        private readonly Dictionary<ModelDoc2, FeatMgrView> _tabs =
-            new Dictionary<ModelDoc2, FeatMgrView>();
+        private readonly Dictionary<ModelDoc2, DocumentTab> _tabs =
+            new Dictionary<ModelDoc2, DocumentTab>();
 
         private bool _subscribed;
         private bool _missingControlReported;
@@ -60,18 +64,77 @@ namespace GCam.SolidWorks.Hosting
         /// callback rather than a direct call because the ribbon belongs to GCam.AddIn,
         /// which this project does not know about.
         /// </param>
+        /// <param name="jobEditor">
+        /// What the tree calls when the user asks to edit a job or add an operation.
+        /// Same reasoning as onTabActivated: the property pages belong to GCam.AddIn.
+        /// </param>
         public JobTreeTabs(
             SldWorks swApp,
             string[] tabIcons,
             ErrorHandler errors,
             IGCamLog log,
-            Action onTabActivated = null)
+            Action onTabActivated = null,
+            IJobEditor jobEditor = null)
         {
             _swApp = swApp ?? throw new ArgumentNullException(nameof(swApp));
             _tabIcons = tabIcons ?? throw new ArgumentNullException(nameof(tabIcons));
             _errors = errors ?? throw new ArgumentNullException(nameof(errors));
             _log = log ?? NullLog.Instance;
             _onTabActivated = onTabActivated;
+            _jobEditor = jobEditor;
+        }
+
+        /// <summary>
+        /// The jobs belonging to a document, or null if it has no G-CAM tab - which
+        /// means it is not a part, or the tab could not be created.
+        /// </summary>
+        public JobDocument JobsFor(ModelDoc2 model)
+        {
+            if (model == null)
+            {
+                return null;
+            }
+
+            DocumentTab tab;
+            return _tabs.TryGetValue(model, out tab) ? tab.Jobs : null;
+        }
+
+        /// <summary>The jobs belonging to whichever document is in front.</summary>
+        public JobDocument JobsForActiveDocument() => JobsFor(_swApp.ActiveDoc as ModelDoc2);
+
+        /// <summary>
+        /// Rebuilds a document's tree after its jobs have changed. The viewmodel does
+        /// this itself for changes it makes; this is for changes made elsewhere, such as
+        /// a job created from the toolbar.
+        /// </summary>
+        public void RefreshJobs(ModelDoc2 model)
+        {
+            if (model == null)
+            {
+                return;
+            }
+
+            DocumentTab tab;
+            if (_tabs.TryGetValue(model, out tab))
+            {
+                tab.Model.Refresh();
+            }
+        }
+
+        /// <summary>Rebuilds the tree of whichever document is in front.</summary>
+        public void RefreshActiveDocument() => RefreshJobs(_swApp.ActiveDoc as ModelDoc2);
+
+        /// <summary>
+        /// One part's tab: the SOLIDWORKS view, the jobs it shows, and the viewmodel
+        /// tying them together. All three live and die with the document.
+        /// </summary>
+        private sealed class DocumentTab
+        {
+            public FeatMgrView View { get; set; }
+
+            public JobDocument Jobs { get; set; }
+
+            public JobTreeViewModel Model { get; set; }
         }
 
         /// <summary>
@@ -179,7 +242,16 @@ namespace GCam.SolidWorks.Hosting
                 return;
             }
 
-            _tabs[model] = view;
+            var jobs = new JobDocument();
+
+            _tabs[model] = new DocumentTab
+            {
+                View = view,
+                Jobs = jobs,
+                Model = new JobTreeViewModel(jobs, _jobEditor, _log),
+            };
+
+            BindView(view, _tabs[model]);
 
             // Per-document, because the notification is: PartDoc raises it, not SldWorks.
             var part = model as PartDoc;
@@ -189,6 +261,30 @@ namespace GCam.SolidWorks.Hosting
             }
 
             _log.Debug("G-CAM tab added to {0}.", Describe(model));
+        }
+
+        /// <summary>
+        /// Hands the freshly activated control its document.
+        /// </summary>
+        /// <remarks>
+        /// SOLIDWORKS builds the hosting control through COM, so it has no constructor
+        /// arguments and nothing was injected into it. GetControl hands back the
+        /// instance that was activated, which is the only way to reach it.
+        /// </remarks>
+        private void BindView(FeatMgrView view, DocumentTab tab)
+        {
+            var host = view.GetControl() as JobTreeTabHost;
+
+            if (host?.View == null)
+            {
+                // The control exists - CreateFeatureMgrControl4 returned a view - but it
+                // is not ours, or its constructor fell back to the error label. Either
+                // way the tab shows something; it just will not show jobs.
+                _log.Warn("Could not reach the hosted G-CAM view, so the tab will stay empty.");
+                return;
+            }
+
+            host.View.Bind(tab.Model, _errors);
         }
 
         /// <summary>
@@ -234,11 +330,13 @@ namespace GCam.SolidWorks.Hosting
         /// </summary>
         private void Forget(ModelDoc2 model)
         {
-            FeatMgrView view;
-            if (!_tabs.TryGetValue(model, out view))
+            DocumentTab tab;
+            if (!_tabs.TryGetValue(model, out tab))
             {
                 return;
             }
+
+            FeatMgrView view = tab.View;
 
             _tabs.Remove(model);
 

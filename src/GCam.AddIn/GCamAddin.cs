@@ -233,7 +233,7 @@ namespace GCam.AddIn
         /// one for a session in which nobody edits anything.
         /// </remarks>
         private JobPropertyPage JobPage =>
-            _jobPage ?? (_jobPage = new JobPropertyPage(_swApp, _errors, _log));
+            _jobPage ?? (_jobPage = CreateJobPage());
 
         private OperationPropertyPage OperationPage =>
             _operationPage ?? (_operationPage = new OperationPropertyPage(_swApp, _errors, _log));
@@ -275,7 +275,8 @@ namespace GCam.AddIn
                 Path.Combine(dir, "main40.png"),
             };
 
-            _jobTreeTabs = new JobTreeTabs(_swApp, tabIcons, _errors, _log, ActivateCommandTab);
+            _jobTreeTabs = new JobTreeTabs(
+                _swApp, tabIcons, _errors, _log, ActivateCommandTab, jobEditor: this);
             _jobTreeTabs.Start();
         }
 

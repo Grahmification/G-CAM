@@ -11,3 +11,4 @@ Number files in order: `0001-short-title.md`. Copy `TEMPLATE.md` to start. Decis
 - [0001. Target .NET Framework 4.8 for the add-in](0001-target-net-framework-48.md) — why not .NET 8, and the one-runtime-per-process constraint that decides it.
 - [0002. Imported tool libraries are read-only](0002-imported-libraries-are-read-only.md) — why editing an .hsmlib means converting it first.
 - [0003. A job embeds a copy of its tool](0003-jobs-embed-their-tools.md) — why a part is self-contained, and library edits never reach a saved job.
+- [0004. A job owns its operations directly](0004-jobs-own-operations-directly.md) — why there is no Setup level, and what it would cost to add one later.

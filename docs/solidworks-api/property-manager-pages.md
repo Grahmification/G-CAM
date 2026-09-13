@@ -130,6 +130,51 @@ a user can do, not a bug.
 `Show2`'s options parameter only defines `swPropertyManagerShowOptions_StackPage`, so a
 page that does not stack passes a bare `0`.
 
+## Selection boxes need a mark each — **From docs**
+
+A selection box is `swControlType_Selectionbox` plus two settings that matter:
+
+```csharp
+box.Mark = 1;                                        // unique within the page
+box.SetSelectionFilters(new[] { (int)swSelectType_e.swSelSOLIDBODIES });
+box.SingleEntityOnly = false;
+```
+
+**The mark is how SOLIDWORKS decides which box a click belongs to**, and how you tell the
+selections apart afterwards. A page with two boxes and one mark cannot separate them.
+G-CAM's job page uses 1 for the model bodies and 2 for the coordinate system.
+
+Useful filters so far: `swSelSOLIDBODIES` (76) and `swSelCOORDSYS` (61).
+
+**Read selections through `ISelectionMgr`, not the box.** `GetSelectedObjectCount2(mark)`
+and `GetSelectedObject6(index, mark)` — one-based — are the pair that respect the mark.
+Pass the mark to *both*; asking for a count with one mark and fetching with another
+silently renumbers what you get.
+
+**Read them as they change, not at OK.** `OnSelectionboxListChanged` is the moment the
+contents are reliably present. By the time the page is closing the selection manager has
+been cleared, so a page that waits until `AfterClose` to look finds nothing.
+
+To put a saved selection back, `IModelDocExtension::SelectByID2` takes the name and a
+type string — `"SOLIDBODY"`, `"COORDSYS"` — plus the mark, so a restored selection lands
+in the right box.
+
+## Controls are created once and then shown or hidden — **From docs**
+
+Both `AddGroupBox` and `AddControl2` carry the same Remark: use them before the page is
+shown or while it is closed. **A page cannot grow a control while it is on screen.**
+
+So a page that changes shape creates everything up front and toggles
+`IPropertyManagerPageControl.Visible`. The job page's stock section builds all eight
+number boxes and shows the three or four the current mode uses.
+
+Doing that from inside a handler repaints the page per control and visibly flickers.
+`swPropertyManagerOptions_DisablePageBuildDuringHandlers` in the page options defers the
+repaint until control returns to SOLIDWORKS; `GCamPropertyPage` sets it for every page.
+
+Number box units are set with `SetRange2` and **cannot be changed once the page is
+shown** — the parameter is ignored if you try, so it has to happen at build time.
+
 ## Error handling
 
 Every one of the thirty-seven handler methods is an entry point, and
@@ -154,11 +199,27 @@ add-in can do no real work there. Commit in `AfterClose`.
 `AfterClose`, and a page that overrode it and forgot to call `base` would leave the user
 stranded on the PropertyManager tab with no obvious cause.
 
+## Open question: what units is a length number box in?
+
+**Unmeasured, and it matters more than anything else on this page.** The help documents
+neither `IPropertyManagerPageNumberbox.Value` nor `SetRange2`'s unit parameter as being
+in any particular unit. SOLIDWORKS works in metres internally, so
+`JobPropertyPage.ToBoxLength` / `FromBoxLength` assume metres — and log the raw value the
+first time one is read, precisely so the assumption can be checked rather than believed:
+
+```
+Length number box raw value 0.01 read as 10 mm.
+```
+
+Type **10 mm** into the Top offset and that line should say `0.01`. If it says `10`, the
+box is in document units and those two methods are the only thing that needs changing —
+they exist as a pair for that reason. This is the 1000× error `architecture.md` warns
+about, and it would show up as stock a metre thick rather than as a crash.
+
 ## Not yet exercised
 
-Two pages compile and are wired to the New Job and New Operation buttons, but **nothing
-here has been run inside SOLIDWORKS yet** — no screenshot, no confirmed callback, and in
-particular the tab round trip has not been watched happening. The `ref`/`out` finding and
-the assembly-visibility finding are compile-time and file-inspection facts and stand on
-their own; the rest is the help plus a reading of the interop. Re-tag the runtime claims
-once the pages have actually been opened.
+The Job page and the tree compile, and the pieces they rest on — the `ref`/`out`
+signatures, the create-once rule, the assembly visibility — are compile-time or
+documented facts. But **none of the job work has been run inside SOLIDWORKS**: no page
+opened, no selection made, no number box read. The units question above is the first
+thing to settle when it is.

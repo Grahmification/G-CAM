@@ -21,15 +21,12 @@ namespace GCam.AddIn
             {
                 switch ((GCamCommand)commandId)
                 {
-                    // Both pages are shells. Opening them from the toolbar is temporary
-                    // scaffolding - the real trigger is selecting a node in the G-CAM
-                    // tab, which needs a job model to select from.
                     case GCamCommand.NewJob:
-                        JobPage.Show();
+                        CreateJob();
                         break;
 
                     case GCamCommand.NewOperation:
-                        OperationPage.Show();
+                        NewOperation(_jobTreeTabs?.JobsForActiveDocument()?.DefaultJob);
                         break;
 
                     case GCamCommand.ToolLibrary:
