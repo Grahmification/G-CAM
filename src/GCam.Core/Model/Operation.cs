@@ -85,6 +85,18 @@ namespace GCam.Core.Model
         public string StateMessage { get; set; }
 
         /// <summary>
+        /// What the strategy produced. Null until it has been generated.
+        /// </summary>
+        /// <remarks>
+        /// Persisted alongside the operation, so a reopened part shows and posts what it
+        /// last did without recomputing - see
+        /// docs/decisions/0009-persist-toolpaths-in-the-document.md. Whether it still
+        /// matches the inputs is <see cref="State"/>'s business, not this property's: a
+        /// stale path is kept, drawn faded, and warned about at post time.
+        /// </remarks>
+        public Toolpath Toolpath { get; set; }
+
+        /// <summary>
         /// Fields G-CAM has no property for, preserved rather than dropped. Same contract
         /// as <see cref="Tooling.Tool.Extra"/> and <see cref="Job.Extra"/>.
         /// </summary>
@@ -139,6 +151,7 @@ namespace GCam.Core.Model
                 Tolerance = Tolerance,
                 State = State,
                 StateMessage = StateMessage,
+                Toolpath = Toolpath?.Clone(),
                 Extra = new Dictionary<string, string>(
                     Extra ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase),
             };
@@ -146,8 +159,9 @@ namespace GCam.Core.Model
 
         /// <summary>Deep copy with a fresh id, for a copy that stands on its own.</summary>
         /// <remarks>
-        /// The copy has no toolpath of its own yet, so it starts <see cref="OperationState.NotGenerated"/>
-        /// rather than claiming the original's result.
+        /// The copy starts ungenerated and without a toolpath, rather than claiming a
+        /// result computed for something else. Keeping the path while resetting the state
+        /// would be worse than either: a stored path nothing admits to having.
         /// </remarks>
         public Operation CloneAsNew()
         {
@@ -155,6 +169,7 @@ namespace GCam.Core.Model
             copy.Id = Guid.NewGuid().ToString("D");
             copy.State = OperationState.NotGenerated;
             copy.StateMessage = null;
+            copy.Toolpath = null;
             return copy;
         }
 

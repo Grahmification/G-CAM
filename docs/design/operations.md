@@ -372,15 +372,30 @@ factoring `Events/` out of `JobTreeTabs` — do it then, not before.
 ## The toolpath
 
 ```csharp
-public sealed class Move
+public sealed class Move                   // immutable
 {
-    public MoveKind Kind { get; set; }     // Rapid | Lead | Link | Cutting | Plunge | Retract | Cycle
-    public Vec3 End { get; set; }          // mm, in the operation's frame
-    public double Feed { get; set; }       // mm/min; 0 for rapids
-    public ArcData Arc { get; set; }       // null for linear moves
-    public DrillCycle Cycle { get; set; }  // null except for Cycle moves
+    public MoveKind Kind { get; }          // Rapid | Lead | Link | Cutting | Plunge | Retract | Cycle
+    public Vec3 End { get; }               // mm, in the operation's frame
+    public double Feed { get; }            // mm/min; 0 for rapids
+    public ArcData Arc { get; }            // null for linear moves
 }
 ```
+
+**A move stores its destination, not its start** — the tool is wherever the previous move
+left it, the way G-code and every CAM canonical form work. It also means a move cannot
+disagree with the one before it about where the tool is. The consequence to remember:
+**the first move only says where the tool starts**, and nothing is cut or drawn on the way
+to it, so a one-move toolpath is empty.
+
+Immutable, for the reason `RenderBatch` gives — a toolpath is cached and drawn, and
+something editable underneath a cache has to be watched. That also makes `Toolpath.Clone`
+a shallow list copy that is a genuine deep copy, rather than duplicating fifty thousand
+moves to achieve nothing.
+
+`MoveKind.Cycle` is **reserved, not implemented**. The cycle's own parameters — peck,
+dwell, retract behaviour — arrive with the drilling strategy that produces them; inventing
+them first would be guessing. The enum value exists now so the stored numbering does not
+have to shift later.
 
 The operation owns a `Toolpath`; **`CLData` is derived from it when posting**, not stored.
 One persisted artifact, and `docs/architecture.md`'s rule that posts consume `CLData` and
@@ -460,8 +475,23 @@ into one — Core says what to draw, `GCam.SolidWorks` says how.
 - Selecting an operation in the tree shows it, exactly as selecting a job shows its stock
   — the same signal, extended. Selecting a job shows all its generated operations.
 
-Cutting moves are `LineStrip`; rapids are `Lines`. Both kinds already exist in
-`PrimitiveKind`.
+Everything is `LineStrip`: consecutive moves of one kind become a single strip, and where
+the kind changes the next strip **starts at the vertex the last one ended on**, so there is
+no gap at the boundary. A gap there reads as a bug in the strategy rather than in the
+drawing. `Lines` was the earlier plan for rapids, on the assumption that dashes would need
+it — they would not, since `glLineStipple` works on a strip, and a strip is half the
+vertices.
+
+Arcs are tessellated in `ToolpathMesh`, not stored as points: a post emits G2/G3 and a
+machine runs an arc better than a thousand chords, so the arc survives all the way to the
+post and whatever needs points makes its own. The screen's tolerance (0.05mm) is far
+coarser than a machining one, which is most of the saving. A degenerate arc — zero radius,
+endpoints that do not lie on one — draws as a straight line rather than vanishing, because
+nothing drawn looks like a gap and sends someone hunting in the wrong place.
+
+`AlwaysOnTop` is not set. `RenderBatch`'s own remarks anticipate a toolpath buried in
+material wanting it, and that is a judgement best made with something on screen to look at
+— it lands when the preview is wired up.
 
 ## The property page
 
@@ -513,8 +543,8 @@ while they are still cheap to change.
 | 1 | `Heights/` + `FeedsAndSpeeds` + `GeometryRef` | The only parts of the base that are *logic* rather than data, so the only parts a test can prove. Pure Core, no dependencies on anything unbuilt | **Done** — 2026-09-13, 49 tests |
 | 2 | `Operation` rewrite + `StrategyId`/`StrategySettings`/`StrategyCatalog` + `Contour2dSettings` + `ContourSelection` | The shape everything else binds to. Cheapest to change now, most expensive once persistence has written it into saved parts | **Done** — 2026-09-13, 65 tests |
 | 3 | `JobDocument.Tools` + `ToolUsage`, seeding `Operation.Cutting` from a tool | Pure Core, and it unblocks the part-tool list in the library browser | **Done** — 2026-09-13, 20 tests |
-| 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | Next |
-| 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | Not started |
+| 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | **Done** — 2026-09-13, 32 tests |
+| 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | Next |
 | 6 | Persistence — `model.xml`, then the toolpath streams | Needs the model above it to be settled, and writing it into saved parts is what makes earlier slices expensive to revisit | Not started |
 | 7 | `Contour2d` strategy + the geometry extraction it needs | The first real toolpath. Everything above exists to be plugged into here | Not started |
 | 8 | The Operation property page | Last, because a page for a model that is still moving is written twice | Not started |
