@@ -221,6 +221,20 @@ Use `IModelDocExtension::IGet3rdPartyStorageStore` (an `IStorage`, so multiple n
 
 **OpenGL state.** SolidWorks owns the context. Save and restore every piece of state you touch around each draw, or you will corrupt SW's own rendering in ways that look like SolidWorks bugs.
 
+**The cutter profile is INSCRIBED, so the modelled tool is slightly undersized.**
+`CutterProfile` tessellates corner arcs to a chord tolerance with its vertices *on* the
+arc, which means the polyline sits just inside the true cutter — by up to
+`CutterProfile.ChordTolerance`. That is the *unsafe* direction for gouge checking and
+collision detection: a tool modelled smaller than reality reports no gouge where there
+is one. Code that must be conservative inflates by `ChordTolerance` rather than assuming
+the profile is exact. A test pins the direction of the error so this stays true.
+
+Two related facts, both learned the hard way: the tolerance bounds deviation measured
+*perpendicular* to the arc, so radial error at a fixed height is larger wherever the
+profile is steep; and the profile runs to the top of the tool **body** — the greater of
+flute and shoulder length — not the flute length, because on a chamfer mill those differ
+by 23mm. See [the HSM format notes](cam/hsm-tool-library-format.md).
+
 **Posts consume `CLData`, never `Toolpath`.** Keep a machine-neutral canonical layer between the strategies and the post engine. It is what makes the eventual switch from XML templates to a script engine a change in one project rather than everywhere.
 
 ## Build order — first vertical slice

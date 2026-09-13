@@ -8,4 +8,5 @@ Where a choice is a tradeoff rather than a fact — tolerance versus toolpath si
 
 ## Index
 
+- [The G-CAM tool library format](gcam-tool-library-format.md) — our own .gcamtools schema, versioning, and the atomic-write rule.
 - [The HSMWorks tool library format](hsm-tool-library-format.md) — .hsmlib field meanings, verified against a real library, and the traps in it.
