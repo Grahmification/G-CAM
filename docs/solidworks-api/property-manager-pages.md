@@ -131,6 +131,25 @@ a user can do, not a bug.
 `Show2`'s options parameter only defines `swPropertyManagerShowOptions_StackPage`, so a
 page that does not stack passes a bare `0`.
 
+## Most controls do not render their caption — **Verified (2025 SP3)**
+
+`AddControl2` takes a `Caption`, and for a **number box, combobox, text box or selection
+box it is accepted and never drawn**. The field arrives on the page with nothing naming
+it. SOLIDWORKS' own "Create PropertyManager Page" example gives the game away: it passes
+`caption = ""` for every one of those types.
+
+A `swControlType_Label` immediately above the control is the only way to name it, which
+is why `AddLengthField` on the job page always creates the pair together and shows and
+hides them as one. `AddCombobox` does not even accept a caption any more, so the mistake
+cannot be made silently.
+
+Captions *are* drawn for checkboxes, options and buttons, where the caption is the
+control's own text rather than a label for it.
+
+A selection box has no caption at all, so where one needs naming the cheapest answer is
+to give it its own group box and let the group header do the work - which is what the
+job page's Coordinate system group is for.
+
 ## Selection boxes need a mark each — **From docs**
 
 A selection box is `swControlType_Selectionbox` plus two settings that matter:

@@ -294,11 +294,15 @@ namespace GCam.SolidWorks.PropertyPages
             return box;
         }
 
+        /// <summary>
+        /// A drop-down. Give it a <see cref="AddLabel"/> above it - a combobox does not
+        /// render a caption of its own.
+        /// </summary>
         protected static IPropertyManagerPageCombobox AddCombobox(
-            IPropertyManagerPageGroup group, int id, string caption, IEnumerable<string> items, string tip)
+            IPropertyManagerPageGroup group, int id, IEnumerable<string> items, string tip)
         {
             var combo = AddControl<IPropertyManagerPageCombobox>(
-                group, id, swPropertyManagerPageControlType_e.swControlType_Combobox, caption, tip);
+                group, id, swPropertyManagerPageControlType_e.swControlType_Combobox, string.Empty, tip);
 
             combo.Height = 0;    // 0 lets SOLIDWORKS size the drop-down to its content.
             combo.AddItems(items.ToArray());
@@ -337,7 +341,9 @@ namespace GCam.SolidWorks.PropertyPages
             swPropertyManagerPageControlType_e type,
             string caption,
             string tip,
-            bool visible = true)
+            bool visible = true,
+            swPropertyManagerPageControlLeftAlign_e align =
+                swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent)
             where T : class
         {
             // AddControl2, not AddControl: since 2014 the newer overload requires
@@ -347,7 +353,7 @@ namespace GCam.SolidWorks.PropertyPages
                 id,
                 (short)type,
                 caption,
-                (short)swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent,
+                (short)align,
                 (visible ? (int)swAddControlOptions_e.swControlOptions_Visible : 0) |
                 (int)swAddControlOptions_e.swControlOptions_Enabled,
                 tip ?? string.Empty) as T;
@@ -375,20 +381,26 @@ namespace GCam.SolidWorks.PropertyPages
             }
         }
 
-        protected static void AddLabel(IPropertyManagerPageGroup group, int id, string text)
+        /// <summary>
+        /// A line of static text.
+        /// </summary>
+        /// <remarks>
+        /// Number boxes, comboboxes, text boxes and selection boxes do **not** display
+        /// the caption passed to AddControl2 - the caption is accepted and ignored, and
+        /// SOLIDWORKS' own example passes an empty string for all of them. A label
+        /// control is the only way to put a name next to one.
+        /// </remarks>
+        protected static IPropertyManagerPageLabel AddLabel(
+            IPropertyManagerPageGroup group, int id, string text, bool visible = true)
         {
-            // AddControl2, not AddControl: since 2014 the newer overload requires
-            // swControlOptions_Visible explicitly, so an omitted option produces an
-            // invisible control rather than a missing one - which looks like a bug in
-            // the layout rather than in the options.
-            group.AddControl2(
+            return AddControl<IPropertyManagerPageLabel>(
+                group,
                 id,
-                (short)swPropertyManagerPageControlType_e.swControlType_Label,
+                swPropertyManagerPageControlType_e.swControlType_Label,
                 text,
-                (short)swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge,
-                (int)swAddControlOptions_e.swControlOptions_Visible |
-                (int)swAddControlOptions_e.swControlOptions_Enabled,
-                string.Empty);
+                null,
+                visible,
+                swPropertyManagerPageControlLeftAlign_e.swControlAlign_LeftEdge);
         }
 
         /// <summary>

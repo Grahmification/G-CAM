@@ -26,25 +26,38 @@ namespace GCam.SolidWorks.PropertyPages
         // Groups.
         private const int GroupName = 1;
         private const int GroupModel = 2;
-        private const int GroupStock = 3;
-        private const int GroupMachine = 4;
+        private const int GroupCoordinateSystem = 3;
+        private const int GroupStock = 4;
+        private const int GroupMachine = 5;
 
-        // Controls. Ids are page-local and referenced nowhere else.
+        // Controls. Ids are page-local, and must be unique across the whole page -
+        // duplicates are accepted in silence and the page then misbehaves. Left in
+        // blocks with gaps so a field can gain a label without renumbering.
         private const int IdName = 10;
         private const int IdBodies = 20;
         private const int IdBodiesHint = 21;
-        private const int IdCoordinateSystem = 22;
-        private const int IdCoordinateSystemHint = 23;
-        private const int IdStockMode = 30;
-        private const int IdTop = 31;
-        private const int IdBottom = 32;
-        private const int IdSide = 33;
-        private const int IdOffsetX = 34;
-        private const int IdOffsetY = 35;
-        private const int IdWidth = 36;
-        private const int IdDepth = 37;
-        private const int IdHeight = 38;
-        private const int IdWorkOffset = 40;
+        private const int IdCoordinateSystem = 30;
+        private const int IdCoordinateSystemHint = 31;
+        private const int IdStockModeLabel = 40;
+        private const int IdStockMode = 41;
+        private const int IdTopLabel = 42;
+        private const int IdTop = 43;
+        private const int IdSideLabel = 44;
+        private const int IdSide = 45;
+        private const int IdOffsetXLabel = 46;
+        private const int IdOffsetX = 47;
+        private const int IdOffsetYLabel = 48;
+        private const int IdOffsetY = 49;
+        private const int IdBottomLabel = 50;
+        private const int IdBottom = 51;
+        private const int IdWidthLabel = 52;
+        private const int IdWidth = 53;
+        private const int IdDepthLabel = 54;
+        private const int IdDepth = 55;
+        private const int IdHeightLabel = 56;
+        private const int IdHeight = 57;
+        private const int IdWorkOffsetLabel = 60;
+        private const int IdWorkOffset = 61;
 
         // Selection box marks. Each box needs its own so the selection manager can tell
         // a body picked into Model from a coordinate system picked into the box below.
@@ -62,14 +75,14 @@ namespace GCam.SolidWorks.PropertyPages
         private IPropertyManagerPageSelectionbox _bodies;
         private IPropertyManagerPageSelectionbox _coordinateSystem;
         private IPropertyManagerPageCombobox _stockMode;
-        private IPropertyManagerPageNumberbox _top;
-        private IPropertyManagerPageNumberbox _bottom;
-        private IPropertyManagerPageNumberbox _side;
-        private IPropertyManagerPageNumberbox _offsetX;
-        private IPropertyManagerPageNumberbox _offsetY;
-        private IPropertyManagerPageNumberbox _width;
-        private IPropertyManagerPageNumberbox _depth;
-        private IPropertyManagerPageNumberbox _height;
+        private LengthField _top;
+        private LengthField _bottom;
+        private LengthField _side;
+        private LengthField _offsetX;
+        private LengthField _offsetY;
+        private LengthField _width;
+        private LengthField _depth;
+        private LengthField _height;
         private IPropertyManagerPageCombobox _workOffset;
 
         private Job _target;
@@ -119,50 +132,103 @@ namespace GCam.SolidWorks.PropertyPages
                 singleEntityOnly: false,
                 tip: "Solid bodies to machine. Leave empty to machine every body.");
 
-            AddLabel(model, IdBodiesHint, "Leave empty to machine every solid body.");
+            AddLabel(model, IdBodiesHint, "Empty machines every solid body.");
 
+            // Its own group rather than a second box under Model: a selection box has no
+            // caption of its own, so without a group header there is nothing on screen
+            // saying what it is for.
+            var csys = AddGroup(page, GroupCoordinateSystem, "Coordinate system");
             _coordinateSystem = AddSelectionbox(
-                model, IdCoordinateSystem, MarkCoordinateSystem,
+                csys, IdCoordinateSystem, MarkCoordinateSystem,
                 new[] { swSelectType_e.swSelCOORDSYS },
                 singleEntityOnly: true,
                 tip: "Coordinate system feature defining program zero. Leave empty for the part origin.");
 
-            AddLabel(model, IdCoordinateSystemHint, "Leave empty to use the part origin.");
+            AddLabel(csys, IdCoordinateSystemHint, "Empty uses the part origin.");
 
-            var stock = AddGroup(page, GroupStock, "Stock");
-            _stockMode = AddCombobox(stock, IdStockMode, "Mode", StockModeNames, "How the stock is sized");
-
-            // Each box is created already showing or already hidden, because the page
-            // is rebuilt for every show. Nothing calls Visible on the way in - see the
-            // remarks on ShowControlsFor.
-            StockMode mode = _working?.Stock.Mode ?? StockMode.RelativeBox;
-            bool relative = mode != StockMode.FixedSizeBox;
-
-            _top = AddLengthbox(stock, IdTop, "Top", "Material above the top of the model", relative);
-            _side = AddLengthbox(stock, IdSide, "Side", "Material on all four sides",
-                mode == StockMode.RelativeBox);
-            _offsetX = AddLengthbox(stock, IdOffsetX, "X", "Material left and right",
-                mode == StockMode.RelativeBoxXY);
-            _offsetY = AddLengthbox(stock, IdOffsetY, "Y", "Material front and back",
-                mode == StockMode.RelativeBoxXY);
-            _bottom = AddLengthbox(stock, IdBottom, "Bottom", "Material below the bottom of the model", relative);
-            _width = AddLengthbox(stock, IdWidth, "Width", "Absolute stock size in X",
-                mode == StockMode.FixedSizeBox);
-            _depth = AddLengthbox(stock, IdDepth, "Depth", "Absolute stock size in Y",
-                mode == StockMode.FixedSizeBox);
-            _height = AddLengthbox(stock, IdHeight, "Height", "Absolute stock size in Z",
-                mode == StockMode.FixedSizeBox);
+            BuildStockGroup(page);
 
             var machine = AddGroup(page, GroupMachine, "Machine");
+            AddLabel(machine, IdWorkOffsetLabel, "Work offset");
             _workOffset = AddCombobox(
-                machine, IdWorkOffset, "Work offset", WorkOffsets.Names,
+                machine, IdWorkOffset, WorkOffsets.Names,
                 "Which work offset the toolpaths are output against");
         }
 
         /// <summary>
-        /// Called before each show, while the page is closed. Everything that assigns to
-        /// a control belongs here rather than in <see cref="PageShown"/>.
+        /// The stock fields, with only the current mode's showing.
         /// </summary>
+        /// <remarks>
+        /// Each field is created already visible or already hidden. The page is rebuilt
+        /// for every show, so the right ones are chosen here rather than by toggling
+        /// Visible afterwards - which is the call that kills SOLIDWORKS.
+        /// </remarks>
+        private void BuildStockGroup(IPropertyManagerPage2 page)
+        {
+            var stock = AddGroup(page, GroupStock, "Stock");
+
+            AddLabel(stock, IdStockModeLabel, "Mode");
+            _stockMode = AddCombobox(stock, IdStockMode, StockModeNames, "How the stock is sized");
+
+            StockMode mode = _working?.Stock.Mode ?? StockMode.RelativeBox;
+            bool relative = mode != StockMode.FixedSizeBox;
+
+            _top = AddLengthField(
+                stock, IdTopLabel, IdTop, "Top offset",
+                "Material above the top of the model", relative);
+
+            _side = AddLengthField(
+                stock, IdSideLabel, IdSide, "Side offset",
+                "Material on all four sides", mode == StockMode.RelativeBox);
+
+            _offsetX = AddLengthField(
+                stock, IdOffsetXLabel, IdOffsetX, "X offset",
+                "Material to the left and right", mode == StockMode.RelativeBoxXY);
+
+            _offsetY = AddLengthField(
+                stock, IdOffsetYLabel, IdOffsetY, "Y offset",
+                "Material front and back", mode == StockMode.RelativeBoxXY);
+
+            _bottom = AddLengthField(
+                stock, IdBottomLabel, IdBottom, "Bottom offset",
+                "Material below the bottom of the model", relative);
+
+            _width = AddLengthField(
+                stock, IdWidthLabel, IdWidth, "Width (X)",
+                "Absolute stock size in X", mode == StockMode.FixedSizeBox);
+
+            _depth = AddLengthField(
+                stock, IdDepthLabel, IdDepth, "Depth (Y)",
+                "Absolute stock size in Y", mode == StockMode.FixedSizeBox);
+
+            _height = AddLengthField(
+                stock, IdHeightLabel, IdHeight, "Height (Z)",
+                "Absolute stock size in Z", mode == StockMode.FixedSizeBox);
+        }
+
+        private static LengthField AddLengthField(
+            IPropertyManagerPageGroup group,
+            int labelId,
+            int boxId,
+            string label,
+            string tip,
+            bool visible)
+        {
+            return new LengthField
+            {
+                Label = AddLabel(group, labelId, label, visible),
+                Box = AddLengthbox(group, boxId, label, tip, visible),
+            };
+        }
+
+        /// <summary>A number box and the label naming it, shown and hidden together.</summary>
+        private sealed class LengthField
+        {
+            public IPropertyManagerPageLabel Label { get; set; }
+
+            public IPropertyManagerPageNumberbox Box { get; set; }
+        }
+
         protected override void LoadControls()
         {
             _loading = true;
@@ -175,14 +241,14 @@ namespace GCam.SolidWorks.PropertyPages
 
                 _workOffset.CurrentSelection = (short)(_working.WorkOffset - WorkOffsets.First);
 
-                _top.Value = ToBoxLength(_working.Stock.TopOffset);
-                _bottom.Value = ToBoxLength(_working.Stock.BottomOffset);
-                _side.Value = ToBoxLength(_working.Stock.SideOffset);
-                _offsetX.Value = ToBoxLength(_working.Stock.OffsetX);
-                _offsetY.Value = ToBoxLength(_working.Stock.OffsetY);
-                _width.Value = ToBoxLength(_working.Stock.Width);
-                _depth.Value = ToBoxLength(_working.Stock.Depth);
-                _height.Value = ToBoxLength(_working.Stock.Height);
+                _top.Box.Value = ToBoxLength(_working.Stock.TopOffset);
+                _bottom.Box.Value = ToBoxLength(_working.Stock.BottomOffset);
+                _side.Box.Value = ToBoxLength(_working.Stock.SideOffset);
+                _offsetX.Box.Value = ToBoxLength(_working.Stock.OffsetX);
+                _offsetY.Box.Value = ToBoxLength(_working.Stock.OffsetY);
+                _width.Box.Value = ToBoxLength(_working.Stock.Width);
+                _depth.Box.Value = ToBoxLength(_working.Stock.Depth);
+                _height.Box.Value = ToBoxLength(_working.Stock.Height);
             }
             finally
             {
@@ -368,15 +434,21 @@ namespace GCam.SolidWorks.PropertyPages
         {
             bool relative = mode != StockMode.FixedSizeBox;
 
-            SetVisible(_top, relative);
-            SetVisible(_bottom, relative);
-            SetVisible(_side, mode == StockMode.RelativeBox);
-            SetVisible(_offsetX, mode == StockMode.RelativeBoxXY);
-            SetVisible(_offsetY, mode == StockMode.RelativeBoxXY);
+            Show(_top, relative);
+            Show(_bottom, relative);
+            Show(_side, mode == StockMode.RelativeBox);
+            Show(_offsetX, mode == StockMode.RelativeBoxXY);
+            Show(_offsetY, mode == StockMode.RelativeBoxXY);
 
-            SetVisible(_width, mode == StockMode.FixedSizeBox);
-            SetVisible(_depth, mode == StockMode.FixedSizeBox);
-            SetVisible(_height, mode == StockMode.FixedSizeBox);
+            Show(_width, mode == StockMode.FixedSizeBox);
+            Show(_depth, mode == StockMode.FixedSizeBox);
+            Show(_height, mode == StockMode.FixedSizeBox);
+        }
+
+        private static void Show(LengthField field, bool visible)
+        {
+            SetVisible(field.Label, visible);
+            SetVisible(field.Box, visible);
         }
 
         // ---- Committing ------------------------------------------------------
