@@ -137,7 +137,26 @@ change. Editing feeds in an operation touches only that operation.
 The tool library browser grows a second list beside the libraries: the tools in the open
 part, each with the operations using it beneath. That view is a projection over
 `JobDocument`, computed in Core (`ToolUsage`) rather than assembled in the viewmodel —
-the same rule that put `ToolSearch` in Core.
+the same rule that put `ToolSearch` in Core. It lives in `Core/Model` rather than
+`Core/Tooling` because it reads `JobDocument`, and Model already depends on Tooling;
+the other way round would make the two namespaces depend on each other.
+
+Three rules the model enforces rather than leaving to the picker:
+
+- **`AddTool` is idempotent by `Tool.Id`**, so a second operation wanting the same library
+  tool gets the copy that is already in the part. This is what makes a shared list mean
+  anything, and it holds however the tool arrives.
+- **A tool keeps the number it had in the library.** Renumbering silently would be wrong —
+  the number is the machine's — so a clash is reported by `JobDocument.ValidateTools()`
+  instead. Two tools in pocket 4 is a part that cannot be set up as written.
+- **Removing a tool that is in use is refused**, naming the operations. `ToolUsage` also
+  reports the opposite case, an operation pointing at a tool that has gone, which is
+  distinct from an operation with no tool chosen yet.
+
+`Operation.UseTool(tool)` sets the reference and copies the tool's cutting data in as a
+starting point. **Changing tool re-seeds the feeds**, discarding hand-tuned numbers: the
+safer default, since carrying a 12.7mm cutter's feeds onto a 3mm drill breaks the drill —
+but a surprise the UI should warn about before calling it on an operation already set up.
 
 ### Entering either end of a derived pair
 
@@ -493,8 +512,8 @@ while they are still cheap to change.
 | --- | --- | --- | --- |
 | 1 | `Heights/` + `FeedsAndSpeeds` + `GeometryRef` | The only parts of the base that are *logic* rather than data, so the only parts a test can prove. Pure Core, no dependencies on anything unbuilt | **Done** — 2026-09-13, 49 tests |
 | 2 | `Operation` rewrite + `StrategyId`/`StrategySettings`/`StrategyCatalog` + `Contour2dSettings` + `ContourSelection` | The shape everything else binds to. Cheapest to change now, most expensive once persistence has written it into saved parts | **Done** — 2026-09-13, 65 tests |
-| 3 | `JobDocument.Tools` + `ToolUsage`, seeding `Operation.Cutting` from a tool | Pure Core, and it unblocks the part-tool list in the library browser | Next |
-| 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | Not started |
+| 3 | `JobDocument.Tools` + `ToolUsage`, seeding `Operation.Cutting` from a tool | Pure Core, and it unblocks the part-tool list in the library browser | **Done** — 2026-09-13, 20 tests |
+| 4 | `Toolpath`/`Move` + `ToolpathMesh` | First visible payoff: a hand-built path drawn through the existing renderer, before any strategy exists | Next |
 | 5 | `GenerationQueue` + `Staleness` | Testable against a fake strategy; needs no real one | Not started |
 | 6 | Persistence — `model.xml`, then the toolpath streams | Needs the model above it to be settled, and writing it into saved parts is what makes earlier slices expensive to revisit | Not started |
 | 7 | `Contour2d` strategy + the geometry extraction it needs | The first real toolpath. Everything above exists to be plugged into here | Not started |

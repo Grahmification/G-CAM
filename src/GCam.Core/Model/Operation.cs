@@ -91,6 +91,34 @@ namespace GCam.Core.Model
         public Dictionary<string, string> Extra { get; set; } =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Cuts with a tool from the part's list, taking its feeds and speeds as a
+        /// starting point.
+        /// </summary>
+        /// <remarks>
+        /// The tool is referenced, not copied - <see cref="ToolId"/> points into
+        /// <see cref="JobDocument.Tools"/>, so several operations share one cutter and
+        /// cannot disagree about its shape.
+        ///
+        /// The cutting data *is* copied, because it is this operation's own from here on:
+        /// roughing and finishing with one cutter want different numbers, and always have.
+        ///
+        /// **Changing tool re-seeds the feeds**, discarding whatever was tuned by hand. It
+        /// is the safer default - carrying a 12mm cutter's feeds onto a 3mm one breaks the
+        /// 3mm one - but it is a surprise worth warning about before calling this on an
+        /// operation someone has already set up.
+        /// </remarks>
+        public void UseTool(Tool partTool)
+        {
+            if (partTool == null)
+            {
+                throw new ArgumentNullException(nameof(partTool));
+            }
+
+            ToolId = partTool.Id;
+            Cutting = partTool.Cutting?.Clone() ?? new CuttingData();
+        }
+
         /// <summary>True when a toolpath exists and can be believed.</summary>
         public bool HasUsableToolpath =>
             State == OperationState.Generated || State == OperationState.Warning;

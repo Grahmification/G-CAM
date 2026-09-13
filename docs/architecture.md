@@ -26,7 +26,7 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — coordinate system transforms, model extent | Started — bounding boxes only, no BRep | |
-| `Core/Model` — Operation, heights, geometry references | Done, minus the toolpath it will own | [Operations](design/operations.md) |
+| `Core/Model` — Operation, heights, geometry references, the part's tool list | Done, minus the toolpath it will own | [Operations](design/operations.md) |
 | `Core/Strategies` — id, settings base, catalogue, Contour2d parameters | Started — no strategy computes anything yet | [Operations](design/operations.md) |
 | `Core/Generation` | Designed, not started | [Operations](design/operations.md) |
 | `SolidWorks/Persistence` | Designed, not started | [Operations](design/operations.md) |
@@ -70,6 +70,7 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   ├── GCam.Core/                     ★ netstandard2.0 — NO SolidWorks references. Ever.
 │   │   ├── Model/                     Job, Operation, OperationState, OperationFrame,
 │   │   │                              Stock, JobDocument (owns the part's tool list),
+│   │   │                              ToolUsage (tools → the operations using them),
 │   │   │                              WorkOffsets, GeometryRef — later Toolpath, Move
 │   │   │                              (no Setup level — see decision 0004)
 │   │   │   └── Heights/               HeightSetting, HeightMode, HeightContext
@@ -78,7 +79,7 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │                              CutterProfile, ToolSearch, IToolLibrary,
 │   │   │                              LibrarySession (open libraries + dirty state),
 │   │   │                              FeedsAndSpeeds (rpm ↔ surface speed, feed ↔ chip
-│   │   │                              load — both ends editable), ToolUsage
+│   │   │                              load — both ends editable)
 │   │   │   └── Import/                native XML + HSMWorks (.hsmlib) readers
 │   │   ├── Rendering/                 RenderScene (named layers), RenderLayer,
 │   │   │                              RenderBatch, PrimitiveKind, RenderColour,

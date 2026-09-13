@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using GCam.Core.Diagnostics;
+using GCam.Core.Tooling;
 
 namespace GCam.Core.Model
 {
@@ -22,8 +23,122 @@ namespace GCam.Core.Model
         private const string DefaultNameStem = "Job";
 
         private readonly List<Job> _jobs = new List<Job>();
+        private readonly List<Tool> _tools = new List<Tool>();
 
         public IReadOnlyList<Job> Jobs => _jobs;
+
+        /// <summary>
+        /// The tools copied into this part, shared by every job and operation in it.
+        /// </summary>
+        /// <remarks>
+        /// One list per part rather than per job, because that is what the machine looks
+        /// like: a tool is in the carousel regardless of which setup is running. An
+        /// operation refers to one of these by <see cref="Operation.ToolId"/> and never
+        /// holds its own copy, so two operations cannot disagree about the shape of one
+        /// physical cutter. See docs/decisions/0008-document-tool-list.md.
+        ///
+        /// What each side owns: the tool here carries identity, number, cutter geometry
+        /// and holder; the operation carries its own spindle speed, feeds and coolant.
+        /// </remarks>
+        public IReadOnlyList<Tool> Tools => _tools;
+
+        public Tool FindTool(string toolId)
+        {
+            if (string.IsNullOrEmpty(toolId))
+            {
+                return null;
+            }
+
+            return _tools.FirstOrDefault(t => string.Equals(t.Id, toolId, StringComparison.Ordinal));
+        }
+
+        /// <summary>
+        /// Puts a tool checked out of a library into this part, or returns the copy that
+        /// is already here.
+        /// </summary>
+        /// <remarks>
+        /// Idempotent by <see cref="Tool.Id"/>, which is what stops a second operation
+        /// using the same library tool from making a second copy of it. The rule lives
+        /// here rather than in the picker, so it holds however the tool arrives.
+        ///
+        /// The tool keeps the number it had in the library. Renumbering silently would be
+        /// wrong - the number is the machine's, not ours - so a clash is reported by
+        /// <see cref="ValidateTools"/> instead.
+        /// </remarks>
+        public Tool AddTool(Tool tool)
+        {
+            if (tool == null)
+            {
+                throw new ArgumentNullException(nameof(tool));
+            }
+
+            Tool existing = FindTool(tool.Id);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            _tools.Add(tool);
+            return tool;
+        }
+
+        /// <summary>
+        /// Takes a tool out of the part.
+        /// </summary>
+        /// <remarks>
+        /// An unused tool stays in the list until someone removes it deliberately -
+        /// pruning on save would silently drop a tool that had been customised while the
+        /// operation using it was being rebuilt.
+        /// </remarks>
+        /// <exception cref="GCamUserException">
+        /// Operations are still using it. Naming them is the point: "in use" without
+        /// saying where sends someone hunting through every job.
+        /// </exception>
+        public bool RemoveTool(Tool tool)
+        {
+            if (tool == null)
+            {
+                return false;
+            }
+
+            IReadOnlyList<ToolUse> uses = ToolUsage.UsesOf(this, tool.Id);
+            if (uses.Count > 0)
+            {
+                throw new GCamUserException(
+                    $"'{tool.DisplayName}' is used by {ToolUsage.Describe(uses)}. " +
+                    "Change those operations to another tool first.");
+            }
+
+            return _tools.Remove(tool);
+        }
+
+        /// <summary>
+        /// Problems with the part's tooling as a set. Empty when it is usable.
+        /// </summary>
+        /// <remarks>
+        /// Two tools sharing a number is the one that matters: the machine has a single
+        /// pocket 4, so a part claiming two different cutters live there cannot be set up
+        /// as written. Not fatal - it is caught before posting, and a number is easy to
+        /// change - so it is reported rather than refused.
+        /// </remarks>
+        public IReadOnlyList<string> ValidateTools()
+        {
+            var problems = new List<string>();
+
+            IEnumerable<IGrouping<int, Tool>> clashes = _tools
+                .Where(t => t.Number > 0)
+                .GroupBy(t => t.Number)
+                .Where(g => g.Count() > 1);
+
+            foreach (IGrouping<int, Tool> clash in clashes)
+            {
+                problems.Add(
+                    $"Tool number {clash.Key} is used by more than one tool: " +
+                    string.Join(", ", clash.Select(t => "'" + t.DisplayName + "'")) + ".");
+            }
+
+            return problems;
+        }
 
         /// <summary>
         /// The job that New Operation targets when no job is selected. Null only when
