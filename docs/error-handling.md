@@ -2,9 +2,9 @@
 
 Policy for catching, logging and reporting exceptions. Decided 2026-09-12.
 
-`ErrorHandler`, the Serilog log, the WPF error dialog and entry points 1–8 and 10 are
-built. Entry points 9, 11 and 12 arrive with the subsystems they belong to, which do not
-exist yet.
+`ErrorHandler`, the Serilog log, the WPF error dialog and entry points 1–10 are built.
+Entry points 11 and 12 arrive with background toolpath calculation, which does not exist
+yet.
 
 ## Why an add-in needs this more than an ordinary app
 
@@ -141,7 +141,7 @@ Every one of these is called *by* something outside G-CAM, so every one needs a 
 | 6 | `JobTreeTabHost` constructor | `GCam.SolidWorks.Hosting` | Catch in the ctor; on failure host a plain error label so the tab appears but empty. An exception here means no tab and no explanation |
 | 7 | PropertyManager page handlers | `PropertyPages/` | `PmpHandlerBase` implements all 37 `IPropertyManagerPage2Handler9` methods with the try/catch and delegates to a protected virtual of the same name, so pages cannot forget. The per-callback defaults are tabulated in [property-manager-pages.md](solidworks-api/property-manager-pages.md) |
 | 8 | Document events (`ActiveModelDocChangeNotify`, `FileCloseNotify` in `Hosting/JobTreeTabs`; later `SaveToStorageNotify`, `LoadFromStorageNotify` in `Events/`) | `Hosting/`, `Events/` | Return `0` on failure. A throw during save risks corrupting the document's third-party storage |
-| 9 | `BufferSwapNotify` render callback | `Rendering/ViewHooks` | `quiet: true`. The renderer counts its own consecutive failures and unhooks after 3, reporting once. Fires on every redraw — a dialog here is an unkillable modal storm |
+| 9 | `BufferSwapNotify` render callback | `Rendering/ViewportRenderer` | `quiet: true`. The renderer counts its own **consecutive** failures and disposes itself after 3, reporting once and not quietly — the overlay is off for that document until the part is reopened, which the user would otherwise never learn. Fires on every redraw, so a dialog per frame is an unkillable modal storm |
 | 10 | WPF event handlers, and the job tree's WinForms context menu | `GCam.UI` | Wrap each handler body; `Dispatcher.UnhandledException` as backstop. `JobTreeView` routes them all through one private `Handle` |
 | 11 | Background toolpath tasks | `Core` via `Task.Run` | try/catch inside the awaited method. Presentation marshals back through `SwDispatcher` — a WPF dialog cannot be shown from a worker thread |
 | 12 | `TaskScheduler.UnobservedTaskException` | `GCam.AddIn` | Log only. Safety net for a fire-and-forget task nobody awaited |

@@ -37,6 +37,24 @@ namespace GCam.Core.Geometry.Primitives
 
         public static Vec3 operator *(Vec3 v, double scale) => new Vec3(v.X * scale, v.Y * scale, v.Z * scale);
 
+        public double Length => Math.Sqrt(X * X + Y * Y + Z * Z);
+
+        /// <summary>
+        /// The same direction with unit length.
+        /// </summary>
+        /// <remarks>
+        /// A zero-length vector has no direction, so it comes back unchanged rather than
+        /// as NaN. Callers asking for a direction from a degenerate vector have a bug
+        /// further up; returning zero keeps it from spreading silently through the
+        /// arithmetic that follows.
+        /// </remarks>
+        public Vec3 Normalised()
+        {
+            double length = Length;
+
+            return length < Precision.Epsilon ? Zero : new Vec3(X / length, Y / length, Z / length);
+        }
+
         /// <summary>
         /// Equal within <see cref="Precision.Epsilon"/> on every axis.
         /// </summary>

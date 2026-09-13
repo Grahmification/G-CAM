@@ -137,6 +137,55 @@ namespace GCam.SolidWorks.Selection
             return names;
         }
 
+        /// <summary>
+        /// The bodies a job machines: the ones it names, or every solid body when it
+        /// names none.
+        /// </summary>
+        /// <remarks>
+        /// The objects rather than the names, for code that has to measure them. Job's
+        /// "empty means every solid body" rule is applied here rather than by the caller,
+        /// so it cannot be honoured by one caller and forgotten by another.
+        ///
+        /// Names the part no longer has are skipped in silence. Whoever is about to use
+        /// this has already reported the mismatch where the user could act on it - see
+        /// JobPropertyPage.RestoreSelections - and saying it again on every repaint helps
+        /// nobody.
+        /// </remarks>
+        public static List<Body2> SolidBodies(ModelDoc2 model, IReadOnlyCollection<string> bodyNames)
+        {
+            var chosen = new List<Body2>();
+
+            var part = model as PartDoc;
+            if (part == null)
+            {
+                return chosen;
+            }
+
+            var bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, false) as object[];
+            if (bodies == null)
+            {
+                return chosen;
+            }
+
+            bool all = bodyNames == null || bodyNames.Count == 0;
+
+            HashSet<string> wanted = all
+                ? null
+                : new HashSet<string>(bodyNames, StringComparer.Ordinal);
+
+            foreach (object item in bodies)
+            {
+                var body = item as Body2;
+
+                if (body != null && (all || wanted.Contains(body.Name)))
+                {
+                    chosen.Add(body);
+                }
+            }
+
+            return chosen;
+        }
+
         private static string NameOf(object selected)
         {
             var body = selected as Body2;

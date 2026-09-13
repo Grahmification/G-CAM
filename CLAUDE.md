@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 G-CAM is a SOLIDWORKS 2025 add-in (C#, .NET Framework 4.8) that generates CAM toolpaths, in the spirit of HSMWorks or Fusion 360's CAM workspace. Internal team tool, 3-axis milling only.
 
-Built so far: the add-in loads with a CommandManager tab; a G-CAM tab in the Manager Pane of every open part showing a tree of jobs with rename and a context menu; a Job PropertyManager page with model, stock, coordinate system and work offset; an empty Operation page; a tool library model with HSMWorks import; a tool library browser with create/edit/delete and a tabbed tool editor; and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet, and **jobs are not saved into the document**, so they are lost when the part closes. `docs/architecture.md` has the full status table and the planned layout.
+Built so far: the add-in loads with a CommandManager tab; a G-CAM tab in the Manager Pane of every open part showing a tree of jobs with rename and a context menu; a Job PropertyManager page with model, stock, coordinate system and work offset; an empty Operation page; a tool library model with HSMWorks import; a tool library browser with create/edit/delete and a tabbed tool editor; an OpenGL overlay drawing the selected job's stock box in the 3D view; and logging/error handling. **No toolpath has been computed and nothing has been posted** — the geometry kernel, strategies, simulation and posts do not exist yet, and **jobs are not saved into the document**, so they are lost when the part closes. `docs/architecture.md` has the full status table and the planned layout.
 
 ## Layout
 
@@ -37,7 +37,7 @@ so grepping for "error" reports failures on a clean build. Both have already cau
 wrong conclusions here.
 
 Underneath it is `dotnet build G-CAM.sln` and
-`dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj` (181 tests, headless).
+`dotnet test tests/GCam.Core.Tests/GCam.Core.Tests.csproj` (219 tests, headless).
 
 **Close SOLIDWORKS before building** if you intend to load the add-in afterwards — it
 holds the output DLLs open, so the code compiles but the add-in folder keeps the
@@ -70,6 +70,8 @@ Target is **SOLIDWORKS 2025 SP3**. The `solidworks-api` skill reads the API help
 **Job and operation editing happens on SOLIDWORKS-native PropertyManager pages, not WPF.** A page cannot be hosted inside G-CAM's own Manager Pane tab — SOLIDWORKS always renders it on the PropertyManager tab — so editing is a round trip back to the G-CAM tab, which `GCamPropertyPage` arranges. Derive from it; it seals the lifecycle callbacks on purpose. `PmpHandlerBase` underneath wraps all 37 `IPropertyManagerPage2Handler9` callbacks in the try/catch so a page cannot forget one. See `docs/solidworks-api/property-manager-pages.md`, including two parameters the help calls `out` that are actually `ref`.
 
 **Never set `IPropertyManagerPageControl.Visible` on a page you are about to show.** It kills SOLIDWORKS outright — silently, with nothing in any log, and only after about the fourth show, which makes it look like anything but what it is. Property pages are therefore **rebuilt for every show** and controls are created with the visibility they need via `AddControl2`'s options; `GCamPropertyPage.Show` does this and the reasons are in `docs/solidworks-api/property-manager-pages.md`. Related: populate a page from `LoadControls` before `Show2`, never from `AfterActivation`, and keep control ids unique per page — duplicates are accepted in silence.
+
+**3D graphics: Core says what to draw, `GCam.SolidWorks` says how, and drawing happens only inside `BufferSwapNotify`.** `Core/Rendering` describes a `RenderScene` of named layers of vertex batches — millimetres, part coordinates, no matrices and no OpenGL. `SceneRenderer` turns that into GL calls; `ViewportRenderer` hooks every window of a document. The rule that bites: **every draw must sit inside `using (new GlState())`**, which pushes the client attribute stack as well as the server one — pop only the server stack and SOLIDWORKS ends up reading through our vertex buffer. `ViewportRenderer.HasDrawn` says whether `BufferSwapNotify` ever arrived, which is what separates a broken draw from a missing notification. Verified working on 2025 SP3, including on rotated coordinate systems and with "Enhanced graphics performance" both on and off — despite what older forum advice says, that option does *not* break the overlay. See `docs/solidworks-api/opengl-overlay.md` and [0005](docs/decisions/0005-opengl-overlay-with-vertex-arrays.md).
 
 **Units: Core works in millimetres**, SOLIDWORKS in metres. Convert only at the edges. Conversion factors live in `GCam.Core.Units`; never write a bare `25.4` or `1000`.
 

@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using GCam.Core;
+using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
 using GCam.Core.Model;
 using GCam.SolidWorks.Selection;
@@ -98,9 +99,25 @@ namespace GCam.SolidWorks.PropertyPages
         // the stock mode's case, re-toggle control visibility mid-load.
         private bool _loading;
 
-        public JobPropertyPage(SldWorks swApp, ErrorHandler errors, IGCamLog log)
+        // True from the moment the page starts closing. ClearSelections fires the
+        // selection callback on its way out - the comment there says why it has to run
+        // last - and without this the preview would be handed the clone again after it
+        // had been cleared, leaving a cancelled job's stock box on screen.
+        private bool _closing;
+
+        private readonly Func<IJobPreview> _preview;
+
+        /// <param name="preview">
+        /// Where to show the stock while it is being edited. A function rather than an
+        /// instance because the preview belongs to a document and this page is built once
+        /// for the session - it has to find the one for whichever part is in front when
+        /// the page opens. Null simply means no preview.
+        /// </param>
+        public JobPropertyPage(
+            SldWorks swApp, ErrorHandler errors, IGCamLog log, Func<IJobPreview> preview = null)
             : base(swApp, errors, log)
         {
+            _preview = preview;
         }
 
         /// <summary>
@@ -121,6 +138,7 @@ namespace GCam.SolidWorks.PropertyPages
         {
             _target = job ?? throw new ArgumentNullException(nameof(job));
             _working = job.Clone();
+            _closing = false;
 
             Show();
         }
@@ -327,10 +345,20 @@ namespace GCam.SolidWorks.PropertyPages
         {
             // Selections only. Visibility was settled when the controls were created.
             RestoreSelections();
+
+            UpdatePreview();
         }
 
         protected override void PageClosed(swPropertyManagerPageCloseReasons_e reason)
         {
+            // The clone the preview has been showing is about to be dropped, so clear it
+            // before anything else, and shut the preview off for the rest of the close.
+            // On OK the tree reselects the committed job a moment later and the box comes
+            // back from the real one; on Cancel there is nothing to come back to, which
+            // is exactly right - a cancelled new job never existed.
+            _closing = true;
+            _preview?.Invoke()?.ShowJob(null);
+
             if (reason == swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Okay)
             {
                 CommitToJob();
@@ -425,6 +453,7 @@ namespace GCam.SolidWorks.PropertyPages
             {
                 _working.Stock.Mode = (StockMode)item;
                 ShowControlsFor(_working.Stock.Mode);
+                UpdatePreview();
                 return;
             }
 
@@ -454,6 +483,8 @@ namespace GCam.SolidWorks.PropertyPages
                 case IdDepth: _working.Stock.Depth = mm; break;
                 case IdHeight: _working.Stock.Height = mm; break;
             }
+
+            UpdatePreview();
         }
 
         protected override void OnSelectionboxListChanged(int id, int count)
@@ -470,6 +501,7 @@ namespace GCam.SolidWorks.PropertyPages
             if (id == IdBodies)
             {
                 _working.ModelBodyNames = JobSelections.NamesWithMark(model, MarkBodies);
+                UpdatePreview();
                 return;
             }
 
@@ -477,7 +509,34 @@ namespace GCam.SolidWorks.PropertyPages
             {
                 _working.CoordinateSystemName =
                     JobSelections.NamesWithMark(model, MarkCoordinateSystem).FirstOrDefault();
+                UpdatePreview();
             }
+        }
+
+        // ---- Preview ---------------------------------------------------------
+
+        /// <summary>
+        /// Redraws the stock box from the edits made so far.
+        /// </summary>
+        /// <remarks>
+        /// The clone is what gets previewed, not the job. That is the same arrangement
+        /// that makes Cancel free everywhere else on this page: what is on screen follows
+        /// what has been typed, and the job the tree is showing is not touched until OK.
+        ///
+        /// Called from the change callbacks rather than from a timer, so it runs on every
+        /// keystroke in a stock field. That is affordable because measuring the model is
+        /// six IBody2::GetExtremePoint calls per body and the redraw is a dozen
+        /// triangles - but it is the reason the preview path is quiet on failure and
+        /// caches nothing that a repaint has to rebuild.
+        /// </remarks>
+        private void UpdatePreview()
+        {
+            if (_closing)
+            {
+                return;
+            }
+
+            _preview?.Invoke()?.ShowJob(_working);
         }
 
         // ---- Stock mode ------------------------------------------------------

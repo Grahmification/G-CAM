@@ -3,6 +3,7 @@ using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
 using GCam.Core.Model;
 using GCam.SolidWorks.PropertyPages;
+using SolidWorks.Interop.sldworks;
 
 namespace GCam.AddIn
 {
@@ -77,7 +78,12 @@ namespace GCam.AddIn
 
         private JobPropertyPage CreateJobPage()
         {
-            var page = new JobPropertyPage(_swApp, _errors, _log);
+            // The preview is resolved per show rather than captured, because the page
+            // outlives any one document and the stock has to be drawn in whichever part
+            // is in front.
+            var page = new JobPropertyPage(
+                _swApp, _errors, _log, () => _jobTreeTabs?.PreviewForActiveDocument());
+
             page.Committed += OnJobCommitted;
             return page;
         }
@@ -113,6 +119,12 @@ namespace GCam.AddIn
                 }
 
                 _jobTreeTabs.RefreshActiveDocument();
+
+                // Land the selection on the job that was just accepted. The tree is what
+                // decides which job the 3D view shows, so without this a job goes
+                // straight from having its stock set up to showing nothing - which reads
+                // as the preview being broken rather than as nothing being selected.
+                _jobTreeTabs.SelectJob(_swApp.ActiveDoc as ModelDoc2, job);
             }
             catch (Exception ex)
             {

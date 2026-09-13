@@ -14,16 +14,19 @@ The project structure for G-CAM and the rules that keep it intact.
 | `AddIn` — CommandManager, COM registration | Done |
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done |
 | `Core/Model` — Job, Operation, Stock, JobDocument | Done, minus persistence |
-| `Core/Geometry/Primitives` — Vec3, Bounds | Started — only what stock needs |
+| `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4 | Started — only what stock and rendering need |
+| `Core/Rendering` — scene, layers, batches, colour, BoxMesh | Done for what exists to draw |
 | `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done |
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job page | Done; Operation page is still a shell |
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done |
+| `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, stock preview | Done |
+| `SolidWorks/Extraction` — coordinate system transforms, model extent | Started — bounding boxes only, no BRep |
 | `Core/Strategies`, `Simulation`, `Commands`, `Posting` | Not started |
-| `Core/Geometry` beyond Vec3/Bounds | Not started |
-| `SolidWorks/Extraction`, `Rendering`, `Persistence` | Not started |
+| `Core/Geometry` beyond the primitives | Not started |
+| `SolidWorks/Persistence` | Not started |
 | `Posts` | Empty project |
 
-No toolpath has been computed and nothing has been posted. The vertical slice at the end of this document is still the plan.
+No toolpath has been computed and nothing has been posted. The vertical slice at the end of this document is still the plan — but step 5 of it, the OpenGL overlay, now exists and is drawing the stock box, so the toolpath work inherits a renderer rather than starting one.
 
 ## Decisions this rests on
 
@@ -33,7 +36,7 @@ No toolpath has been computed and nothing has been posted. The vertical slice at
 | Layout | Core / Posts / SolidWorks / UI / AddIn + tests; Core has zero SolidWorks references |
 | Geometry | Extract SW geometry once into Core's own kernel, then compute in managed memory |
 | Machines | 3-axis mill only |
-| Toolpath display | OpenGL overlay on `BufferSwapNotify`, via hand-rolled P/Invoke (no OpenTK) |
+| Toolpath display | OpenGL overlay on `BufferSwapNotify`, via hand-rolled P/Invoke (no OpenTK); fixed-function vertex arrays — see [0005](decisions/0005-opengl-overlay-with-vertex-arrays.md) |
 | Simulation | Z-map heightfield material removal |
 | Persistence | Inside the SOLIDWORKS document, third-party storage |
 | Operation editing | SOLIDWORKS-native PropertyManager pages |
@@ -62,6 +65,9 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │                              CutterProfile, ToolSearch, IToolLibrary,
 │   │   │                              LibrarySession (open libraries + dirty state)
 │   │   │   └── Import/                native XML + HSMWorks (.hsmlib) readers
+│   │   ├── Rendering/                 RenderScene (named layers), RenderLayer,
+│   │   │                              RenderBatch, PrimitiveKind, RenderColour,
+│   │   │                              BoxMesh — what to draw, never how
 │   │   ├── Geometry/
 │   │   │   ├── Primitives/            Vec3, Plane, Bounds, Matrix4, Polyline
 │   │   │   ├── Brep/                  own face/edge/loop model, SW-independent
@@ -83,12 +89,16 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   └── definitions/               grbl.xml, haas.xml, …
 │   │
 │   ├── GCam.SolidWorks/               ★ ALL COM interop lives here
-│   │   ├── Extraction/                SW BRep → GCam.Core.Geometry, units conversion
+│   │   ├── Extraction/                SW geometry → GCam.Core, units conversion;
+│   │   │                              CoordinateSystems, JobFrame, ModelExtent
+│   │   │                              — later the BRep walk
 │   │   ├── Rendering/
-│   │   │   ├── Interop/               [DllImport("opengl32.dll")] — ~20 entry points
+│   │   │   ├── Interop/Gl.cs          [DllImport("opengl32.dll")] — ~20 entry points
 │   │   │   ├── GlState.cs             save/restore around every draw
-│   │   │   ├── ToolpathRenderer.cs    implements Core's IToolpathRenderer
-│   │   │   └── ViewHooks.cs           BufferSwapNotify subscription
+│   │   │   ├── SceneRenderer.cs       RenderScene → GL, mm → m, cached per version
+│   │   │   ├── ViewportRenderer.cs    implements Core's IViewportRenderer;
+│   │   │   │                          BufferSwapNotify subscription per window
+│   │   │   └── StockPreview.cs        implements Core's IJobPreview
 │   │   ├── PropertyPages/             PmpHandlerBase (all 37 callbacks, wrapped),
 │   │   │                              GCamPropertyPage (build/show/tab restore),
 │   │   │                              JobPropertyPage, OperationPropertyPage
@@ -231,7 +241,17 @@ Use `IModelDocExtension::IGet3rdPartyStorageStore` (an `IStorage`, so multiple n
 
 **COM lifetime.** Release COM objects explicitly rather than leaving them to the GC; `DisconnectFromSW` already sets the pattern. This matters more as the extraction code starts walking thousands of faces.
 
-**OpenGL state.** SolidWorks owns the context. Save and restore every piece of state you touch around each draw, or you will corrupt SW's own rendering in ways that look like SolidWorks bugs.
+**OpenGL state.** SolidWorks owns the context. Save and restore every piece of state you touch around each draw, or you will corrupt SW's own rendering in ways that look like SolidWorks bugs. `GlState` makes this mechanical — push both the server *and* the client attribute stacks, because vertex array pointers live on the second one and a pop of the first leaves SolidWorks reading through our buffer. Never write a bare `glEnable` outside a `using (new GlState())`.
+
+**Core says what to draw; GCam.SolidWorks says how.** `Core/Rendering` describes graphics as a `RenderScene` of named layers of `RenderBatch`es — vertices in millimetres in part coordinates, a primitive kind, a colour. It contains no OpenGL, no matrices, no camera and no projection, which is what lets `BoxMesh` and everything after it be tested headlessly. `GCam.SolidWorks/Rendering` turns a scene into GL calls and nothing else.
+
+The layer name is the coordination mechanism. A producer owns a name, re-states everything under it whenever its model changes, and never has to know what else is on screen; the stock preview owns `"stock"` and a toolpath renderer will own its own beside it.
+
+**Draw only from `BufferSwapNotify`.** That is the one moment SolidWorks has made its context current and set up the matrices so part coordinates land correctly — the help says so explicitly. Drawing from anywhere else means no context, or somebody else's. It also means G-CAM never computes a projection: vertices go straight out.
+
+One notification per *window*, not per document, and a part can have two. See [opengl-overlay.md](solidworks-api/opengl-overlay.md), which also records that "Enhanced graphics performance" — widely reported to stop the notification reaching add-ins — does not, on 2025 SP3.
+
+**Measure coordinate systems, do not decode them.** `IMathTransform::ArrayData` does not document whether its rotation is stored by row or by column, and the wrong choice is correct for every axis-aligned coordinate system and wrong only for rotated ones. `CoordinateSystems` asks SolidWorks where the origin and three unit axes land instead. Likewise `IBody2::GetBodyBox` is not a bounding box you may calculate with — its own Remarks say so — and `GetExtremePoint` along the job's axes is. Both in [coordinate-systems.md](solidworks-api/coordinate-systems.md).
 
 **The cutter profile is INSCRIBED, so the modelled tool is slightly undersized.**
 `CutterProfile` tessellates corner arcs to a chord tolerance with its vertices *on* the
@@ -353,6 +373,33 @@ is WPF in `GCam.UI`, which never references SOLIDWORKS. The property pages are i
 `JobTreeTabs` recovers the instance with `IFeatMgrView::GetControl` straight after
 creating the tab and calls `Bind` on the view inside it. One `JobDocument` and one
 viewmodel per open part, held together in `JobTreeTabs`.
+
+**Selecting a job in the tree is what shows its stock.** Selection is the one signal that
+means "this is the job I am looking at" — it covers clicking, arrowing through the tree,
+and the reselection after a refresh, without any of them knowing a preview exists. An
+operation node stands in for its job here as it does for the context menu, so drilling
+into a job does not make its stock disappear.
+
+The Job property page previews its *clone* as it is edited, so the box follows what is
+being typed and Cancel leaves nothing behind. The page is built once for the session and
+finds the preview for whichever part is in front, which is why it takes a
+`Func<IJobPreview>` rather than one instance.
+
+Three parts again, none of which can see the other two: `Core/Abstractions/IJobPreview`
+is what the tree and the page both state intent through, and `StockPreview` in
+GCam.SolidWorks is what answers it. The same arrangement as `IJobEditor`. Unlike
+`IJobEditor` it is implemented in GCam.SolidWorks rather than in the add-in, because
+everything it needs — the document, its bodies, its coordinate systems, its windows — is
+COM, and `JobTreeTabs` already holds one per open part.
+
+**Rendering rides on the G-CAM tab's lifetime.** `JobTreeTabs.DocumentTab` owns the
+document's `ViewportRenderer` and `StockPreview` alongside its viewmodel, and disposes
+them in `Forget` *before* the tab's view goes — unsubscribing from a window needs the
+window still to be there. The two cover exactly the same set of documents: a part with a
+G-CAM tab is a part that can have jobs, and a job is the only thing there is to draw. This
+does mean `JobTreeTabs` now has a second responsibility. When a third subscriber to the
+document notifications appears — persistence, most likely — that is the moment to factor
+`Events/` out of it.
 
 **Jobs are not persisted yet.** They live for as long as the document is open. That is
 what lets a job name its bodies and coordinate system as plain strings; when persistence

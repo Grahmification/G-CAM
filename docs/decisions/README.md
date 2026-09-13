@@ -12,3 +12,4 @@ Number files in order: `0001-short-title.md`. Copy `TEMPLATE.md` to start. Decis
 - [0002. Imported tool libraries are read-only](0002-imported-libraries-are-read-only.md) — why editing an .hsmlib means converting it first.
 - [0003. A job embeds a copy of its tool](0003-jobs-embed-their-tools.md) — why a part is self-contained, and library edits never reach a saved job.
 - [0004. A job owns its operations directly](0004-jobs-own-operations-directly.md) — why there is no Setup level, and what it would cost to add one later.
+- [0005. Draw the overlay with fixed-function vertex arrays](0005-opengl-overlay-with-vertex-arrays.md) — why not immediate mode, buffer objects or shaders inside somebody else's GL context.

@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
 using GCam.Core.Model;
+using GCam.SolidWorks.Rendering;
 using GCam.UI.ViewModels;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -125,9 +126,58 @@ namespace GCam.SolidWorks.Hosting
         public void RefreshActiveDocument() => RefreshJobs(_swApp.ActiveDoc as ModelDoc2);
 
         /// <summary>
-        /// One part's tab: the SOLIDWORKS view, the jobs it shows, and the viewmodel
-        /// tying them together. All three live and die with the document.
+        /// Selects a job in a document's tree, which is also what puts its stock on
+        /// screen.
         /// </summary>
+        public void SelectJob(ModelDoc2 model, Job job)
+        {
+            if (model == null || job == null)
+            {
+                return;
+            }
+
+            DocumentTab tab;
+            if (_tabs.TryGetValue(model, out tab))
+            {
+                tab.Model.SelectJob(job);
+            }
+        }
+
+        /// <summary>
+        /// What draws a job's stock in a document's 3D view, or null if that document has
+        /// no G-CAM tab.
+        /// </summary>
+        /// <remarks>
+        /// For the Job property page, which is built once for the session but has to
+        /// preview into whichever part is in front. The tree reaches its own preview
+        /// through the viewmodel instead.
+        /// </remarks>
+        public IJobPreview PreviewFor(ModelDoc2 model)
+        {
+            if (model == null)
+            {
+                return null;
+            }
+
+            DocumentTab tab;
+            return _tabs.TryGetValue(model, out tab) ? tab.Preview : null;
+        }
+
+        /// <summary>The stock preview for whichever document is in front.</summary>
+        public IJobPreview PreviewForActiveDocument() => PreviewFor(_swApp.ActiveDoc as ModelDoc2);
+
+        /// <summary>
+        /// One part's tab: the SOLIDWORKS view, the jobs it shows, the viewmodel tying
+        /// them together, and what G-CAM draws in that part's 3D windows. All of it lives
+        /// and dies with the document.
+        /// </summary>
+        /// <remarks>
+        /// Rendering rides on the tab's lifetime because the two cover exactly the same
+        /// documents - a part with a G-CAM tab is a part that can have jobs, and a job is
+        /// the only thing there is to draw. It also avoids a second subscriber to the
+        /// document notifications; when a third one appears, that is the moment to factor
+        /// an Events layer out of this class rather than before.
+        /// </remarks>
         private sealed class DocumentTab
         {
             public FeatMgrView View { get; set; }
@@ -135,6 +185,10 @@ namespace GCam.SolidWorks.Hosting
             public JobDocument Jobs { get; set; }
 
             public JobTreeViewModel Model { get; set; }
+
+            public ViewportRenderer Renderer { get; set; }
+
+            public StockPreview Preview { get; set; }
         }
 
         /// <summary>
@@ -244,11 +298,16 @@ namespace GCam.SolidWorks.Hosting
 
             var jobs = new JobDocument();
 
+            var renderer = new ViewportRenderer(model, _errors, _log);
+            var preview = new StockPreview(_swApp, model, renderer, _errors, _log);
+
             _tabs[model] = new DocumentTab
             {
                 View = view,
                 Jobs = jobs,
-                Model = new JobTreeViewModel(jobs, _jobEditor, _log),
+                Model = new JobTreeViewModel(jobs, _jobEditor, _log, preview),
+                Renderer = renderer,
+                Preview = preview,
             };
 
             BindView(view, _tabs[model]);
@@ -339,6 +398,10 @@ namespace GCam.SolidWorks.Hosting
             FeatMgrView view = tab.View;
 
             _tabs.Remove(model);
+
+            // Before the view goes: the renderer is subscribed to this document's
+            // windows, and unsubscribing needs them still to be there.
+            tab.Renderer?.Dispose();
 
             var part = model as PartDoc;
             if (part != null)

@@ -23,14 +23,20 @@ namespace GCam.UI.ViewModels
     {
         private readonly JobDocument _document;
         private readonly IJobEditor _editor;
+        private readonly IJobPreview _preview;
         private readonly IGCamLog _log;
 
         private JobTreeNode _selectedNode;
 
-        public JobTreeViewModel(JobDocument document, IJobEditor editor = null, IGCamLog log = null)
+        public JobTreeViewModel(
+            JobDocument document,
+            IJobEditor editor = null,
+            IGCamLog log = null,
+            IJobPreview preview = null)
         {
             _document = document ?? throw new ArgumentNullException(nameof(document));
             _editor = editor;
+            _preview = preview;
             _log = log ?? NullLog.Instance;
 
             Refresh();
@@ -38,10 +44,33 @@ namespace GCam.UI.ViewModels
 
         public ObservableCollection<JobTreeNode> Nodes { get; } = new ObservableCollection<JobTreeNode>();
 
+        /// <summary>
+        /// What the user has picked in the tree. Setting it also decides what the 3D view
+        /// shows.
+        /// </summary>
+        /// <remarks>
+        /// Selection is the trigger for the preview because it is the one signal that
+        /// means "this is the job I am looking at" - it covers clicking a node, arrowing
+        /// through the tree, and the reselection that follows a refresh, without any of
+        /// them having to know the preview exists.
+        ///
+        /// Still presentation state, in the sense the class comment means: the rule about
+        /// which job an operation node stands for lives in
+        /// <see cref="SelectedJobNode"/>, and what a job's stock looks like lives in
+        /// Core and GCam.SolidWorks. This only says which one is current.
+        /// </remarks>
         public JobTreeNode SelectedNode
         {
             get => _selectedNode;
-            set => Set(ref _selectedNode, value);
+            set
+            {
+                if (Set(ref _selectedNode, value))
+                {
+                    // An operation stands in for its job here too, so selecting one keeps
+                    // its job's stock on screen rather than clearing it.
+                    _preview?.ShowJob(SelectedJobNode?.Job);
+                }
+            }
         }
 
         public bool HasJobs => _document.Jobs.Count > 0;
@@ -75,9 +104,15 @@ namespace GCam.UI.ViewModels
         /// </remarks>
         public void Refresh()
         {
-            string selectedId = (SelectedNode as JobNode)?.Job.Id;
+            string selectedId = SelectedJobNode?.Job.Id;
 
             Nodes.Clear();
+
+            // The nodes about to be rebuilt are not the ones we are holding. Dropping the
+            // selection here rather than leaving it dangling is what makes a deleted job
+            // take its preview with it: RestoreSelection puts it back if the job is still
+            // there, and if it is not, nothing does.
+            SelectedNode = null;
 
             foreach (Job job in _document.Jobs)
             {
@@ -139,7 +174,7 @@ namespace GCam.UI.ViewModels
             _log.Info("Duplicated job '{0}' as '{1}'.", node.Job.Name, copy.Name);
 
             Refresh();
-            Select(copy);
+            SelectJob(copy);
         }
 
         public void Delete(JobNode node)
@@ -194,7 +229,16 @@ namespace GCam.UI.ViewModels
         /// <summary>How many operations would go with a job, for the delete prompt.</summary>
         public int OperationCount(JobNode node) => node?.Job.Operations.Count ?? 0;
 
-        private void Select(Job job)
+        /// <summary>
+        /// Puts the selection on a job, if the tree is showing it.
+        /// </summary>
+        /// <remarks>
+        /// Public because creating a job from the toolbar has to land on it: the job was
+        /// added by the add-in rather than by this viewmodel, and leaving the tree with
+        /// nothing selected right after someone set up a job's stock makes the preview
+        /// look broken.
+        /// </remarks>
+        public void SelectJob(Job job)
         {
             JobNode node = Nodes.OfType<JobNode>()
                 .FirstOrDefault(n => ReferenceEquals(n.Job, job));
