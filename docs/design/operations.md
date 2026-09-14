@@ -430,6 +430,18 @@ came out. The tool does not stay down to link between them: HSMWorks' `stayDownD
 family decides when a link is short enough to keep the cutter in the material, and that is
 a gouge-checking question rather than a linking one — a link that crosses stock cuts it.
 
+**A lead must swing away from the wall, and which side that is has to be measured.** The
+arc centre used to be hard-coded one radius to the *left* of travel, so on an outside
+profile — the common case — every lead swung into the part and bit the finished wall on the
+way in. It is now read off the geometry: the wall is wherever the profile lies relative to
+the cutter path that was offset from it, and the lead turns the other way, with the arc
+swept counter-clockwise for a centre on the left and clockwise for one on the right.
+
+Deriving that side from the settings instead would mean restating three rules —
+climb/conventional, reversed or not, and the explicit side an open path carries — and
+keeping them in step with the offsetting code forever. Measuring is shorter and survives
+the next rule anyone adds.
+
 **A lead-in means the tool goes down off the profile.** The plunge lands at the start of
 the lead arc — one radius back and one to the side, so r&#8730;2 from the wall — and the arc
 brings it onto the profile tangentially. Plunging onto the profile and then arcing is the
@@ -441,7 +453,11 @@ Three things in it are worth knowing before changing it:
 
 - **A closed contour carries its side in its orientation.** It is run counter-clockwise
   for a climb cut and clockwise otherwise, then offset by a single positive distance — so
-  the cutter lands correctly without a sign to get backwards.
+  the cutter lands correctly without a sign to get backwards. Clipper normalises a closed
+  path's orientation before offsetting, so a positive distance always grows it: `Direction`
+  changes which way round the *same outside* path is walked, which is exactly
+  climb versus conventional. **There is consequently no way to cut an inside profile yet** —
+  a pocket wall needs the offset to go the other way, and nothing asks it to.
 - **An open path has no inside, so its side is named outright.** Climb puts the material
   on the left of travel — a cutter turning clockwise seen from above then has its edge
   moving *with* the feed where it touches the wall, which is what climb means — so the
@@ -753,6 +769,7 @@ decisions to leave them out; they are unbuilt.
 | The derived feeds and speeds | Surface speed and feed per tooth are meant to be editable at both ends (see above); only the canonical values have boxes. `FeedsAndSpeeds` is already in Core |
 | Conditional visibility | Maximum stepdown shows when multiple depths is off; the lead-out radius shows when "same as lead in" is ticked. `JobPropertyPage.ShowControlsFor` is the pattern to copy |
 | The live preview | Described above, not built |
+| Inside profiles | Only the outside of a closed contour can be cut — see the offsetting note under 2D contouring. A pocket needs the offset inward, and no setting asks for it |
 
 ## Validation and state
 

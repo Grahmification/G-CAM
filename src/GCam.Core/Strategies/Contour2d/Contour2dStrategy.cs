@@ -178,12 +178,16 @@ namespace GCam.Core.Strategies.Contour2d
             Polyline atDepth = cutterPath.AtZ(depth);
             Vec3 profileStart = atDepth.Points[0];
 
+            // Which way the leads may swing. Worked out once per pass from where the wall
+            // is, and used by both the entry and the exit arc.
+            bool turnLeft = LeadTurnsLeft(profile.Path, cutterPath);
+
             LeadSettings leadIn = settings.LeadIn;
             var entryArc = default(LeadArc);
 
             bool leadingIn = leadIn.Enabled
                              && leadIn.Radius > Precision.Epsilon
-                             && TryLeadIn(atDepth, leadIn.Radius, out entryArc);
+                             && TryLeadIn(atDepth, leadIn.Radius, turnLeft, out entryArc);
 
             // **The tool goes down off the profile when there is a lead.** That is the
             // whole point of one: plunging onto the wall leaves the entry mark exactly
@@ -203,7 +207,7 @@ namespace GCam.Core.Strategies.Contour2d
                 path.Add(Move.Lead(
                     profileStart,
                     Feed(cutting.EntryFeed, cutting.CuttingFeed),
-                    new ArcData(entryArc.Centre, clockwise: false)));
+                    new ArcData(entryArc.Centre, clockwise: !turnLeft)));
             }
 
             foreach (Move move in ProfileMoves(atDepth, cutting.CuttingFeed))
@@ -216,12 +220,12 @@ namespace GCam.Core.Strategies.Contour2d
 
             if (leadOut.Enabled
                 && leadOut.Radius > Precision.Epsilon
-                && TryLeadOut(atDepth, leadOut.Radius, out exitArc))
+                && TryLeadOut(atDepth, leadOut.Radius, turnLeft, out exitArc))
             {
                 path.Add(Move.Lead(
                     exitArc.Away,
                     Feed(cutting.ExitFeed, cutting.CuttingFeed),
-                    new ArcData(exitArc.Centre, clockwise: false)));
+                    new ArcData(exitArc.Centre, clockwise: !turnLeft)));
             }
 
             Vec3 end = path.Moves[path.Moves.Count - 1].End;
@@ -337,7 +341,8 @@ namespace GCam.Core.Strategies.Contour2d
         /// The sweep and perpendicular settings are read but not honoured: a quarter turn
         /// is what comes out. A wrong arc would be worse than a plain one.
         /// </remarks>
-        private static bool TryLeadIn(Polyline profile, double radius, out LeadArc arc)
+        private static bool TryLeadIn(
+            Polyline profile, double radius, bool turnLeft, out LeadArc arc)
         {
             arc = default(LeadArc);
 
@@ -349,7 +354,7 @@ namespace GCam.Core.Strategies.Contour2d
                 return false;
             }
 
-            Vec3 centre = at + (Left(along) * radius);
+            Vec3 centre = at + (Sideways(along, turnLeft) * radius);
 
             arc = new LeadArc { Centre = centre, Away = centre - (along * radius) };
             return true;
@@ -358,7 +363,8 @@ namespace GCam.Core.Strategies.Contour2d
         /// <summary>
         /// The arc that takes the cutter off the end of the profile.
         /// </summary>
-        private static bool TryLeadOut(Polyline profile, double radius, out LeadArc arc)
+        private static bool TryLeadOut(
+            Polyline profile, double radius, bool turnLeft, out LeadArc arc)
         {
             arc = default(LeadArc);
 
@@ -370,23 +376,82 @@ namespace GCam.Core.Strategies.Contour2d
                 return false;
             }
 
-            Vec3 centre = at + (Left(along) * radius);
+            Vec3 centre = at + (Sideways(along, turnLeft) * radius);
 
             arc = new LeadArc { Centre = centre, Away = centre + (along * radius) };
             return true;
         }
 
         /// <summary>
-        /// Ninety degrees left of travel, which is the side a counter-clockwise arc turns
-        /// about to meet the path tangentially.
+        /// Ninety degrees to one side of travel - the side the lead arc turns about.
         /// </summary>
-        private static Vec3 Left(Vec3 along) => new Vec3(-along.Y, along.X, 0);
+        /// <remarks>
+        /// A centre to the left is swept counter-clockwise and one to the right clockwise,
+        /// which is what keeps the arc meeting the profile tangentially either way. Both
+        /// <see cref="Move.Lead"/> calls take their sense from the same flag for that
+        /// reason.
+        /// </remarks>
+        private static Vec3 Sideways(Vec3 along, bool left) =>
+            left ? new Vec3(-along.Y, along.X, 0) : new Vec3(along.Y, -along.X, 0);
+
+        /// <summary>
+        /// Which way a lead may swing: away from the wall, never into it.
+        /// </summary>
+        /// <remarks>
+        /// **Measured, not derived from the settings.** Where the material sits relative to
+        /// the cutter's travel moves with the climb/conventional choice, with whether the
+        /// contour was reversed, and - for an open path - with the side chosen outright.
+        /// Deriving it means reproducing all three rules here and keeping them in step with
+        /// the offsetting code forever. The wall is simply wherever the profile is, seen
+        /// from the cutter path that was offset from it, so reading it off the geometry is
+        /// both shorter and immune to the next rule anyone adds.
+        ///
+        /// A lead turns towards the side the wall is not on.
+        ///
+        /// This was wrong until 2026-09-13: the arc centre was hard-coded one radius to the
+        /// left of travel, so on every outside profile the lead swung into the part and cut
+        /// a bite out of it on the way in.
+        /// </remarks>
+        private static bool LeadTurnsLeft(Polyline profile, Polyline cutterPath)
+        {
+            Vec3 at = cutterPath[0];
+            Vec3 along = Direction(at, cutterPath[1 % cutterPath.Count]);
+
+            if (along.Length <= Precision.Epsilon)
+            {
+                return false;
+            }
+
+            Vec3 wall = profile.NearestPointXy(at);
+
+            double cross = (along.X * (wall.Y - at.Y)) - (along.Y * (wall.X - at.X));
+
+            // Dead ahead means the offset collapsed to nothing useful - there is no side to
+            // prefer, so take the one an outside profile wants.
+            return cross < -Precision.Epsilon;
+        }
 
         private static Vec3 LastPointOf(Polyline profile) =>
             profile.IsClosed ? profile[0] : profile[profile.Count - 1];
 
+        /// <summary>
+        /// The point before <see cref="LastPointOf"/>, which is what gives the direction
+        /// the cutter is travelling as it leaves the profile.
+        /// </summary>
+        /// <remarks>
+        /// Different for the two kinds of chain, and getting it wrong is silent. A closed
+        /// contour ends back at its first point, so the one before that is the last in the
+        /// list; an open one ends at the last in the list, so the one before is the one
+        /// before that.
+        ///
+        /// Returning the list's last point for both - which it did until 2026-09-13 - makes
+        /// an open profile's lead-out start and end at the same place. The direction comes
+        /// out zero-length, <see cref="TryLeadOut"/> refuses, and the operation quietly
+        /// gets no lead-out at all: no error, just a cutter that stops dead on the finished
+        /// wall and retracts up it.
+        /// </remarks>
         private static Vec3 SecondLastPointOf(Polyline profile) =>
-            profile[profile.Count - 1];
+            profile.IsClosed ? profile[profile.Count - 1] : profile[profile.Count - 2];
 
         private static Vec3 Direction(Vec3 from, Vec3 to)
         {

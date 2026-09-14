@@ -99,6 +99,53 @@ namespace GCam.Core.Geometry.Primitives
         public Polyline WithDirection(bool counterClockwise) =>
             IsCounterClockwise == counterClockwise ? this : Reversed();
 
+        /// <summary>
+        /// The point on this chain closest to <paramref name="to"/>, measured in XY.
+        /// </summary>
+        /// <remarks>
+        /// Z is ignored, not projected: the callers are 2D - "where is the wall relative to
+        /// the cutter" - and the two chains involved are usually at different heights by
+        /// design, since a toolpath is the profile moved sideways and down.
+        /// </remarks>
+        public Vec3 NearestPointXy(Vec3 to)
+        {
+            if (_points.Length == 0)
+            {
+                return to;
+            }
+
+            Vec3 best = _points[0];
+            double bestDistance = double.MaxValue;
+
+            for (int i = 0; i < SegmentCount; i++)
+            {
+                Vec3 a = _points[i];
+                Vec3 b = EndOfSegment(i);
+
+                double dx = b.X - a.X;
+                double dy = b.Y - a.Y;
+                double lengthSquared = (dx * dx) + (dy * dy);
+
+                double at = lengthSquared <= double.Epsilon
+                    ? 0
+                    : (((to.X - a.X) * dx) + ((to.Y - a.Y) * dy)) / lengthSquared;
+
+                at = Math.Max(0, Math.Min(1, at));
+
+                var candidate = new Vec3(a.X + (at * dx), a.Y + (at * dy), a.Z);
+                double distance = ((to.X - candidate.X) * (to.X - candidate.X))
+                                  + ((to.Y - candidate.Y) * (to.Y - candidate.Y));
+
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = candidate;
+                }
+            }
+
+            return best;
+        }
+
         /// <summary>The same chain at a different height.</summary>
         public Polyline AtZ(double z) =>
             new Polyline(_points.Select(p => new Vec3(p.X, p.Y, z)), IsClosed);
