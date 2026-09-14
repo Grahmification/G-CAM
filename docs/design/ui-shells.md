@@ -7,12 +7,12 @@ them. Read this before adding a surface or moving one between technologies.
 | --- | --- | --- |
 | CommandManager tab, toolbar and menu | `GCamAddin.CommandManager.cs` | Five buttons: New Job, New Operation, Tool Library, Post Process, Simulate |
 | Manager Pane tab | `JobTreeTabs` → `JobTreeTabHost` → `JobTreeView` | ActiveX → WinForms → ElementHost → WPF; selecting it brings the G-CAM ribbon tab forward |
-| Job and Operation PropertyManager pages | `GCamPropertyPage` → `JobPropertyPage` / `OperationPropertyPage` | SOLIDWORKS-native, built by the API rather than WPF. The Job page is real; the Operation page is still a shell |
+| Job and Operation PropertyManager pages | `GCamPropertyPage` → `JobPropertyPage` / `OperationPropertyPage` | SOLIDWORKS-native, built by the API rather than WPF. Both are real and both work |
 | Tool library window | `ToolLibraryDialog.Show` → `ToolLibraryWindow` | Modal, parented to the SW frame |
 
 Post Process and Simulate are still deliberate no-ops.
 
-**Opening the pages from the toolbar is scaffolding.** The real trigger is selecting a node in the G-CAM tab, which needs a job model to select from; New Job and New Operation stand in until there is one.
+**The toolbar buttons act on the default job**; the job tree's context menu is where a specific job or operation is reached, and it is the richer route — Edit, New Operation, Generate, Duplicate, Make Default, Delete. Post Process and Simulate do nothing at all yet.
 
 **The Manager Pane tab is where jobs live** — the icon strip beside the
 FeatureManager design tree and the PropertyManager, the same place HSMWorks puts its CAM

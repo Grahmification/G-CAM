@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using GCam.AddIn.Composition;
 using GCam.Core.Diagnostics;
+using GCam.Core.Model;
 using GCam.Core.Settings;
 using GCam.Core.Strategies;
 using GCam.SolidWorks.Hosting;
@@ -31,6 +32,9 @@ namespace GCam.AddIn
         private ICommandManager _iCmdMgr;
         private JobTreeTabs _jobTreeTabs;
         private StrategyCatalog _strategies;
+
+        /// <summary>The job the Operation page is editing into. Set before every show.</summary>
+        private Job _operationJob;
         private JobPropertyPage _jobPage;
         private OperationPropertyPage _operationPage;
 
@@ -239,7 +243,7 @@ namespace GCam.AddIn
             _jobPage ?? (_jobPage = CreateJobPage());
 
         private OperationPropertyPage OperationPage =>
-            _operationPage ?? (_operationPage = new OperationPropertyPage(_swApp, _errors, _log));
+            _operationPage ?? (_operationPage = CreateOperationPage());
 
         private void DisposePropertyPages()
         {

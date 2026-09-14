@@ -110,18 +110,27 @@ namespace GCam.SolidWorks.Selection
         }
 
         /// <summary>
-        /// The edges and faces currently selected in the graphics area, as contour
-        /// selections.
+        /// The edges and faces in the box with this mark, as contour selections.
+        /// </summary>
+        public static List<ContourSelection> ContourSelectionsWithMark(ModelDoc2 model, int mark) =>
+            ContourSelectionsFrom(model, mark);
+
+        /// <summary>
+        /// The edges and faces currently selected in the graphics area.
         /// </summary>
         /// <remarks>
         /// Mark -1 means "everything selected", rather than the numbered mark a
         /// PropertyManager box uses - this reads a plain selection made before any page is
         /// open, which is how New Operation picks up what the user had already clicked.
-        ///
+        /// </remarks>
+        public static List<ContourSelection> CurrentContourSelections(ModelDoc2 model) =>
+            ContourSelectionsFrom(model, -1);
+
+        /// <remarks>
         /// Edges and faces have no names in SOLIDWORKS, so the display name is positional.
         /// The persistent reference is the identity; the name is only a label.
         /// </remarks>
-        public static List<ContourSelection> CurrentContourSelections(ModelDoc2 model)
+        private static List<ContourSelection> ContourSelectionsFrom(ModelDoc2 model, int mark)
         {
             var selections = new List<ContourSelection>();
 
@@ -131,11 +140,11 @@ namespace GCam.SolidWorks.Selection
                 return selections;
             }
 
-            int count = selection.GetSelectedObjectCount2(-1);
+            int count = selection.GetSelectedObjectCount2(mark);
 
             for (int i = 1; i <= count; i++)
             {
-                object entity = selection.GetSelectedObject6(i, -1);
+                object entity = selection.GetSelectedObject6(i, mark);
 
                 GeometryRefKind kind =
                     entity is Edge ? GeometryRefKind.Edge :
@@ -154,6 +163,41 @@ namespace GCam.SolidWorks.Selection
             }
 
             return selections;
+        }
+
+        /// <summary>
+        /// Puts a stored contour back into the box with this mark.
+        /// </summary>
+        /// <remarks>
+        /// Selected as an object rather than by name: edges and faces have no names, so
+        /// SelectByID2 - which every other selection here goes through - cannot address
+        /// one. The persistent reference is the only handle there is.
+        /// </remarks>
+        public static bool SelectContour(ModelDoc2 model, ContourSelection contour, int mark)
+        {
+            if (model == null || contour == null || contour.IsEmpty)
+            {
+                return false;
+            }
+
+            var entity = PersistentRefs.Resolve(model, contour.Entity?.PersistentId) as Entity;
+
+            if (entity == null)
+            {
+                return false;
+            }
+
+            var selection = model.SelectionManager as SelectionMgr;
+            SelectData data = selection?.CreateSelectData();
+
+            if (data == null)
+            {
+                return false;
+            }
+
+            data.Mark = mark;
+
+            return entity.Select4(true, data);
         }
 
         /// <summary>The solid body with this name, or null. The migration fallback.</summary>

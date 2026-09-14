@@ -33,8 +33,8 @@ namespace GCam.AddIn
                         ToolLibraryDialog.ShowBrowser(MainWindowHandle(), _settings, _log);
                         break;
 
-                    // Deliberately empty: the UI exists so the wiring can be verified,
-                    // the behaviour arrives with the first vertical slice.
+                    // Deliberately empty. Posting is the last step of the first vertical
+                    // slice and GCam.Posts is an empty project; simulation is further out.
                     case GCamCommand.PostProcess:
                     case GCamCommand.Simulate:
                     default:

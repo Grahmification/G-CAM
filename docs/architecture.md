@@ -18,22 +18,22 @@ way to find out how that part hangs together and which projects it spans.
 | `UI/Views` — error dialog, tool library browser and editor, profile preview | Done | [UI shells](design/ui-shells.md) |
 | `AddIn` — CommandManager, COM registration | Done | [UI shells](design/ui-shells.md) |
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done | [UI shells](design/ui-shells.md) |
-| `Core/Model` — Job, Operation, Stock, JobDocument | Done, and persisted | [Jobs](design/jobs.md) |
+| `Core/Model` — Job, Stock, JobDocument, the part's tool list | Done, and persisted | [Jobs](design/jobs.md) |
 | `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4, Polyline | Started — what stock, rendering and contouring need | |
 | `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done for closed contours | [Operations](design/operations.md) |
 | `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh | Done for what exists to draw | [Jobs](design/jobs.md) |
 | `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done | [Jobs](design/jobs.md) |
-| `SolidWorks/PropertyPages` — handler base, shared page base, Job page | Done; Operation page is still a shell | [UI shells](design/ui-shells.md) |
+| `SolidWorks/PropertyPages` — handler base, shared page base, Job and Operation pages | Done (2025 SP3). The Operation page is deliberately minimal — see the gaps in the design note | [UI shells](design/ui-shells.md) |
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Done; a contour generates from selected edges on a real part (2025 SP3) | [Operations](design/operations.md) |
-| `Core/Model` — Operation, heights, geometry references, the part's tool list, Toolpath | Done | [Operations](design/operations.md) |
+| `Core/Model` — Operation, heights, geometry references, Toolpath | Done | [Operations](design/operations.md) |
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates; face, adaptive and drill are designed only | [Operations](design/operations.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; runs on the STA thread until an `SwDispatcher` exists | [Operations](design/operations.md) |
 | `Core/Persistence` — the stored document format and the toolpath bytes | Done, round-tripped headlessly | [Operations](design/operations.md) |
 | `SolidWorks/Persistence` — getting those bytes into the part | Done; a job survives a close and reopen (2025 SP3). Toolpath streams still unexercised | [Storage](solidworks-api/third-party-storage.md) |
 | `Core/Simulation`, `Commands`, `Posting` | Not started | |
-| `Core/Geometry` beyond the primitives | Not started | |
+| `Core/Geometry` — Brep, Faceting, Query | Not started; only what contouring needed exists | |
 | `Posts` | Empty project | |
 
 **A 2D contour toolpath generates from selected edges on a real part** as of 2026-09-13, draws in the 3D view, and is saved with the document. **Nothing has been posted** — of the vertical slice below, only step 6 is missing, and `GCam.Posts` is still an empty project.
@@ -89,6 +89,7 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │                              BoxMesh, ConeMesh, AxisTriad, ToolpathMesh
 │   │   │                              — what to draw, never how
 │   │   ├── Geometry/
+│   │   │   ├── Chaining.cs            loose curve pieces → closed contours
 │   │   │   ├── Primitives/            Vec3, Bounds, Matrix4, Polyline
 │   │   │   ├── Offset/                IContourOffsetter + Clipper2Offsetter
 │   │   │   ├── Brep/                  own face/edge/loop model, SW-independent
@@ -123,7 +124,9 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │
 │   ├── GCam.SolidWorks/               ★ ALL COM interop lives here
 │   │   ├── Extraction/                SW geometry → GCam.Core, units conversion;
-│   │   │                              CoordinateSystems, JobFrame, ModelExtent
+│   │   │                              CoordinateSystems, JobFrame, ModelExtent,
+│   │   │                              ContourExtraction (edges → tessellated loops),
+│   │   │                              GenerationContextFactory
 │   │   │                              — later the BRep walk
 │   │   ├── Rendering/
 │   │   │   ├── Interop/Gl.cs          [DllImport("opengl32.dll")] — ~20 entry points

@@ -114,7 +114,7 @@ namespace GCam.UI.Views
         {
             try
             {
-                _model?.EditJob(_model.SelectedJobNode);
+                _model?.EditSelected();
                 e.Handled = true;
             }
             catch (Exception ex)

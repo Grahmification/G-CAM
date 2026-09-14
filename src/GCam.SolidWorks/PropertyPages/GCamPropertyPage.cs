@@ -300,6 +300,46 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         /// <summary>
+        /// A number box for something that is not a length - a speed, a feed, a count, an
+        /// angle.
+        /// </summary>
+        /// <remarks>
+        /// Unitless on purpose. A length box exchanges metres whatever the document shows
+        /// (see <see cref="JobPropertyPage"/>), and there is no equivalent unit type for
+        /// mm/min or rpm - so these boxes carry the plain number and nothing converts.
+        /// </remarks>
+        protected static IPropertyManagerPageNumberbox AddNumberbox(
+            IPropertyManagerPageGroup group,
+            int id,
+            string caption,
+            string tip,
+            double maximum = 1000000,
+            double increment = 1,
+            bool visible = true)
+        {
+            var box = AddControl<IPropertyManagerPageNumberbox>(
+                group, id, swPropertyManagerPageControlType_e.swControlType_Numberbox, caption, tip, visible);
+
+            box.SetRange2(
+                (int)swNumberboxUnitType_e.swNumberBox_UnitlessDouble,
+                Minimum: 0,
+                Maximum: maximum,
+                Inclusive: true,
+                Increment: increment,
+                FastIncr: increment * 10,
+                SlowIncr: increment / 10);
+
+            return box;
+        }
+
+        protected static IPropertyManagerPageCheckbox AddCheckbox(
+            IPropertyManagerPageGroup group, int id, string caption, string tip, bool visible = true)
+        {
+            return AddControl<IPropertyManagerPageCheckbox>(
+                group, id, swPropertyManagerPageControlType_e.swControlType_Checkbox, caption, tip, visible);
+        }
+
+        /// <summary>
         /// A drop-down. Give it a <see cref="AddLabel"/> above it - a combobox does not
         /// render a caption of its own.
         /// </summary>

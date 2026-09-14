@@ -4,10 +4,9 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Built as far as slice 7 of the build order at the end of this document: a 2D contour
-generates from edges selected on a real part, draws, and persists. Nothing has been
-posted, and the Operation property page is still a shell — operations are created from
-the current selection with stand-in defaults until it exists.
+Built as far as slice 8 of the build order at the end of this document: a 2D contour
+generates from edges selected on a real part, draws, and persists, and there is a property
+page to set it up on. Nothing has been posted.
 
 The four decisions underneath this document are recorded separately:
 [0006](../decisions/0006-operation-parameters-are-values.md) (values, not expressions),
@@ -623,11 +622,19 @@ every other page. It builds the groups HSMWorks uses, in that order:
 | Passes | The strategy | Stepover, stepdown, stock to leave, … |
 | Linking | The strategy | Lead-in/out, ramping, retracts — only for strategies that have them |
 
-The base page builds Tool and Heights once for every strategy; the strategy contributes
-the rest through a `BuildGroups(IPageBuilder)` call. `IPageBuilder` is a thin seam over
-`AddControl2` so that control ids stay unique per page and nothing has to touch
-`IPropertyManagerPageControl.Visible` — both of which are page-killing mistakes recorded
-in `docs/solidworks-api/property-manager-pages.md`.
+Tool and Heights are common to every strategy; Geometry, Passes and Linking are
+contour2d's own. **The seam between them is not built yet.** With one strategy, an
+`IPageBuilder` would be an abstraction with a single implementation — the project's own
+rule says to wait for the second caller. The methods in `OperationPropertyPage` are named
+and grouped so extracting it is mechanical when the second strategy lands.
+
+Two page-killing mistakes the base class already guards, recorded in
+`docs/solidworks-api/property-manager-pages.md`: control ids must be unique per page
+(duplicates are accepted in silence), and `IPropertyManagerPageControl.Visible` must never
+be touched on a page about to be shown. A third is a load-order rule rather than a crash —
+**values are set in `LoadControls` before `Show2`, but selections are restored in
+`PageShown`**, because `SelectByID2` routes by mark and the marks belong to boxes on a page
+that actually exists.
 
 A live preview follows the edit, as the Job page already does with its clone: the page
 edits a clone, the preview shows the clone, Cancel leaves nothing behind. Parameter edits
@@ -666,8 +673,8 @@ while they are still cheap to change.
 | 6b | The SOLIDWORKS storage plumbing — third-party storage, the load/save notifications, release discipline | The half that cannot be tested headlessly, and the first code in `GCam.SolidWorks` for operations | **Done** — 2026-09-13, verified by hand on 2025 SP3. See [third-party-storage.md](../solidworks-api/third-party-storage.md) |
 | 7a | `Contour2dStrategy` + `Polyline` + offsetting via Clipper2 | The first real toolpath, and pure Core so the geometry can be asserted headlessly | **Done** — 2026-09-13, 24 tests |
 | 7b | `SolidWorks/Extraction` — selections → tessellated contours, `GenerationContextFactory`, Generate in the tree menu, toolpaths drawn | The half that needs a real part, and what makes 7a visible | **Done** — 2026-09-13, verified by hand on 2025 SP3 after two fixes: a missing part-frame transform, and a lead-in that plunged onto the wall |
-| 7c | A stopgap creation path: New Operation builds a contour operation from the current selection | **The build order had a hole**: the property page was last, and it is the only thing that can create an operation — so slices 5, 7a and 7b were all unverifiable. This unblocks them | **Done** — 2026-09-13 |
-| 8 | The Operation property page | The real way to create and edit one. It replaces the guessing in 7c, not the creation itself | Next |
+| 7c | A stopgap creation path: New Operation builds a contour operation from the current selection | **The build order had a hole**: the property page was last, and it is the only thing that can create an operation — so slices 5, 7a and 7b were all unverifiable. This unblocked them | **Superseded by 8** — the stand-in tool and fixed defaults are gone; New Operation still seeds from the selection, which is worth keeping |
+| 8 | The Operation property page | The real way to create and edit one. It replaces the guessing in 7c, not the creation itself | **Done** — 2026-09-13, verified by hand on 2025 SP3. Minimal by design; the absent controls are listed above |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an

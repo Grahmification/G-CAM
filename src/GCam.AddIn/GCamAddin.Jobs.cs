@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
 using GCam.Core.Generation;
@@ -43,16 +44,17 @@ namespace GCam.AddIn
 
         /// <summary>Entry point 10. Adds an operation to a job.</summary>
         /// <remarks>
-        /// <b>Creates the operation outright, from whatever is selected in the graphics
-        /// area.</b> The Operation property page is still a shell, and until it exists
-        /// this is the only way an operation can come into being - which otherwise makes
-        /// the whole toolpath pipeline untestable, since nothing else can produce one to
-        /// generate.
+        /// Built here and only added to the job if the page is accepted, exactly as
+        /// <see cref="CreateJob"/> works - so Cancel leaves nothing behind.
         ///
-        /// The creation itself is not throwaway: with a page, New Operation still creates
-        /// the operation and the page then edits it. What the page replaces is the
-        /// guessing below - seeding from the current selection and from the first tool in
-        /// the part. Pre-filling from the selection is what HSMWorks does anyway.
+        /// The new operation is seeded from whatever is selected in the graphics area and
+        /// from the first tool in the part, which is a convenience rather than a
+        /// requirement: both are editable on the page. HSMWorks pre-fills from the
+        /// selection the same way.
+        ///
+        /// One strategy exists, so no strategy is asked for. When a second lands, this is
+        /// where the choice goes - before the page, because
+        /// <see cref="Operation.Settings"/> is fixed at construction.
         /// </remarks>
         public void NewOperation(Job job)
         {
@@ -74,30 +76,19 @@ namespace GCam.AddIn
                 var settings = new Contour2dSettings();
                 settings.Contours.AddRange(JobSelections.CurrentContourSelections(model));
 
-                if (settings.Contours.Count == 0)
-                {
-                    throw new GCamUserException(
-                        "Select the edges or faces of a closed profile, then add the " +
-                        "operation. Choosing geometry on the page comes with the " +
-                        "Operation page.");
-                }
-
                 var operation = new Operation(settings)
                 {
                     Name = job.NextOperationName("2D Contour"),
                 };
 
-                operation.UseTool(DefaultTool(jobs));
+                Tool tool = jobs.Tools.FirstOrDefault();
+                if (tool != null)
+                {
+                    operation.UseTool(tool);
+                }
 
-                job.Operations.Add(operation);
-
-                _log.Info(
-                    "Created operation '{0}' from {1} selected entities.",
-                    operation.Name, settings.Contours.Count);
-
-                _jobTreeTabs.MarkDirty(model);
-                _jobTreeTabs.RefreshJobs(model);
-                _jobTreeTabs.SelectJob(model, job);
+                _operationJob = job;
+                OperationPage.Show(job, operation);
             }
             catch (Exception ex)
             {
@@ -105,39 +96,63 @@ namespace GCam.AddIn
             }
         }
 
+        /// <summary>Entry point 10. Opens an existing operation's page.</summary>
+        public void EditOperation(Job job, Operation operation)
+        {
+            try
+            {
+                if (job == null || operation == null)
+                {
+                    return;
+                }
+
+                _operationJob = job;
+                OperationPage.Show(job, operation);
+            }
+            catch (Exception ex)
+            {
+                _errors.Handle(ex, nameof(EditOperation));
+            }
+        }
+
         /// <summary>
-        /// The tool a new operation starts with.
+        /// Entry point 10. The Operation page was accepted.
         /// </summary>
         /// <remarks>
-        /// The first tool already in the part, or a plainly-named stand-in when it has
-        /// none. The stand-in is a stopgap for the same reason as the rest of this path:
-        /// choosing a tool is the property page's job, and until that exists an operation
-        /// with no tool cannot be generated at all. It is named and logged so nobody
-        /// mistakes it for a considered choice.
+        /// One handler for create and edit, like <see cref="OnJobCommitted"/>: an operation
+        /// the job has never seen is being created, one it already holds is being edited.
         /// </remarks>
-        private Tool DefaultTool(JobDocument jobs)
+        private void OnOperationCommitted(object sender, Operation operation)
         {
-            if (jobs.Tools.Count > 0)
+            try
             {
-                return jobs.Tools[0];
+                var model = _swApp.ActiveDoc as ModelDoc2;
+
+                if (_operationJob == null || operation == null || model == null)
+                {
+                    return;
+                }
+
+                if (!_operationJob.Operations.Contains(operation))
+                {
+                    _operationJob.Operations.Add(operation);
+                    _log.Info("Created operation '{0}'.", operation.Name);
+                }
+                else
+                {
+                    // Its inputs changed, so whatever it computed before is out of date.
+                    Staleness.OperationEdited(_operationJob, operation);
+                    _log.Info("Edited operation '{0}'.", operation.Name);
+                }
+
+                _jobTreeTabs.MarkDirty(model);
+                _jobTreeTabs.RefreshJobs(model);
+                _jobTreeTabs.SelectJob(model, _operationJob);
             }
-
-            var tool = new Tool
+            catch (Exception ex)
             {
-                Number = 1,
-                Name = "Stand-in 6mm end mill",
-                Type = ToolType.FlatEndMill,
-                Geometry = { Diameter = 6, FluteLength = 20, ShoulderLength = 20, FluteCount = 3 },
-                Cutting = { SpindleRpm = 8000, CuttingFeed = 800, PlungeFeed = 300 },
-            };
-
-            jobs.AddTool(tool);
-
-            _log.Warn(
-                "This part had no tools, so a stand-in {0} was added. Choose a real one " +
-                "once the Operation page can.", tool.DisplayName);
-
-            return tool;
+                _errors.Handle(ex, nameof(OnOperationCommitted));
+            }
         }
 
         /// <summary>
@@ -205,6 +220,27 @@ namespace GCam.AddIn
             }
 
             JobPage.Show(new Job { Name = jobs.NextDefaultName() });
+        }
+
+        /// <summary>
+        /// The Operation page, built once for the session.
+        /// </summary>
+        /// <remarks>
+        /// The document and its tools are resolved per show rather than captured, for the
+        /// same reason the Job page resolves its preview that way: one page serves
+        /// whichever part is in front.
+        /// </remarks>
+        private OperationPropertyPage CreateOperationPage()
+        {
+            var page = new OperationPropertyPage(
+                _swApp,
+                _errors,
+                _log,
+                () => _swApp.ActiveDoc as ModelDoc2,
+                () => _jobTreeTabs?.JobsForActiveDocument());
+
+            page.Committed += OnOperationCommitted;
+            return page;
         }
 
         private JobPropertyPage CreateJobPage()

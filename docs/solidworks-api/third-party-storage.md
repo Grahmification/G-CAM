@@ -113,8 +113,10 @@ not locking the node.
 
 Still unexercised, and worth checking when the chance comes:
 
-- **Toolpath streams.** Nothing generates a toolpath yet, so only `model.xml` has ever been
-  written. The numbered-stream path is untested.
+- **Toolpath streams.** Operations do generate toolpaths now, so a save after generating
+  should write them - but nobody has confirmed a generated path survives a close and
+  reopen. That is the one worth checking first: it is the only stored data with its own
+  stream, and `tp0001` has never been read back.
 - **Several parts open at once**, which is what the one-subscriber-per-document design
   exists for. A single part cannot show whether it was needed.
 - **Save All**, and auto-recover saves through `AutoSaveToStorageStoreNotify`.

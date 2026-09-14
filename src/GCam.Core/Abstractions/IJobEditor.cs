@@ -23,6 +23,9 @@ namespace GCam.Core.Abstractions
         /// <summary>Adds an operation to the given job, or to the default job when null.</summary>
         void NewOperation(Job job);
 
+        /// <summary>Opens an existing operation's property page.</summary>
+        void EditOperation(Job job, Operation operation);
+
         /// <summary>
         /// Computes the toolpaths for a job's operations.
         /// </summary>

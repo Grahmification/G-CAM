@@ -158,6 +158,24 @@ namespace GCam.UI.ViewModels
             }
         }
 
+        /// <summary>
+        /// Opens whichever node is selected for editing - a job, or an operation.
+        /// </summary>
+        /// <remarks>
+        /// One entry point so that double-click, Enter and the context menu all mean the
+        /// same thing whichever kind of node is under them.
+        /// </remarks>
+        public void EditSelected()
+        {
+            if (SelectedNode is OperationNode operation)
+            {
+                _editor?.EditOperation(SelectedJobNode?.Job, operation.Operation);
+                return;
+            }
+
+            EditJob(SelectedJobNode);
+        }
+
         public void NewOperation(JobNode node)
         {
             _editor?.NewOperation(node?.Job ?? _document.DefaultJob);
