@@ -186,5 +186,51 @@ namespace GCam.Core.Tests.Geometry
             Assert.NotEqual(0, loop.SignedAreaXy2);
             Assert.Equal(4, loop.SegmentCount);
         }
+
+        [Fact]
+        public void A_chain_remembers_every_segment_that_went_into_it()
+        {
+            // What makes the Reverse button work: four separate picks become one loop, and
+            // reversing any of them has to reverse that loop - so the loop has to know
+            // which picks it came from. By the time it is a Polyline they are unrecognisable.
+            Chaining.Chain chain = Assert.Single(Chaining.ChainWithSources(RectangleSides()));
+
+            Assert.Equal(new[] { 0, 1, 2, 3 }, chain.Sources);
+        }
+
+        [Fact]
+        public void Separate_chains_keep_their_own_segments_apart()
+        {
+            var segments = new List<Polyline>
+            {
+                Segment(P(0, 0), P(10, 0)),
+                Segment(P(50, 0), P(60, 0)),
+                Segment(P(10, 0), P(10, 5)),
+            };
+
+            IReadOnlyList<Chaining.Chain> chains = Chaining.ChainWithSources(segments);
+
+            Assert.Equal(2, chains.Count);
+            Assert.Equal(new[] { 0, 2 }, chains[0].Sources);
+            Assert.Equal(new[] { 1 }, chains[1].Sources);
+        }
+
+        [Fact]
+        public void Source_indices_count_the_segments_that_were_skipped()
+        {
+            // Indices are into the caller's own list, so a null or degenerate entry still
+            // takes its place. Anything looking a source back up would otherwise read the
+            // wrong pick - and silently, since the numbers stay in range.
+            var segments = new List<Polyline>
+            {
+                null,
+                new Polyline(new[] { P(0, 0) }),
+                Segment(P(0, 0), P(10, 0)),
+            };
+
+            Chaining.Chain chain = Assert.Single(Chaining.ChainWithSources(segments));
+
+            Assert.Equal(new[] { 2 }, chain.Sources);
+        }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using GCam.Core;
 using GCam.Core.Diagnostics;
@@ -62,6 +63,8 @@ namespace GCam.SolidWorks.PropertyPages
         // Geometry.
         private const int IdContours = 30;
         private const int IdContoursHint = 31;
+        private const int IdContoursReverse = 32;
+        private const int IdContoursStatus = 33;
 
         // Heights: label, mode, offset for each of the five.
         private const int IdClearanceLabel = 40;
@@ -154,6 +157,8 @@ namespace GCam.SolidWorks.PropertyPages
         private IPropertyManagerPageNumberbox _plungeFeed;
         private IPropertyManagerPageCombobox _coolant;
         private IPropertyManagerPageSelectionbox _contours;
+        private IPropertyManagerPageButton _contoursReverse;
+        private IPropertyManagerPageLabel _contoursStatus;
         private IPropertyManagerPageCombobox _direction;
         private IPropertyManagerPageNumberbox _stockToLeave;
         private IPropertyManagerPageNumberbox _verticalStockToLeave;
@@ -405,12 +410,19 @@ namespace GCam.SolidWorks.PropertyPages
                 MarkContours,
                 new[] { swSelectType_e.swSelEDGES, swSelectType_e.swSelFACES },
                 singleEntityOnly: false,
-                tip: "Edges or faces forming a closed profile to follow.",
+                tip: "Edges or faces to follow. They need not form a closed profile.",
                 height: 60);
 
             AddLabel(
                 group, IdContoursHint,
-                "Pick edges of a closed profile, or a face to follow its boundary.");
+                "Pick edges to follow, or a face to follow its boundary.");
+
+            _contoursReverse = AddButton(
+                group, IdContoursReverse, "Reverse",
+                "Cut the highlighted contour the other way round, which puts the cutter " +
+                "on its other side.");
+
+            _contoursStatus = AddLabel(group, IdContoursStatus, string.Empty);
         }
 
         private void BuildPassesTab(IPropertyManagerPage2 page)
@@ -480,6 +492,7 @@ namespace GCam.SolidWorks.PropertyPages
                 Contour2dSettings settings = Settings();
 
                 _toolName.Caption = ToolLabel();
+                _contoursStatus.Caption = ContourStatus();
                 ShowCuttingData();
 
                 LoadHeight(IdClearanceMode, _working.Heights.Clearance);
@@ -562,6 +575,76 @@ namespace GCam.SolidWorks.PropertyPages
                     "{0} of this operation's contours are no longer in the model: {1}",
                     missing.Count, string.Join(", ", missing));
             }
+        }
+
+        // ---- The geometry ----------------------------------------------------
+
+        /// <summary>What the line under the Reverse button says.</summary>
+        /// <remarks>
+        /// Contours are numbered from 1, counting down the selection box, because that is
+        /// what someone reading the list will count. The rows themselves cannot be
+        /// annotated - their text belongs to SOLIDWORKS - so saying which are reversed is
+        /// the only way to show it.
+        /// </remarks>
+        private string ContourStatus()
+        {
+            List<ContourSelection> contours = Settings().Contours;
+
+            if (contours.Count == 0)
+            {
+                return "Nothing selected.";
+            }
+
+            var reversed = new List<string>();
+
+            for (int i = 0; i < contours.Count; i++)
+            {
+                if (contours[i] != null && contours[i].Reversed)
+                {
+                    reversed.Add((i + 1).ToString(CultureInfo.CurrentCulture));
+                }
+            }
+
+            return reversed.Count == 0
+                ? "Highlight one and press Reverse to cut its other side."
+                : "Reversed: " + string.Join(", ", reversed) + " of " + contours.Count + ".";
+        }
+
+        /// <summary>
+        /// Flips the direction of the contour highlighted in the selection box, which puts
+        /// the cutter on its other side.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="IPropertyManagerPageSelectionbox.CurrentSelection"/> is the row the
+        /// user has highlighted - and is documented to return -1 for a box that is not
+        /// active, which a button press may or may not make it. If that happens the ask is
+        /// refused with something actionable rather than guessing at a contour or silently
+        /// reversing them all; the raw value is logged so it is clear which case it was.
+        ///
+        /// The page is rebuilt afterwards because a shown page cannot be updated - see
+        /// <see cref="BrowseForTool"/> - and the status line has to change.
+        /// </remarks>
+        private void ReverseHighlightedContour()
+        {
+            List<ContourSelection> contours = Settings().Contours;
+            int row = _contours.CurrentSelection;
+
+            Log.Debug("Reverse: selection box row {0} of {1}.", row, contours.Count);
+
+            if (row < 0 || row >= contours.Count || contours[row] == null)
+            {
+                throw new GCamUserException(
+                    "Highlight a contour in the list first, then press Reverse.");
+            }
+
+            ContourSelection contour = contours[row];
+            contour.Reversed = !contour.Reversed;
+
+            Log.Info(
+                "Contour {0} of '{1}' now cuts {2}.",
+                row + 1, _working.Name, contour.Reversed ? "reversed" : "forwards");
+
+            RebuildAfterHandlerReturns();
         }
 
         // ---- The tool --------------------------------------------------------
@@ -664,6 +747,10 @@ namespace GCam.SolidWorks.PropertyPages
             {
                 BrowseForTool();
             }
+            else if (id == IdContoursReverse)
+            {
+                ReverseHighlightedContour();
+            }
         }
 
         protected override void OnCheckboxCheck(int id, bool value)
@@ -762,11 +849,34 @@ namespace GCam.SolidWorks.PropertyPages
 
             Contour2dSettings settings = Settings();
 
-            // Replaced wholesale rather than diffed: the box is the truth about what is
+            // Replaced wholesale rather than diffed: the box is the truth about *what* is
             // selected, and matching up what changed would only be a way to get it wrong.
+            //
+            // The modifiers are a different matter. They are this page's own state and the
+            // box knows nothing about them, so they are carried across by entity - without
+            // this, picking one more edge would silently un-reverse every contour already
+            // set, and a rebuild would do it too, because restoring the selection fires
+            // this callback.
+            Dictionary<string, ContourSelection> before = settings.Contours
+                .Where(c => !string.IsNullOrEmpty(c?.Entity?.PersistentId))
+                .GroupBy(c => c.Entity.PersistentId, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
             settings.Contours.Clear();
-            settings.Contours.AddRange(
-                JobSelections.ContourSelectionsWithMark(model, MarkContours));
+
+            foreach (ContourSelection picked in
+                     JobSelections.ContourSelectionsWithMark(model, MarkContours))
+            {
+                if (!string.IsNullOrEmpty(picked?.Entity?.PersistentId)
+                    && before.TryGetValue(picked.Entity.PersistentId, out ContourSelection kept))
+                {
+                    picked.Reversed = kept.Reversed;
+                    picked.PropagateTangent = kept.PropagateTangent;
+                    picked.PropagateAlongZ = kept.PropagateAlongZ;
+                }
+
+                settings.Contours.Add(picked);
+            }
         }
 
         protected override void PageClosed(swPropertyManagerPageCloseReasons_e reason)

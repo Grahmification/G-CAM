@@ -4,11 +4,11 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Built as far as slice 9 of the build order at the end of this document: a 2D contour
-generates from edges selected on a real part, draws, and persists; there is a property
-page to set it up on, and a tool can be picked out of a library into the part. Nothing has
-been posted, and the page has real gaps — they are listed under
-[the property page](#the-property-page) rather than left to be discovered.
+Built as far as slice 10 of the build order at the end of this document: a 2D contour
+generates from edges selected on a real part — open profiles as well as closed — draws,
+and persists; there is a property page to set it up on, and a tool can be picked out of a
+library into the part. Nothing has been posted, and the page has real gaps — they are
+listed under [the property page](#the-property-page) rather than left to be discovered.
 
 The four decisions underneath this document are recorded separately:
 [0006](../decisions/0006-operation-parameters-are-values.md) (values, not expressions),
@@ -297,9 +297,25 @@ operation stale, so the path is regenerated and seen before it can post without 
 runs on follows from the direction the chain is walked and the climb/conventional choice.
 It is the same thing HSMWorks' per-contour arrow toggles.
 
-None of this is honoured yet — the flags are stored and round-tripped, and propagation
-lands with the contour strategy. The shape exists now because persistence would otherwise
-freeze the wrong one into saved parts.
+**`Reversed` is honoured; the two propagation flags are still stored only.** Reversing is
+how the user picks which side of a contour the cutter runs on — outside instead of inside
+for a closed profile, the other hand for an open one — and it is the Reverse button on the
+Geometry tab.
+
+The flag is per *pick*, but a **chain has exactly one direction**, because it is cut as one
+continuous move. Chaining pools every selected edge, so one chain is often built from
+several picks — four edges of a rectangle are four picks and one loop. A chain is therefore
+reversed if **any** of the picks that built it was, which is the only coherent answer.
+`Chaining.ChainWithSources` is what makes that answerable at all: by the time the pieces
+are a `Polyline` they have been reversed, reordered and merged past recognition, so the
+mapping back to picks has to come out of the chaining itself.
+
+The flag has to reach the **strategy** rather than being applied during extraction. For an
+open path it could be applied early, by handing over an already-reversed chain — but for a
+closed one it could not, because `Contour2dStrategy` forces the orientation from the
+climb/conventional setting as the first thing it does, and that would quietly undo the
+reversal. Hence `ResolvedContour`, which pairs the curve with the intent and lets the
+strategy apply it last.
 
 **Tangential extension is a different thing and is not here.** `tangentialExtensionDistance`
 and its family are strategy parameters that act on an already-fixed selection, so they
@@ -403,10 +419,16 @@ fails with "see the log", and the stack trace goes to the log rather than to the
 
 ### 2D contouring, the first strategy
 
-`Contour2dStrategy` turns a closed profile into passes. One pass is: rapid across at
-clearance, rapid down to the feed height, plunge to depth, lead in, cut the profile, lead
-out, retract. Depths repeat that, and the tool retracts between them because a contour is
-not guaranteed to be able to stay down — the profile may run outside the stock.
+`Contour2dStrategy` turns a profile into passes, open or closed. One pass is: rapid across
+at clearance, rapid down to the feed height, plunge to depth, lead in, cut the profile,
+lead out, retract. Depths repeat that, and the tool retracts between them because a contour
+is not guaranteed to be able to stay down — the profile may run outside the stock.
+
+**Several fragments are several passes.** A selection that chains into three separate runs
+is cut as three, each with its own lead-in, lead-out and retract, in the order the chains
+came out. The tool does not stay down to link between them: HSMWorks' `stayDownDistance`
+family decides when a link is short enough to keep the cutter in the material, and that is
+a gouge-checking question rather than a linking one — a link that crosses stock cuts it.
 
 **A lead-in means the tool goes down off the profile.** The plunge lands at the start of
 the lead arc — one radius back and one to the side, so r&#8730;2 from the wall — and the arc
@@ -417,10 +439,14 @@ full circle. The cutter plunged onto the finished wall and looped right round it
 
 Three things in it are worth knowing before changing it:
 
-- **Direction decides which way round, not which side.** The contour is oriented
-  counter-clockwise for a climb cut and clockwise otherwise, and then offset by a single
-  positive distance — so the cutter lands on the correct side either way, without a sign
-  to get backwards.
+- **A closed contour carries its side in its orientation.** It is run counter-clockwise
+  for a climb cut and clockwise otherwise, then offset by a single positive distance — so
+  the cutter lands correctly without a sign to get backwards.
+- **An open path has no inside, so its side is named outright.** Climb puts the material
+  on the left of travel — a cutter turning clockwise seen from above then has its edge
+  moving *with* the feed where it touches the wall, which is what climb means — so the
+  cutter centre goes to the right. `Reversed` flips whichever of the two rules applies,
+  and is applied last so it always wins.
 - **The last pass lands exactly on the bottom**, not a float's width above it. The
   alternative leaves a witness ridge that no operator can explain.
 - **A feed left at zero falls back to the cutting feed.** Zero means "not set", and
@@ -433,10 +459,22 @@ produces a path that looks right and gouges the part. It is a NuGet reference in
 it reaches the add-in through `AssemblyResolver` like everything else; see
 `docs/solidworks-api/addin-dependencies.md`.
 
+**Offsetting one side of an open path is not something Clipper2 does**, and neither does
+any other general offsetting library: inflating an open path gives the closed *ribbon*
+around it — the left offset, an end cap, the right offset, another cap. That is the right
+answer to the question those libraries are asked and the wrong one for a cutter. So
+`Clipper2Offsetter.OffsetOpen` cuts the ribbon open again: the two ends of the wanted side
+are known exactly, being the path's own endpoints pushed along the side normal, so the
+ribbon is walked between the vertices nearest them and the way round that lies on the
+wanted side is kept. What that buys is the part worth buying — Clipper has already removed
+the self-intersections a naive parallel curve produces wherever the offset exceeds the
+local curvature, and those are what gouge a part. A test asserts the property directly: no
+point of the result is closer to the path than the offset distance.
+
 What the strategy deliberately does **not** do yet, left as gaps rather than as wrong
-numbers: open contours, ramped entry, arbitrary lead sweeps and perpendicular approach
-(a quarter-turn arc is what comes out), multiple finishing passes, tabs, chamfering and
-rest machining.
+numbers: ramped entry, arbitrary lead sweeps and perpendicular approach (a quarter-turn arc
+is what comes out), multiple finishing passes, tabs, chamfering, rest machining, and
+staying down between fragments.
 
 ### What makes an operation stale
 
@@ -642,7 +680,7 @@ costs height on every show.
 | Tab | Built by | Contents |
 | --- | --- | --- |
 | Tool | The base page | Two groups: the tool's name as a header with Browse…, then feed and speed — one physical cutter, but numbers that belong to this operation alone |
-| Geometry | The strategy | Selection boxes for what that strategy takes |
+| Geometry | The strategy | Selection box, a Reverse button for the highlighted contour, and a line saying which are reversed |
 | Heights | The base page | Five mode + offset rows |
 | Passes | The strategy | Stepover, stepdown, stock to leave, … |
 | Linking | The strategy | Lead-in/out, ramping, retracts — only for strategies that have them |
@@ -711,7 +749,7 @@ decisions to leave them out; they are unbuilt.
 | The `FromSelection` height mode | Offered in all five mode drop-downs, and it cannot work: there is no reference selection box to set `HeightSetting.Reference`, and `GenerationContextFactory.HeightOf` returns null on every path. Either wire both ends or take the mode out of the list |
 | `Operation.Validate()` | Never called. OK commits an operation with no tool or no contour without saying so, and the complaint arrives at generation time instead |
 | Lead `Distance`, `Sweep`, `VerticalRadius`, `Perpendicular` | Stored, round-tripped and read by the strategy; not editable |
-| Contour modifiers | `PropagateTangent`, `PropagateAlongZ` and `Reversed` are stored as intent but unreachable — and `OnSelectionboxListChanged` rebuilds the list wholesale, so they would reset on any selection edit anyway |
+| Contour modifiers | `Reversed` is reachable, via the Reverse button. `PropagateTangent` and `PropagateAlongZ` are still stored as intent and never honoured |
 | The derived feeds and speeds | Surface speed and feed per tooth are meant to be editable at both ends (see above); only the canonical values have boxes. `FeedsAndSpeeds` is already in Core |
 | Conditional visibility | Maximum stepdown shows when multiple depths is off; the lead-out radius shows when "same as lead in" is ticked. `JobPropertyPage.ShowControlsFor` is the pattern to copy |
 | The live preview | Described above, not built |
@@ -752,6 +790,7 @@ while they are still cheap to change.
 | 7c | A stopgap creation path: New Operation builds a contour operation from the current selection | **The build order had a hole**: the property page was last, and it is the only thing that can create an operation — so slices 5, 7a and 7b were all unverifiable. This unblocked them | **Superseded by 8** — the stand-in tool and fixed defaults are gone; New Operation still seeds from the selection, which is worth keeping |
 | 8 | The Operation property page | The real way to create and edit one. It replaces the guessing in 7c, not the creation itself | **Done** — 2026-09-13, verified by hand on 2025 SP3. The gaps are listed above |
 | 9 | Choosing a tool: Browse on the page → the library browser as a picker → `JobDocument.Tools` | 8 left no way to put a tool in a part, and an operation with no tool cannot generate | **Done** — 2026-09-13, verified by hand on 2025 SP3. Three crashes taught that a shown page's controls cannot be written to at all; picking a tool rebuilds the page instead |
+| 10 | Open profiles: single-sided offset, open chains kept, per-contour Reverse | A partial selection was refused outright, which is most of what a 2D contour is used for. Only the offsetter was blocking — the strategy already cut several contours, and chaining already produced open ones | **Done** — 2026-09-13, 21 tests. Not verified by hand yet |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an

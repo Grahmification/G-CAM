@@ -6,6 +6,7 @@ using GCam.Core.Diagnostics;
 using GCam.Core.Geometry;
 using GCam.Core.Geometry.Primitives;
 using GCam.Core.Model;
+using GCam.Core.Strategies;
 using GCam.Core.Strategies.Shared;
 using GCam.SolidWorks.Selection;
 using SolidWorks.Interop.sldworks;
@@ -38,7 +39,22 @@ namespace GCam.SolidWorks.Extraction
         /// </summary>
         private const double LengthToleranceMetres = 1e-6;
 
-        public static IReadOnlyList<Polyline> Extract(
+        /// <summary>
+        /// The selections, tessellated and chained into contours to cut.
+        /// </summary>
+        /// <remarks>
+        /// **Open chains come back too.** They were dropped here with a warning until
+        /// 2026-09-13, because the offsetter could only work on closed contours. It can
+        /// offset one side of an open path now, so a profile that does not close is a
+        /// thing to cut rather than a thing to complain about - which is what HSMWorks
+        /// does, and what makes a partial selection useful.
+        ///
+        /// Each contour carries whether it should be walked backwards, because that is how
+        /// the user picks which side of it the cutter runs on. A chain has one direction,
+        /// so it is reversed if **any** of the picks that built it was marked reversed -
+        /// see <see cref="Chaining.ChainWithSources"/>.
+        /// </remarks>
+        public static IReadOnlyList<ResolvedContour> Extract(
             ModelDoc2 model,
             IEnumerable<ContourSelection> selections,
             JobFrame frame,
@@ -47,42 +63,58 @@ namespace GCam.SolidWorks.Extraction
         {
             log = log ?? NullLog.Instance;
 
-            var pieces = new List<Polyline>();
+            var contours = new List<ResolvedContour>();
 
             if (model == null || selections == null)
             {
-                return pieces;
+                return contours;
             }
 
-            foreach (Edge edge in EdgesOf(model, selections, log))
+            // Kept in step by index: the nth piece came from the nth entry here, which is
+            // what lets a chain be traced back to the picks that made it.
+            var pieces = new List<Polyline>();
+            var pieceOwners = new List<ContourSelection>();
+
+            foreach (OwnedEdge owned in EdgesOf(model, selections, log))
             {
-                Polyline piece = Tessellate(edge, frame, chordToleranceMillimetres);
+                Polyline piece = Tessellate(owned.Edge, frame, chordToleranceMillimetres);
 
                 if (piece != null && !piece.IsEmpty)
                 {
                     pieces.Add(piece);
+                    pieceOwners.Add(owned.Owner);
                 }
             }
 
-            IReadOnlyList<Polyline> chains = Chaining.ChainIntoLoops(pieces);
-
-            // An open chain is a profile that does not close - a partial selection, or a
-            // gap the chaining tolerance could not bridge. The contour strategy cuts
-            // closed profiles only, so say which rather than cutting something wrong.
-            foreach (Polyline open in chains.Where(c => !c.IsClosed))
+            foreach (Chaining.Chain chain in Chaining.ChainWithSources(pieces))
             {
-                log.Warn(
-                    "A selected contour does not close ({0} points); it will not be cut.",
-                    open.Count);
+                bool reversed = chain.Sources.Any(
+                    i => i < pieceOwners.Count && pieceOwners[i] != null && pieceOwners[i].Reversed);
+
+                contours.Add(new ResolvedContour(chain.Path, reversed));
             }
 
-            return chains.Where(c => c.IsClosed).ToList();
+            return contours;
+        }
+
+        /// <summary>An edge and the selection it was reached through.</summary>
+        private struct OwnedEdge
+        {
+            public OwnedEdge(Edge edge, ContourSelection owner)
+            {
+                Edge = edge;
+                Owner = owner;
+            }
+
+            public Edge Edge { get; }
+
+            public ContourSelection Owner { get; }
         }
 
         /// <summary>
         /// Every edge the selections amount to, with tangent propagation applied.
         /// </summary>
-        private static IEnumerable<Edge> EdgesOf(
+        private static IEnumerable<OwnedEdge> EdgesOf(
             ModelDoc2 model, IEnumerable<ContourSelection> selections, IGCamLog log)
         {
             // Reference equality: the CLR hands out one runtime callable wrapper per COM
@@ -109,9 +141,11 @@ namespace GCam.SolidWorks.Extraction
 
                 foreach (Edge edge in EdgesFrom(entity, selection, log))
                 {
+                    // An edge reached through two picks belongs to the first: it is one
+                    // piece of one chain, and it cannot be walked two ways at once.
                     if (edge != null && seen.Add(edge))
                     {
-                        yield return edge;
+                        yield return new OwnedEdge(edge, selection);
                     }
                 }
             }

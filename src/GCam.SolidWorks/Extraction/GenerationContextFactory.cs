@@ -57,7 +57,7 @@ namespace GCam.SolidWorks.Extraction
 
             ResolvedHeights heights = ResolveHeights(operation, model, stock, frame);
 
-            IReadOnlyList<Polyline> contours = ExtractContours(operation, frame);
+            IReadOnlyList<ResolvedContour> contours = ExtractContours(operation, frame);
 
             return new GenerationContext(job, operation, tool, heights, stock, contours);
         }
@@ -212,21 +212,23 @@ namespace GCam.SolidWorks.Extraction
             return null;
         }
 
-        private IReadOnlyList<Polyline> ExtractContours(Operation operation, JobFrame frame)
+        private IReadOnlyList<ResolvedContour> ExtractContours(Operation operation, JobFrame frame)
         {
             if (!(operation.Settings is IContourSelectionOwner owner))
             {
-                return new Polyline[0];
+                return new ResolvedContour[0];
             }
 
-            IReadOnlyList<Polyline> contours = ContourExtraction.Extract(
+            IReadOnlyList<ResolvedContour> contours = ContourExtraction.Extract(
                 _model, owner.Contours, frame, operation.Tolerance, _log);
 
+            // Open profiles cut now, so the only way to select something and get nothing
+            // is for the selections themselves to have gone - which is worth saying
+            // plainly, because the operation still names geometry it can no longer find.
             if (contours.Count == 0 && owner.Contours.Count > 0)
             {
                 throw new GCamUserException(
-                    $"None of '{operation.Name}''s contours form a closed profile. " +
-                    "2D contouring cuts closed profiles only.");
+                    $"None of '{operation.Name}''s selected contours could be found in the model.");
             }
 
             return contours;

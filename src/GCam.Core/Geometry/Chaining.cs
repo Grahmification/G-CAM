@@ -39,18 +39,48 @@ namespace GCam.Core.Geometry
         /// because that is what <see cref="Polyline.IsClosed"/> means.
         /// </remarks>
         public static IReadOnlyList<Polyline> ChainIntoLoops(
+            IEnumerable<Polyline> segments, double tolerance = DefaultTolerance) =>
+            ChainWithSources(segments, tolerance).Select(c => c.Path).ToList();
+
+        /// <summary>
+        /// The same chaining, saying which of the input segments went into each chain.
+        /// </summary>
+        /// <remarks>
+        /// Chaining pools every piece it is given, so one chain can be built from several
+        /// separately picked entities - four edges of a rectangle are four picks and one
+        /// loop. Anything that has to carry a per-pick decision through to the result needs
+        /// to know which picks ended up where, and only this method can say: by the time
+        /// there is a <see cref="Polyline"/>, the pieces have been reversed, reordered and
+        /// merged past recognition.
+        ///
+        /// That is what makes the Reverse button work. **A chain has exactly one direction**
+        /// - it is cut as one continuous move - so reversing any one of the picks that
+        /// built it reverses the whole chain, which is the only coherent answer.
+        ///
+        /// Indices are into the sequence as passed in, counting the null and empty entries
+        /// that are skipped, so they line up with the caller's own list.
+        /// </remarks>
+        public static IReadOnlyList<Chain> ChainWithSources(
             IEnumerable<Polyline> segments, double tolerance = DefaultTolerance)
         {
-            var remaining = (segments ?? Enumerable.Empty<Polyline>())
-                .Where(s => s != null && !s.IsEmpty)
-                .Select(s => s.Points.ToList())
-                .ToList();
+            var remaining = new List<Piece>();
+            int index = 0;
 
-            var chains = new List<Polyline>();
+            foreach (Polyline segment in segments ?? Enumerable.Empty<Polyline>())
+            {
+                if (segment != null && !segment.IsEmpty)
+                {
+                    remaining.Add(new Piece(segment.Points.ToList(), index));
+                }
+
+                index++;
+            }
+
+            var chains = new List<Chain>();
 
             while (remaining.Count > 0)
             {
-                List<Vec3> chain = remaining[0];
+                Piece chain = remaining[0];
                 remaining.RemoveAt(0);
 
                 // Keep sweeping: joining one piece on can make an earlier one fit too.
@@ -61,8 +91,9 @@ namespace GCam.Core.Geometry
 
                     for (int i = 0; i < remaining.Count; i++)
                     {
-                        if (TryJoin(chain, remaining[i], tolerance))
+                        if (TryJoin(chain.Points, remaining[i].Points, tolerance))
                         {
+                            chain.Sources.AddRange(remaining[i].Sources);
                             remaining.RemoveAt(i);
                             grew = true;
                             break;
@@ -70,18 +101,49 @@ namespace GCam.Core.Geometry
                     }
                 }
 
-                bool closed = chain.Count > 2 && Near(chain[0], chain[chain.Count - 1], tolerance);
+                List<Vec3> points = chain.Points;
+                bool closed = points.Count > 2 && Near(points[0], points[points.Count - 1], tolerance);
 
                 if (closed)
                 {
                     // A closed polyline does not repeat its first point.
-                    chain.RemoveAt(chain.Count - 1);
+                    points.RemoveAt(points.Count - 1);
                 }
 
-                chains.Add(new Polyline(chain, closed));
+                chain.Sources.Sort();
+                chains.Add(new Chain(new Polyline(points, closed), chain.Sources));
             }
 
             return chains;
+        }
+
+        /// <summary>A chain, and which of the input segments it was built from.</summary>
+        public sealed class Chain
+        {
+            public Chain(Polyline path, IReadOnlyList<int> sources)
+            {
+                Path = path;
+                Sources = sources;
+            }
+
+            public Polyline Path { get; }
+
+            /// <summary>Indices into the sequence handed to <see cref="ChainWithSources"/>.</summary>
+            public IReadOnlyList<int> Sources { get; }
+        }
+
+        /// <summary>A chain under construction, and where its points came from.</summary>
+        private sealed class Piece
+        {
+            public Piece(List<Vec3> points, int source)
+            {
+                Points = points;
+                Sources = new List<int> { source };
+            }
+
+            public List<Vec3> Points { get; }
+
+            public List<int> Sources { get; }
         }
 
         /// <summary>

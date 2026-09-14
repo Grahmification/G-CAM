@@ -20,13 +20,13 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done | [UI shells](design/ui-shells.md) |
 | `Core/Model` — Job, Stock, JobDocument, the part's tool list | Done, and persisted | [Jobs](design/jobs.md) |
 | `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4, Polyline | Started — what stock, rendering and contouring need | |
-| `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done for closed contours | [Operations](design/operations.md) |
+| `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done. Closed contours by orientation; one side of an open path by extracting it from Clipper's ribbon | [Operations](design/operations.md) |
 | `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh | Done for what exists to draw | [Jobs](design/jobs.md) |
 | `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job and Operation pages | Done (2025 SP3). The Operation page has real gaps, tabulated under "the property page" in the design note | [Operations](design/operations.md) |
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
-| `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Done; a contour generates from selected edges on a real part (2025 SP3) | [Operations](design/operations.md) |
+| `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Done; a contour generates from selected edges on a real part (2025 SP3). Open chains are cut, not discarded | [Operations](design/operations.md) |
 | `Core/Model` — Operation, heights, geometry references, Toolpath | Done | [Operations](design/operations.md) |
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates; face, adaptive and drill are designed only | [Operations](design/operations.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; runs on the STA thread until an `SwDispatcher` exists | [Operations](design/operations.md) |

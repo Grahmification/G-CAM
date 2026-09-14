@@ -13,8 +13,8 @@ using GCam.Core.Tooling;
 namespace GCam.Core.Strategies.Contour2d
 {
     /// <summary>
-    /// 2D contouring: follow a closed profile at a series of depths, with the cutter
-    /// offset to one side of it.
+    /// 2D contouring: follow a profile at a series of depths, with the cutter offset to
+    /// one side of it.
     /// </summary>
     /// <remarks>
     /// The first strategy that computes anything, and the shape the others follow: take a
@@ -32,10 +32,14 @@ namespace GCam.Core.Strategies.Contour2d
     /// Between passes the tool retracts, because a contour is not guaranteed to be able to
     /// stay down - the profile may pass outside the stock.
     ///
+    /// **Open profiles cut as well as closed ones.** Several separate fragments are cut as
+    /// several passes, each with its own lead-in, lead-out and retract - the tool does not
+    /// stay down to link between them, which needs a rule for when a link would gouge.
+    ///
     /// **Not yet implemented, and deliberately visible as gaps rather than as wrong
-    /// numbers:** open contours (only closed profiles cut), ramped entry, multiple
-    /// finishing passes, tabs, chamfering, and rest machining. Each is a parameter that is
-    /// read and then refused in <see cref="Contour2dSettings.Validate"/> or reported here.
+    /// numbers:** ramped entry, multiple finishing passes, tabs, chamfering, rest
+    /// machining, and staying down between fragments. Each is a parameter that is read and
+    /// then refused in <see cref="Contour2dSettings.Validate"/> or reported here.
     /// </remarks>
     public sealed class Contour2dStrategy : IToolpathStrategy
     {
@@ -61,7 +65,7 @@ namespace GCam.Core.Strategies.Contour2d
             Contour2dSettings settings = context.SettingsAs<Contour2dSettings>();
             ResolvedHeights heights = context.Heights;
 
-            IReadOnlyList<Polyline> profiles = context.Contours;
+            IReadOnlyList<ResolvedContour> profiles = context.Contours;
 
             if (profiles == null || profiles.Count == 0)
             {
@@ -80,13 +84,13 @@ namespace GCam.Core.Strategies.Contour2d
             IReadOnlyList<double> depths = PassDepths(settings, heights);
 
             var path = new Toolpath();
-            var start = new Vec3(profiles[0].Points[0].X, profiles[0].Points[0].Y, heights.Clearance);
-            path.Add(Move.Rapid(start));
+            Vec3 first = profiles[0].Path.Points[0];
+            path.Add(Move.Rapid(new Vec3(first.X, first.Y, heights.Clearance)));
 
             int step = 0;
             int total = Math.Max(1, profiles.Count * depths.Count);
 
-            foreach (Polyline profile in profiles)
+            foreach (ResolvedContour profile in profiles)
             {
                 foreach (double depth in depths)
                 {
@@ -157,7 +161,7 @@ namespace GCam.Core.Strategies.Contour2d
 
         private void CutOnePass(
             Toolpath path,
-            Polyline profile,
+            ResolvedContour profile,
             double depth,
             double radius,
             Contour2dSettings settings,
@@ -230,21 +234,41 @@ namespace GCam.Core.Strategies.Contour2d
         /// The profile moved sideways so the cutter's edge runs along it.
         /// </summary>
         /// <remarks>
-        /// The offset is the cutter's radius plus whatever is being left on the wall. Its
-        /// direction comes from which way the contour runs: a contour is oriented
-        /// counter-clockwise for a climb cut and clockwise otherwise, so a single positive
-        /// offset always lands the cutter on the correct side.
+        /// The offset is the cutter's radius plus whatever is being left on the wall.
+        /// Which side it lands on is decided differently for the two kinds of contour,
+        /// because a closed one has an inside and an open one does not:
+        ///
+        /// - **Closed.** Orientation carries the side. The contour is run
+        ///   counter-clockwise for a climb cut and clockwise otherwise, and a single
+        ///   positive offset then lands the cutter correctly without a sign to get
+        ///   backwards.
+        /// - **Open.** There is no inside, so orientation says nothing and the side is
+        ///   named outright. Climb puts the material on the left of travel - a cutter
+        ///   turning clockwise seen from above then has its edge moving with the feed at
+        ///   the point of contact, which is what climb means - so the cutter centre goes
+        ///   to the right.
+        ///
+        /// <see cref="ResolvedContour.Reversed"/> flips whichever of those applies, and is
+        /// applied last so it always wins: for a closed profile that swaps inside for
+        /// outside, and for an open one it swaps hands.
         /// </remarks>
         private Polyline OffsetForCutter(
-            Polyline profile, double radius, Contour2dSettings settings)
+            ResolvedContour profile, double radius, Contour2dSettings settings)
         {
-            bool counterClockwise = settings.Direction == CutDirection.Climb;
-            Polyline oriented = profile.WithDirection(counterClockwise);
-
+            bool climb = settings.Direction == CutDirection.Climb;
             double distance = radius + settings.StockToLeave;
 
-            IReadOnlyList<Polyline> offset = _offsetter.Offset(
-                oriented, distance, ArcTolerance);
+            return profile.Path.IsClosed
+                ? OffsetClosed(profile, climb, distance)
+                : OffsetOpen(profile, climb, distance);
+        }
+
+        private Polyline OffsetClosed(ResolvedContour profile, bool climb, double distance)
+        {
+            bool counterClockwise = climb != profile.Reversed;
+            Polyline oriented = profile.Path.WithDirection(counterClockwise);
+
+            IReadOnlyList<Polyline> offset = _offsetter.Offset(oriented, distance, ArcTolerance);
 
             if (offset.Count == 0)
             {
@@ -254,6 +278,20 @@ namespace GCam.Core.Strategies.Contour2d
             // A pinched shape can offset into several. The longest is the one that is
             // recognisably the profile; the rest are slivers left by the pinch.
             return offset.OrderByDescending(p => p.Length).First().WithDirection(counterClockwise);
+        }
+
+        private Polyline OffsetOpen(ResolvedContour profile, bool climb, double distance)
+        {
+            Polyline walked = profile.Reversed ? profile.Path.Reversed() : profile.Path;
+
+            OffsetSide side = climb ? OffsetSide.Right : OffsetSide.Left;
+
+            IReadOnlyList<Polyline> offset =
+                _offsetter.OffsetOpen(walked, distance, side, ArcTolerance);
+
+            // An offset wider than the path's own features can consume that side entirely.
+            // Nothing to cut is an answer; the queue reports an empty path as a warning.
+            return offset.OrderByDescending(p => p.Length).FirstOrDefault();
         }
 
         private static IEnumerable<Move> ProfileMoves(Polyline profile, double feed)

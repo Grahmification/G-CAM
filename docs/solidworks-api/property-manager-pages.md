@@ -299,6 +299,18 @@ A selection box has no caption at all, so where one needs naming the cheapest an
 to give it its own group box and let the group header do the work - which is what the
 job page's Coordinate system group is for.
 
+## Which row of a selection box is highlighted — **From docs**
+
+`IPropertyManagerPageSelectionbox.CurrentSelection` is the 0-based index of the highlighted
+row, and `SelectionIndex(row)` converts one to the 1-based index `ISelectionMgr` wants.
+That is what lets a button act on one item of a multi-selection — the Operation page's
+Reverse works this way.
+
+**It returns -1 for a box that is not active**, and the help says only the active box can
+have a current selection. Whether pressing a button leaves the box active is not
+documented, so `ReverseHighlightedContour` logs the raw value and refuses with something
+actionable rather than guessing at a row. **Assumed** until a run shows which it is.
+
 ## Selection boxes need a mark each — **From docs**
 
 A selection box is `swControlType_Selectionbox` plus two settings that matter:

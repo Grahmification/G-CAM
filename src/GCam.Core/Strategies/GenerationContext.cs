@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using GCam.Core.Geometry.Primitives;
 using GCam.Core.Model;
 using GCam.Core.Model.Heights;
@@ -32,14 +33,35 @@ namespace GCam.Core.Strategies
             Tool tool,
             ResolvedHeights heights,
             Bounds stock,
-            IReadOnlyList<Polyline> contours = null)
+            IReadOnlyList<ResolvedContour> contours = null)
         {
             Job = job ?? throw new ArgumentNullException(nameof(job));
             Operation = operation ?? throw new ArgumentNullException(nameof(operation));
             Tool = tool ?? throw new ArgumentNullException(nameof(tool));
             Heights = heights ?? throw new ArgumentNullException(nameof(heights));
             Stock = stock;
-            Contours = contours ?? new Polyline[0];
+            Contours = contours ?? new ResolvedContour[0];
+        }
+
+        /// <summary>
+        /// Convenience for plain curves picked with no modifiers - which is every contour
+        /// in a test that does not care about sides.
+        /// </summary>
+        public GenerationContext(
+            Job job,
+            Operation operation,
+            Tool tool,
+            ResolvedHeights heights,
+            Bounds stock,
+            IReadOnlyList<Polyline> contours)
+            : this(
+                job,
+                operation,
+                tool,
+                heights,
+                stock,
+                contours?.Select(c => new ResolvedContour(c)).ToList())
+        {
         }
 
         public Job Job { get; }
@@ -56,8 +78,8 @@ namespace GCam.Core.Strategies
         public Bounds Stock { get; }
 
         /// <summary>
-        /// The operation's selected contours, already resolved to closed chains of points
-        /// in the operation's frame.
+        /// The operation's selected contours, already resolved to chains of points in the
+        /// operation's frame - open or closed - each with the intent it was picked with.
         /// </summary>
         /// <remarks>
         /// Tessellated by `SolidWorks/Extraction` from whatever SOLIDWORKS curves the
@@ -65,11 +87,16 @@ namespace GCam.Core.Strategies
         /// the operation's frame - so a strategy never sees a spline, a metre, or a
         /// rotated coordinate system.
         ///
+        /// **Open chains are contours too.** They were dropped here until 2026-09-13, on
+        /// the grounds that the offsetter could not handle them; it can now, so a partial
+        /// profile is a thing to cut rather than a warning. See
+        /// <see cref="Geometry.Offset.IContourOffsetter.OffsetOpen"/>.
+        ///
         /// Empty for a strategy that does not select contours, and for one that does but
         /// whose selections no longer resolve. The strategy decides which of those is an
         /// error.
         /// </remarks>
-        public IReadOnlyList<Polyline> Contours { get; }
+        public IReadOnlyList<ResolvedContour> Contours { get; }
 
         /// <summary>This operation's own feeds and speeds, not the tool's defaults.</summary>
         public CuttingData Cutting => Operation.Cutting;
