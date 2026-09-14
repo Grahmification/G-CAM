@@ -108,3 +108,36 @@ at that boundary and everything above it is millimetres.
   reference from `IModelDocExtension::GetPersistReference3` says which name to ask
   `SelectByID2` for now, so a renamed coordinate system still resolves. See
   [Jobs](../design/jobs.md) for the migration of parts saved before references.
+
+## Re-selecting an edge or a face: clear the selection first — **Verified (2025 SP3)**
+
+Edges and faces have no names, so `SelectByID2` cannot address one and the persistent
+reference is the only handle. `GetObjectByPersistReference3` returns the object; selecting
+it means `IEntity::Select4`.
+
+**`Select4` deselects an entity that is already selected**, whenever a PropertyManager page
+with a selection list box is up. `IEntity::Select4`'s own Remarks say it, along with the
+other half of the surprise: *"SOLIDWORKS ignores the Append argument because the selection
+is always appended to the selection list."* So `Append: true` does not mean "add to what is
+there" — it means nothing at all, and a second select is a toggle off. It returns false
+when it does that.
+
+That is what made operations look like they had forgotten their geometry. Closing the
+Operation page used to leave its picks selected; reopening it then restored onto a live
+selection, turned every contour back off, and left the box empty — while the references
+themselves had resolved perfectly, so generation went on cutting exactly the right edges.
+An empty box next to a working toolpath is the signature.
+
+Two things follow, and G-CAM does both:
+
+- **Clear the selection before restoring one** — `IModelDoc2::ClearSelection2(true)` at the
+  top of the restore, so nothing can be a toggle-off.
+- **Drop the page's selections when it closes**, as `JobPropertyPage` already did. They are
+  the page's picks, not the user's, and leaving them behind is what made them stale.
+
+The wrong first guess, recorded because it is a plausible-looking dead end: that the
+`Resolve(...) as Entity` cast was returning null, since generation resolved the same
+reference fine and only selecting failed. It was not — the cast succeeded. `IEntity` is
+still the right type to cast to, being where `Select4` is declared, but it was never the
+fault. What settled it was logging the three failure modes apart — reference gone, object
+will not cast, select refused — which turned one ambiguous warning into a one-line answer.

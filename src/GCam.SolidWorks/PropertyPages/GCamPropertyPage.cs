@@ -65,6 +65,20 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected SldWorks SwApp => _swApp;
 
+        /// <summary>True while the page is on screen and taking part in the UI.</summary>
+        protected bool IsOpen => _isOpen;
+
+        /// <summary>
+        /// True while the page is being closed and shown again to change what it displays.
+        /// </summary>
+        /// <remarks>
+        /// Callbacks still arrive during a rebuild, and they describe SOLIDWORKS taking the
+        /// page apart rather than anything the user did. A page that reads its state back
+        /// out of its controls has to ignore them - see
+        /// <see cref="RebuildAfterHandlerReturns"/>.
+        /// </remarks>
+        protected bool IsRebuilding => _rebuilding;
+
         /// <summary>Text in the page's title bar.</summary>
         protected abstract string Title { get; }
 
@@ -248,8 +262,6 @@ namespace GCam.SolidWorks.PropertyPages
                 return;
             }
 
-            _log.Debug("{0}: rebuilding to show changed content.", Title);
-
             _rebuilding = true;
 
             try
@@ -264,7 +276,7 @@ namespace GCam.SolidWorks.PropertyPages
                 _rebuilding = false;
             }
 
-            _log.Debug("{0}: rebuilt.", Title);
+            _log.Debug("{0}: rebuilt to show changed content.", Title);
         }
 
         private void StopRebuildTimer()

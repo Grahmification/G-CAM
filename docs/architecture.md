@@ -23,8 +23,8 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done. Closed contours by orientation; one side of an open path by extracting it from Clipper's ribbon | [Operations](design/operations.md) |
 | `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh | Done for what exists to draw | [Jobs](design/jobs.md) |
 | `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done | [Jobs](design/jobs.md) |
-| `SolidWorks/PropertyPages` — handler base, shared page base, Job and Operation pages | Done (2025 SP3). The Operation page has real gaps, tabulated under "the property page" in the design note | [Operations](design/operations.md) |
-| `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done | |
+| `SolidWorks/PropertyPages` — handler base, shared page base, Job and Operation pages | Done (2025 SP3). The Operation page is five tabs and rebuilds itself to show a change; its real gaps are tabulated under "the property page" in the design note | [Operations](design/operations.md) |
+| `SolidWorks/Selection` — selection boxes to bodies, coordinate systems and contour edges, stored and restored | Done (2025 SP3) | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Done; a contour generates from selected edges on a real part (2025 SP3). Open chains are cut, not discarded | [Operations](design/operations.md) |
 | `Core/Model` — Operation, heights, geometry references, Toolpath | Done | [Operations](design/operations.md) |
@@ -36,7 +36,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Geometry` — Brep, Faceting, Query | Not started; only what contouring needed exists | |
 | `Posts` | Empty project | |
 
-**A 2D contour toolpath generates from selected edges on a real part** as of 2026-09-13, draws in the 3D view, and is saved with the document. **Nothing has been posted** — of the vertical slice below, only step 6 is missing, and `GCam.Posts` is still an empty project.
+**A 2D contour toolpath generates from selected edges on a real part** as of 2026-09-13 — open profiles as well as closed — draws in the 3D view, and is saved with the document. A tool is chosen from a library on the operation's own property page. **Nothing has been posted** — of the vertical slice below, only step 6 is missing, and `GCam.Posts` is still an empty project.
 
 ## Decisions this rests on
 
@@ -89,7 +89,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │                              BoxMesh, ConeMesh, AxisTriad, ToolpathMesh
 │   │   │                              — what to draw, never how
 │   │   ├── Geometry/
-│   │   │   ├── Chaining.cs            loose curve pieces → closed contours
+│   │   │   ├── Chaining.cs            loose curve pieces → contours, open or closed,
+│   │   │   │                          each knowing which pieces it was built from
 │   │   │   ├── Primitives/            Vec3, Bounds, Matrix4, Polyline
 │   │   │   ├── Offset/                IContourOffsetter + Clipper2Offsetter
 │   │   │   ├── Brep/                  own face/edge/loop model, SW-independent

@@ -561,12 +561,34 @@ namespace GCam.SolidWorks.PropertyPages
 
             var missing = new List<string>();
 
-            foreach (ContourSelection contour in Settings().Contours)
+            // Assigning, not reacting. Everything below changes the selection, and the
+            // callbacks that causes would rebuild the contour list out of a box that is
+            // half way through being filled.
+            _loading = true;
+
+            try
             {
-                if (!JobSelections.SelectContour(model, contour, MarkContours))
+                // **Clear first, or nothing restores.** While a PropertyManager page with
+                // a selection box is up, IEntity::Select4 *deselects* an entity that is
+                // already selected - the help says so plainly and returns false when it
+                // happens. The picks are still selected from last time, because closing
+                // this page leaves them behind, so restoring onto a live selection turned
+                // every contour off again and left the box empty. That looked for all the
+                // world like the operation had forgotten its geometry, when the references
+                // had resolved perfectly well a line earlier.
+                model.ClearSelection2(true);
+
+                foreach (ContourSelection contour in Settings().Contours)
                 {
-                    missing.Add(contour.ToString());
+                    if (!JobSelections.SelectContour(model, contour, MarkContours, Log))
+                    {
+                        missing.Add(contour.ToString());
+                    }
                 }
+            }
+            finally
+            {
+                _loading = false;
             }
 
             if (missing.Count > 0)
@@ -616,10 +638,10 @@ namespace GCam.SolidWorks.PropertyPages
         /// </summary>
         /// <remarks>
         /// <see cref="IPropertyManagerPageSelectionbox.CurrentSelection"/> is the row the
-        /// user has highlighted - and is documented to return -1 for a box that is not
-        /// active, which a button press may or may not make it. If that happens the ask is
-        /// refused with something actionable rather than guessing at a contour or silently
-        /// reversing them all; the raw value is logged so it is clear which case it was.
+        /// user has highlighted, or -1 when none is. A button press does not deactivate
+        /// the box - verified on 2025 SP3 - so the row is there to be read whenever one is
+        /// highlighted. With none, the ask is refused with something actionable rather
+        /// than guessing at a contour or silently reversing them all.
         ///
         /// The page is rebuilt afterwards because a shown page cannot be updated - see
         /// <see cref="BrowseForTool"/> - and the status line has to change.
@@ -628,8 +650,6 @@ namespace GCam.SolidWorks.PropertyPages
         {
             List<ContourSelection> contours = Settings().Contours;
             int row = _contours.CurrentSelection;
-
-            Log.Debug("Reverse: selection box row {0} of {1}.", row, contours.Count);
 
             if (row < 0 || row >= contours.Count || contours[row] == null)
             {
@@ -833,9 +853,24 @@ namespace GCam.SolidWorks.PropertyPages
             }
         }
 
+        /// <remarks>
+        /// **A callback is only the user's doing while the page is up and staying up.**
+        /// SOLIDWORKS empties a page's selection boxes as it takes the page apart, and
+        /// during a rebuild it does that on the way to showing the page again. Those
+        /// callbacks are indistinguishable from the user clearing the box, and taking them
+        /// at face value destroys the operation's geometry: on OK an empty list is
+        /// committed over the real one, and on a rebuild there is nothing left for
+        /// <see cref="PageShown"/> to put back. The selections are already held on the
+        /// clone, so there is nothing to lose by ignoring them.
+        /// </remarks>
         protected override void OnSelectionboxListChanged(int id, int count)
         {
             if (_loading || id != IdContours)
+            {
+                return;
+            }
+
+            if (!IsOpen || IsRebuilding || _closing)
             {
                 return;
             }
@@ -879,6 +914,18 @@ namespace GCam.SolidWorks.PropertyPages
             }
         }
 
+        /// <remarks>
+        /// Committing first and clearing the selection last, as
+        /// <see cref="JobPropertyPage"/> does: the edits are read from the clone, which the
+        /// selection callbacks filled in, and clearing could otherwise fire one of those
+        /// and empty it again. <c>_closing</c> guards that in any case.
+        ///
+        /// **The selection is dropped rather than left behind.** These are the page's
+        /// picks, not the user's, and the next thing they do should not start from a
+        /// selection they did not make. It also keeps the *next* show honest: leaving them
+        /// selected is what made <see cref="RestoreContourSelection"/> restore onto a live
+        /// selection and turn every contour back off.
+        /// </remarks>
         protected override void PageClosed(swPropertyManagerPageCloseReasons_e reason)
         {
             if (_closing)
@@ -893,6 +940,8 @@ namespace GCam.SolidWorks.PropertyPages
                 CommitToOperation();
                 Committed?.Invoke(this, _target);
             }
+
+            _activeDocument()?.ClearSelection2(true);
         }
 
         // ---- Committing ------------------------------------------------------

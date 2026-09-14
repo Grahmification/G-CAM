@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using GCam.Core.Diagnostics;
 using GCam.Core.Model;
 using GCam.Core.Strategies.Shared;
 using SolidWorks.Interop.sldworks;
@@ -172,18 +173,42 @@ namespace GCam.SolidWorks.Selection
         /// Selected as an object rather than by name: edges and faces have no names, so
         /// SelectByID2 - which every other selection here goes through - cannot address
         /// one. The persistent reference is the only handle there is.
+        ///
+        /// **Cast to `IEntity`, not `Entity`.** `Select4` is declared on `IEntity`, which
+        /// an edge and a face both support; `Entity` is the coclass interface and a QI for
+        /// it off an `Edge` is not something the API promises. Getting that wrong fails in
+        /// the most confusing way available - the reference resolves perfectly well, so
+        /// generation cuts the right geometry, and only *re-selecting* it comes back empty.
+        ///
+        /// The three ways this can fail are logged apart, because they mean different
+        /// things: a reference that no longer resolves is a model edit, an object that
+        /// will not cast is a bug here, and a refused `Select4` is neither.
         /// </remarks>
-        public static bool SelectContour(ModelDoc2 model, ContourSelection contour, int mark)
+        public static bool SelectContour(
+            ModelDoc2 model, ContourSelection contour, int mark, IGCamLog log = null)
         {
+            log = log ?? NullLog.Instance;
+
             if (model == null || contour == null || contour.IsEmpty)
             {
                 return false;
             }
 
-            var entity = PersistentRefs.Resolve(model, contour.Entity?.PersistentId) as Entity;
+            object found = PersistentRefs.Resolve(model, contour.Entity?.PersistentId);
+
+            if (found == null)
+            {
+                log.Debug("{0} no longer resolves in this part.", contour.Entity);
+                return false;
+            }
+
+            var entity = found as IEntity;
 
             if (entity == null)
             {
+                log.Warn(
+                    "{0} resolved to a {1}, which cannot be selected. This is a G-CAM bug.",
+                    contour.Entity, found.GetType().Name);
                 return false;
             }
 
@@ -197,7 +222,13 @@ namespace GCam.SolidWorks.Selection
 
             data.Mark = mark;
 
-            return entity.Select4(true, data);
+            if (entity.Select4(true, data))
+            {
+                return true;
+            }
+
+            log.Debug("{0} resolved but SOLIDWORKS refused to select it.", contour.Entity);
+            return false;
         }
 
         /// <summary>The solid body with this name, or null. The migration fallback.</summary>

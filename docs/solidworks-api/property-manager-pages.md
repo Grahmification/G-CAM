@@ -306,10 +306,30 @@ row, and `SelectionIndex(row)` converts one to the 1-based index `ISelectionMgr`
 That is what lets a button act on one item of a multi-selection — the Operation page's
 Reverse works this way.
 
-**It returns -1 for a box that is not active**, and the help says only the active box can
-have a current selection. Whether pressing a button leaves the box active is not
-documented, so `ReverseHighlightedContour` logs the raw value and refuses with something
-actionable rather than guessing at a row. **Assumed** until a run shows which it is.
+**It returns -1 when no row is highlighted**, and the help says only the active box can
+have a current selection. Pressing a button does **not** deactivate the box: verified on
+2025 SP3, where Reverse read row 0 of 1 with a row highlighted and -1 without one. So
+`ReverseHighlightedContour` acts on the row when there is one and asks for a highlight when
+there is not, which is the behaviour wanted.
+
+## A page empties its own selection boxes as it comes down — **Verified (2025 SP3)**
+
+`OnSelectionboxListChanged` fires while SOLIDWORKS takes a page apart, reporting the box
+going empty. It is **indistinguishable from the user clearing it**, and a page that reads
+its state back out of its controls will therefore throw that state away at the worst
+possible moment — on OK it commits the empty list over the real one, so the data is gone
+for good.
+
+`JobPropertyPage` avoids it by ordering: it commits first and calls `ClearSelections` last,
+with a comment saying why. That works for a close, and not for anything else.
+
+The rebuild added for the Operation page reopened the hole from a new direction: a rebuild
+*closes* the page on its way to showing it again, so the same emptying callback arrives
+mid-rebuild, and `PageShown` then has nothing left to restore. So the guard is now on the
+state rather than on the ordering — `GCamPropertyPage` exposes `IsOpen` and `IsRebuilding`,
+and a page ignores any selection callback that arrives when it is not both open and
+staying open. What is on the clone is the truth; the box is only the truth while the user
+is using it.
 
 ## Selection boxes need a mark each — **From docs**
 
@@ -478,6 +498,8 @@ Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
 | `Visible` on each show | **Confirmed fatal** — fourth show, every time |
 | Page rebuilt per show, controls created pre-hidden | **Confirmed** |
 | Selection boxes: bodies and coordinate systems | **Not yet exercised** |
+| Selection boxes: contour edges and faces, stored and restored | **Confirmed** — but only after `ClearSelection2`; see [coordinate-systems.md](coordinate-systems.md) |
+| `IPropertyManagerPageSelectionbox.CurrentSelection` after a button press | **Confirmed** — gives the highlighted row, and -1 when none is highlighted |
 | `Visible` on a user-driven stock mode change | **Not yet exercised** — the one remaining caller |
 | A button control, and `OnButtonPress` reaching the page | **Confirmed** — Browse… opens the tool picker |
 | A modal WPF dialog shown from inside `OnButtonPress` | **Confirmed** — the tool library browser, and the nested pump is fine |
@@ -488,4 +510,4 @@ Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
 | Numberbox `Value` and combobox `CurrentSelection` on a shown page | **Not yet exercised** — assume fatal |
 | `RebuildAfterHandlerReturns` — deferred close and re-show | **Confirmed** — Browse rebuilds the Operation page, edits and selections survive |
 | Tabs, and a page-level group above the tab strip | **Confirmed** — the Operation page's five tabs, and the name group that sat above them |
-| A page title that changes per show | **Not yet exercised** — the Operation page titles itself with the operation's name |
+| A page title that changes per show | **Confirmed** — the Operation page titles itself with the operation's name |

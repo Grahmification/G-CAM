@@ -4,11 +4,12 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Built as far as slice 10 of the build order at the end of this document: a 2D contour
-generates from edges selected on a real part — open profiles as well as closed — draws,
-and persists; there is a property page to set it up on, and a tool can be picked out of a
-library into the part. Nothing has been posted, and the page has real gaps — they are
-listed under [the property page](#the-property-page) rather than left to be discovered.
+Built as far as slice 11 of the build order at the end of this document, all of it verified
+by hand on 2025 SP3: a 2D contour generates from edges selected on a real part — open
+profiles as well as closed — draws, and persists; there is a five-tab property page to set
+it up on, a tool can be picked out of a library into the part, and each contour can be
+reversed to cut its other side. Nothing has been posted, and the page has real gaps — they
+are listed under [the property page](#the-property-page) rather than left to be discovered.
 
 The four decisions underneath this document are recorded separately:
 [0006](../decisions/0006-operation-parameters-are-values.md) (values, not expressions),
@@ -722,6 +723,20 @@ be touched on a page about to be shown. A third is a load-order rule rather than
 `PageShown`**, because `SelectByID2` routes by mark and the marks belong to boxes on a page
 that actually exists.
 
+**Restoring a selection begins by clearing the selection**, which is not tidiness.
+`IEntity::Select4` *deselects* an entity that is already selected while a page with a
+selection box is up, so restoring onto a live selection turns every contour back off and
+leaves the box empty — with the references resolving perfectly the whole time, so the
+toolpath still cuts the right geometry. An empty box beside a working toolpath is that
+bug's signature; see
+[coordinate-systems.md](../solidworks-api/coordinate-systems.md). For the same reason the
+page drops its selections when it closes, so they cannot be stale next time.
+
+**Selection callbacks are ignored unless the page is open and staying open.** SOLIDWORKS
+empties a page's boxes as it takes the page apart — including the close a rebuild does on
+its way to showing the page again — and those callbacks are indistinguishable from the user
+clearing the box. Acting on them commits an empty contour list over the real one.
+
 A live preview follows the edit, as the Job page already does with its clone: the page
 edits a clone, the preview shows the clone, Cancel leaves nothing behind. Parameter edits
 redraw the *stock and heights* preview immediately; they do not regenerate the toolpath.
@@ -807,7 +822,8 @@ while they are still cheap to change.
 | 7c | A stopgap creation path: New Operation builds a contour operation from the current selection | **The build order had a hole**: the property page was last, and it is the only thing that can create an operation — so slices 5, 7a and 7b were all unverifiable. This unblocked them | **Superseded by 8** — the stand-in tool and fixed defaults are gone; New Operation still seeds from the selection, which is worth keeping |
 | 8 | The Operation property page | The real way to create and edit one. It replaces the guessing in 7c, not the creation itself | **Done** — 2026-09-13, verified by hand on 2025 SP3. The gaps are listed above |
 | 9 | Choosing a tool: Browse on the page → the library browser as a picker → `JobDocument.Tools` | 8 left no way to put a tool in a part, and an operation with no tool cannot generate | **Done** — 2026-09-13, verified by hand on 2025 SP3. Three crashes taught that a shown page's controls cannot be written to at all; picking a tool rebuilds the page instead |
-| 10 | Open profiles: single-sided offset, open chains kept, per-contour Reverse | A partial selection was refused outright, which is most of what a 2D contour is used for. Only the offsetter was blocking — the strategy already cut several contours, and chaining already produced open ones | **Done** — 2026-09-13, 21 tests. Not verified by hand yet |
+| 10 | Open profiles: single-sided offset, open chains kept, per-contour Reverse | A partial selection was refused outright, which is most of what a 2D contour is used for. Only the offsetter was blocking — the strategy already cut several contours, and chaining already produced open ones | **Done** — 2026-09-13, 21 tests |
+| 11 | Three bugs the slices above exposed: leads on the wrong side, no lead-out on an open profile, and selections that would not restore | Each was invisible until something else worked. None is a slice; they are here because the build order is the record of what was actually done | **Done** — 2026-09-13, 9 tests, verified by hand on 2025 SP3 |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an
@@ -815,9 +831,26 @@ operation, so everything above it was untestable until a stopgap creation path w
 as 7c. Worth remembering when ordering the next subsystem — "can this slice be exercised
 at all?" is a different question from "does this slice depend on that one?".
 
-**And it had the hole twice.** Slice 8 deleted 7c's stand-in tool — correctly, it was a
-stopgap — but the page it put in its place only *selects* from `JobDocument.Tools`, and
-nothing filled that list. `AddTool` had exactly two callers, both on the document-load
+**Each slice exposed the bugs in the one before it.** Everything in slice 11 had been
+shipped and "working" for a while, and none of it could have been noticed sooner:
+
+- The leads had always been on the wrong side, but nothing cut an outside profile and
+  looked at it closely until there was a tool, a page and a picture on screen.
+- Open profiles had no lead-out at all, because the point giving the exit direction was
+  read as though every chain were closed — unreachable until slice 10 let an open chain
+  through.
+- Contours would not restore into the page, which needed a page that reopened often enough
+  for anyone to care.
+
+The pattern is worth naming: **a slice's real test is the slice after it.** Marking one
+done because its own tests pass says nothing about whether it is right, and the three
+above were all found by looking at the screen rather than by the suite. The suite's job
+was to keep them fixed — which is why each of them got a test that was checked against the
+broken code first.
+
+**The build order also had the hole twice.** Slice 8 deleted 7c's stand-in tool —
+correctly, it was a stopgap — but the page it put in its place only *selects* from
+`JobDocument.Tools`, and nothing filled that list. `AddTool` had exactly two callers, both on the document-load
 path, so a fresh part had an empty drop-down, no operation could name a tool, and
 `GenerationContextFactory.ResolveTool` refused every generate. Slice 9 exists to close
 that. The lesson is narrower than the first one and worth having on its own: **when a
