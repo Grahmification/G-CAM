@@ -236,6 +236,34 @@ the fix is the same one this page took: choose a shape that does not need the ca
 the control regardless of the options, so the 2014 change turns a copied-in snippet into
 a control that simply is not there. Pass `Visible | Enabled` unless you mean otherwise.
 
+### Tabs are built with the page and cannot be rearranged later — **From docs**
+
+`IPropertyManagerPage2.AddTab(id, caption, bitmap, options)` returns an
+`IPropertyManagerPageTab`, which has its own `AddGroupBox` and `AddControl2`. Three things
+worth knowing before using it:
+
+- **`AddTab` cannot be used once the page is displayed**, and `IPropertyManagerPageTab.Activate`
+  carries the same restriction. So a page cannot grow, reorder or switch its tabs while it
+  is up — consistent with everything else about a page's shape, and free here because
+  pages are rebuilt per show. To come back to the tab the user was on after a rebuild,
+  record the id in `OnTabClicked` and `Activate` the matching tab during the next build;
+  `OperationPropertyPage` does exactly that.
+- **The bitmap argument is a path to a 16×18 file on disk**, not a resource. An empty
+  string means no bitmap, which is what G-CAM passes — text tabs need no image assets
+  deployed and found at runtime. `options` is documented as unused; pass 0.
+- **Whether tab ids share a namespace with control ids is not documented.** Given that
+  duplicate *control* ids are accepted in silence here (below), G-CAM keeps tab ids in a
+  range well clear of the groups and controls rather than relying on an answer.
+
+**A page-level group and tabs can be mixed** — the group renders above the tab strip.
+Verified on 2025 SP3 with the Operation page's name field, which sat there and worked
+before being removed for other reasons. G-CAM no longer does this anywhere, so treat it as
+known-good rather than exercised.
+
+**The message box is optional.** `SetMessage3` is simply not called when a page has no
+message, which gives no box at all rather than an empty one — worth doing, since the box
+costs a chunk of panel height on every show.
+
 ### Create the page locked — **From docs**
 
 `swPropertyManagerOptions_LockedPage`. The help is unusually blunt: if the page is gone
@@ -447,3 +475,5 @@ Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
 | `IPropertyManagerPageLabel.Caption` on a shown page | **Confirmed fatal** — first call |
 | Numberbox `Value` and combobox `CurrentSelection` on a shown page | **Not yet exercised** — assume fatal |
 | `RebuildAfterHandlerReturns` — deferred close and re-show | **Confirmed** — Browse rebuilds the Operation page, edits and selections survive |
+| Tabs, and a page-level group above the tab strip | **Confirmed** — the Operation page's five tabs, and the name group that sat above them |
+| A page title that changes per show | **Not yet exercised** — the Operation page titles itself with the operation's name |

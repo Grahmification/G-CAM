@@ -631,21 +631,34 @@ material wanting it, and that is a judgement best made with something on screen 
 ## The property page
 
 `OperationPropertyPage` derives from `GCamPropertyPage` and is rebuilt for every show like
-every other page. It builds the groups HSMWorks uses, in that order:
+every other page. It is **five tabs, in HSMWorks' order**, and nothing above them.
 
-| Group | Built by | Contents |
+**The operation's name is the panel title, not a field.** Renaming belongs to the job tree,
+which already does it in place, so a name box on the page would be a second way to do one
+thing — and the panel has to say which operation is being edited anyway. The page also has
+no message box: `GCamPropertyPage.Message` is optional, and a caption nobody reads twice
+costs height on every show.
+
+| Tab | Built by | Contents |
 | --- | --- | --- |
-| Tool | The base page | The tool's name as a header, Browse…, feeds and speeds, coolant |
+| Tool | The base page | Two groups: the tool's name as a header with Browse…, then feed and speed — one physical cutter, but numbers that belong to this operation alone |
 | Geometry | The strategy | Selection boxes for what that strategy takes |
 | Heights | The base page | Five mode + offset rows |
 | Passes | The strategy | Stepover, stepdown, stock to leave, … |
 | Linking | The strategy | Lead-in/out, ramping, retracts — only for strategies that have them |
 
 Tool and Heights are common to every strategy; Geometry, Passes and Linking are
-contour2d's own. **The seam between them is not built yet.** With one strategy, an
+contour2d's own. **The seam between them is not built yet**, but the tabs now fall on it
+exactly: a strategy would contribute three tabs and the base page two. With one strategy an
 `IPageBuilder` would be an abstraction with a single implementation — the project's own
-rule says to wait for the second caller. The methods in `OperationPropertyPage` are named
-and grouped so extracting it is mechanical when the second strategy lands.
+rule says to wait for the second caller — and `BuildToolTab`, `BuildGeometryTab` and the
+rest are named so extracting it stays mechanical.
+
+**Tabs are built, never rearranged.** `AddTab` and `IPropertyManagerPageTab.Activate` are
+both build-time only, like every other part of a page's shape, so the page cannot switch
+tabs while it is up. That is why `OnTabClicked` records the tab id and `BuildControls`
+re-activates it: without that, picking a tool would rebuild the page and throw the user
+back to the first tab.
 
 Two page-killing mistakes the base class already guards, recorded in
 `docs/solidworks-api/property-manager-pages.md`: control ids must be unique per page

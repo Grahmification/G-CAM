@@ -68,8 +68,15 @@ namespace GCam.SolidWorks.PropertyPages
         /// <summary>Text in the page's title bar.</summary>
         protected abstract string Title { get; }
 
-        /// <summary>The blue explanatory box at the top of the page.</summary>
-        protected abstract string Message { get; }
+        /// <summary>
+        /// The blue explanatory box at the top of the page. Null or empty for no box.
+        /// </summary>
+        /// <remarks>
+        /// Worth leaving empty once a page explains itself: the box costs a chunk of the
+        /// panel's height on every show, and a caption nobody reads twice is worse than
+        /// the space it takes.
+        /// </remarks>
+        protected virtual string Message => null;
 
         /// <summary>
         /// Adds the page's groups and controls. Called once, while the page is closed -
@@ -168,11 +175,16 @@ namespace GCam.SolidWorks.PropertyPages
                     " with status " + errors + ".");
             }
 
-            page.SetMessage3(
-                Message,
-                (int)swPropertyManagerPageMessageVisibility.swMessageBoxVisible,
-                (int)swPropertyManagerPageMessageExpanded.swMessageBoxExpand,
-                Title);
+            // Skipped entirely rather than set to "", so a page with nothing to say gets
+            // no box rather than an empty one.
+            if (!string.IsNullOrEmpty(Message))
+            {
+                page.SetMessage3(
+                    Message,
+                    (int)swPropertyManagerPageMessageVisibility.swMessageBoxVisible,
+                    (int)swPropertyManagerPageMessageExpanded.swMessageBoxExpand,
+                    Title);
+            }
 
             BuildControls(page);
 
@@ -358,13 +370,29 @@ namespace GCam.SolidWorks.PropertyPages
         protected static IPropertyManagerPageGroup AddGroup(
             IPropertyManagerPage2 page, int id, string caption)
         {
-            var group = page.AddGroupBox(
+            return Checked(
+                page.AddGroupBox(id, caption, GroupBoxOptions) as IPropertyManagerPageGroup,
                 id,
-                caption,
-                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible |
-                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded)
-                as IPropertyManagerPageGroup;
+                caption);
+        }
 
+        /// <summary>A group box inside a tab rather than directly on the page.</summary>
+        protected static IPropertyManagerPageGroup AddGroup(
+            IPropertyManagerPageTab tab, int id, string caption)
+        {
+            return Checked(
+                tab.AddGroupBox(id, caption, GroupBoxOptions) as IPropertyManagerPageGroup,
+                id,
+                caption);
+        }
+
+        private const int GroupBoxOptions =
+            (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible |
+            (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded;
+
+        private static IPropertyManagerPageGroup Checked(
+            IPropertyManagerPageGroup group, int id, string caption)
+        {
             if (group == null)
             {
                 throw new InvalidOperationException(
@@ -372,6 +400,32 @@ namespace GCam.SolidWorks.PropertyPages
             }
 
             return group;
+        }
+
+        /// <summary>
+        /// A tab across the top of the page. Groups go inside it rather than on the page.
+        /// </summary>
+        /// <remarks>
+        /// Build-time only, like every other part of a page's shape - the help is explicit
+        /// that AddTab "cannot be used if the page is already displayed", which costs
+        /// nothing here because these pages are rebuilt for every show anyway.
+        ///
+        /// No bitmap. The help wants a 16x18 file on disk and treats an empty string as
+        /// "no bitmap", which is the behaviour wanted: text tabs, no image assets to
+        /// deploy and find at runtime.
+        /// </remarks>
+        protected static IPropertyManagerPageTab AddTab(
+            IPropertyManagerPage2 page, int id, string caption)
+        {
+            var tab = page.AddTab(id, caption, string.Empty, 0) as IPropertyManagerPageTab;
+
+            if (tab == null)
+            {
+                throw new InvalidOperationException(
+                    "AddTab returned null for tab " + id + " (" + caption + ").");
+            }
+
+            return tab;
         }
 
         protected static IPropertyManagerPageTextbox AddTextbox(

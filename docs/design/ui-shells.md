@@ -7,7 +7,7 @@ them. Read this before adding a surface or moving one between technologies.
 | --- | --- | --- |
 | CommandManager tab, toolbar and menu | `GCamAddin.CommandManager.cs` | Five buttons: New Job, New Operation, Tool Library, Post Process, Simulate |
 | Manager Pane tab | `JobTreeTabs` → `JobTreeTabHost` → `JobTreeView` | ActiveX → WinForms → ElementHost → WPF; selecting it brings the G-CAM ribbon tab forward |
-| Job and Operation PropertyManager pages | `GCamPropertyPage` → `JobPropertyPage` / `OperationPropertyPage` | SOLIDWORKS-native, built by the API rather than WPF. Both are real and both work |
+| Job and Operation PropertyManager pages | `GCamPropertyPage` → `JobPropertyPage` / `OperationPropertyPage` | SOLIDWORKS-native, built by the API rather than WPF. Both are real and both work. The Operation page is five tabs — see [Operations](operations.md) |
 | Tool library window | `ToolLibraryDialog.ShowBrowser` / `PickTool` → `ToolLibraryWindow` | Modal, parented to the SW frame. One window, two modes — browse, or choose a tool for an operation |
 
 Post Process and Simulate are still deliberate no-ops.

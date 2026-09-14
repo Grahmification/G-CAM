@@ -34,18 +34,23 @@ namespace GCam.SolidWorks.PropertyPages
     public sealed class OperationPropertyPage : GCamPropertyPage
     {
         // Groups.
-        private const int GroupName = 1;
         private const int GroupTool = 2;
         private const int GroupGeometry = 3;
         private const int GroupHeights = 4;
         private const int GroupPasses = 5;
         private const int GroupLinking = 6;
+        private const int GroupFeeds = 7;
 
-        // Name.
-        private const int IdName = 10;
+        // Tabs, numbered well clear of the groups and controls. Nothing documents whether
+        // tab ids share a namespace with control ids, and duplicate control ids are
+        // accepted in silence here - so the ranges are kept apart rather than trusted.
+        private const int TabTool = 100;
+        private const int TabGeometry = 101;
+        private const int TabHeights = 102;
+        private const int TabPasses = 103;
+        private const int TabLinking = 104;
 
         // Tool. Ids are spaced so a control can be added to a group without renumbering.
-        private const int IdToolLabel = 20;
         private const int IdToolName = 21;
         private const int IdSpindleRpm = 22;
         private const int IdCuttingFeed = 23;
@@ -142,7 +147,6 @@ namespace GCam.SolidWorks.PropertyPages
         private readonly Func<JobDocument> _jobsForActiveDocument;
         private readonly Func<Tool> _pickToolIntoPart;
 
-        private IPropertyManagerPageTextbox _name;
         private IPropertyManagerPageLabel _toolName;
         private IPropertyManagerPageButton _toolBrowse;
         private IPropertyManagerPageNumberbox _spindleRpm;
@@ -163,6 +167,17 @@ namespace GCam.SolidWorks.PropertyPages
         private IPropertyManagerPageNumberbox _leadOutRadius;
 
         private readonly Dictionary<int, HeightField> _heights = new Dictionary<int, HeightField>();
+
+        /// <summary>The tabs of the page as currently built, by tab id.</summary>
+        /// <remarks>
+        /// Rebuilt with the page, like every other control reference here - a tab from a
+        /// previous build belongs to a page that has been released.
+        /// </remarks>
+        private readonly Dictionary<int, IPropertyManagerPageTab> _tabs =
+            new Dictionary<int, IPropertyManagerPageTab>();
+
+        /// <summary>Which tab to open on. Survives a rebuild; reset by a fresh show.</summary>
+        private int _activeTab = TabTool;
 
         private Operation _target;
         private Operation _working;
@@ -203,10 +218,21 @@ namespace GCam.SolidWorks.PropertyPages
         /// <summary>Raised when the page is accepted, with the operation as edited.</summary>
         public event EventHandler<Operation> Committed;
 
-        protected override string Title => "G-CAM Operation";
-
-        protected override string Message =>
-            "Choose the tool, the profile to follow, and how deep to cut.";
+        /// <summary>
+        /// The operation's own name, so the panel says which one is being edited.
+        /// </summary>
+        /// <remarks>
+        /// Read from the clone rather than the target, so it is right for a new operation
+        /// that the job has not been given yet. The title is fixed when the page is built,
+        /// which is every show - and the name is not editable here, so it cannot go stale
+        /// while the page is up.
+        ///
+        /// Falls back to a generic title rather than an empty one: a nameless panel looks
+        /// broken, and <see cref="GCamPropertyPage"/> puts this string into its failure
+        /// messages too.
+        /// </remarks>
+        protected override string Title =>
+            string.IsNullOrWhiteSpace(_working?.Name) ? "G-CAM Operation" : _working.Name;
 
         /// <summary>
         /// Opens the page for an operation, which may or may not be in the job yet.
@@ -221,38 +247,72 @@ namespace GCam.SolidWorks.PropertyPages
             JobDocument jobs = _jobsForActiveDocument();
             _currentTool = jobs?.FindTool(_working.ToolId);
 
+            // A fresh edit starts at the first tab. Only a rebuild keeps its place, which
+            // is why this is here rather than in BuildControls.
+            _activeTab = TabTool;
+
             Show();
         }
 
+        /// <remarks>
+        /// Five tabs, in HSMWorks' order, so anyone coming from it finds things where they
+        /// expect - and nothing above them. The operation's name is the panel
+        /// <see cref="Title"/> rather than a field, and renaming happens in the job tree,
+        /// which already does it in place.
+        /// </remarks>
         protected override void BuildControls(IPropertyManagerPage2 page)
         {
-            IPropertyManagerPageGroup name = AddGroup(page, GroupName, "Name");
-            _name = AddTextbox(name, IdName, "What this operation is called in the tree.");
-
             _heights.Clear();
+            _tabs.Clear();
 
-            BuildToolGroup(page);
-            BuildGeometryGroup(page);
-            BuildHeightsGroup(page);
-            BuildPassesGroup(page);
-            BuildLinkingGroup(page);
+            BuildToolTab(page);
+            BuildGeometryTab(page);
+            BuildHeightsTab(page);
+            BuildPassesTab(page);
+            BuildLinkingTab(page);
+
+            ActivateRememberedTab();
+        }
+
+        /// <summary>
+        /// Opens the page on the tab the user was last on.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="IPropertyManagerPageTab.Activate"/> is build-time only, like the
+        /// rest of a page's shape, so this is the only moment it can be done - and it is
+        /// the moment that matters, because a rebuild would otherwise throw the user back
+        /// to the first tab every time they picked a tool.
+        /// </remarks>
+        private void ActivateRememberedTab()
+        {
+            IPropertyManagerPageTab tab;
+
+            if (_tabs.TryGetValue(_activeTab, out tab))
+            {
+                tab.Activate();
+            }
         }
 
         // ---- Common to every strategy ----------------------------------------
 
-        private void BuildToolGroup(IPropertyManagerPage2 page)
+        private void BuildToolTab(IPropertyManagerPage2 page)
         {
-            IPropertyManagerPageGroup group = AddGroup(page, GroupTool, "Tool");
+            IPropertyManagerPageTab tab = AddTab(page, TabTool, "Tool");
+            _tabs[TabTool] = tab;
 
-            // A header reading the tool's name, with Browse under it - HSMWorks' shape,
-            // and the only shape available: a combobox's item list cannot change while
-            // the page is shown, and the list of part tools does change, because Browse
-            // is what changes it. See the remarks on BrowseForTool.
-            AddLabel(group, IdToolLabel, "Tool");
+            // The cutter and the numbers it runs at are two things, and HSMWorks splits
+            // them the same way: one physical tool, shared across the part, but feeds and
+            // speeds that belong to this operation alone.
+            IPropertyManagerPageGroup group = AddGroup(tab, GroupTool, "Tool");
 
+            // The tool's name as a header with Browse under it - HSMWorks' shape, and the
+            // only shape available: a combobox's item list cannot change while the page is
+            // shown, and the list of part tools does change, because Browse is what
+            // changes it. See the remarks on BrowseForTool.
+            //
             // Not bolded: IPropertyManagerPageLabel.Bold takes a character range, so it
             // would have to be re-applied every time the caption changes length - more
-            // calls on a live page, which is the thing that keeps killing SOLIDWORKS,
+            // calls on a shown page, which is the thing that keeps killing SOLIDWORKS,
             // bought for nothing but weight.
             _toolName = AddLabel(group, IdToolName, NoToolCaption);
 
@@ -263,28 +323,33 @@ namespace GCam.SolidWorks.PropertyPages
                     "Choose a tool from a library and copy it into this part.");
             }
 
+            IPropertyManagerPageGroup feeds = AddGroup(tab, GroupFeeds, "Feed and speed");
+
             _spindleRpm = AddNumberbox(
-                group, IdSpindleRpm, "Spindle speed (rpm)",
+                feeds, IdSpindleRpm, "Spindle speed (rpm)",
                 "This operation's spindle speed. Seeded from the tool, then its own.",
                 maximum: 100000, increment: 100);
 
             _cuttingFeed = AddNumberbox(
-                group, IdCuttingFeed, "Cutting feed (mm/min)",
+                feeds, IdCuttingFeed, "Cutting feed (mm/min)",
                 "Feed for cutting moves.", maximum: 100000, increment: 10);
 
             _plungeFeed = AddNumberbox(
-                group, IdPlungeFeed, "Plunge feed (mm/min)",
+                feeds, IdPlungeFeed, "Plunge feed (mm/min)",
                 "Feed straight down. Usually a fraction of the cutting feed.",
                 maximum: 100000, increment: 10);
 
-            AddLabel(group, IdCoolantLabel, "Coolant");
+            AddLabel(feeds, IdCoolantLabel, "Coolant");
             _coolant = AddCombobox(
-                group, IdCoolant, Coolants.Select(c => c.ToString()), "Coolant to request.");
+                feeds, IdCoolant, Coolants.Select(c => c.ToString()), "Coolant to request.");
         }
 
-        private void BuildHeightsGroup(IPropertyManagerPage2 page)
+        private void BuildHeightsTab(IPropertyManagerPage2 page)
         {
-            IPropertyManagerPageGroup group = AddGroup(page, GroupHeights, "Heights");
+            IPropertyManagerPageTab tab = AddTab(page, TabHeights, "Heights");
+            _tabs[TabHeights] = tab;
+
+            IPropertyManagerPageGroup group = AddGroup(tab, GroupHeights, "Heights");
 
             AddHeight(group, "Clearance", IdClearanceLabel, IdClearanceMode, IdClearanceOffset,
                 "Where rapids cross, above everything including clamps.");
@@ -327,9 +392,12 @@ namespace GCam.SolidWorks.PropertyPages
 
         // ---- 2D contour's own ------------------------------------------------
 
-        private void BuildGeometryGroup(IPropertyManagerPage2 page)
+        private void BuildGeometryTab(IPropertyManagerPage2 page)
         {
-            IPropertyManagerPageGroup group = AddGroup(page, GroupGeometry, "Geometry");
+            IPropertyManagerPageTab tab = AddTab(page, TabGeometry, "Geometry");
+            _tabs[TabGeometry] = tab;
+
+            IPropertyManagerPageGroup group = AddGroup(tab, GroupGeometry, "Geometry");
 
             _contours = AddSelectionbox(
                 group,
@@ -345,9 +413,12 @@ namespace GCam.SolidWorks.PropertyPages
                 "Pick edges of a closed profile, or a face to follow its boundary.");
         }
 
-        private void BuildPassesGroup(IPropertyManagerPage2 page)
+        private void BuildPassesTab(IPropertyManagerPage2 page)
         {
-            IPropertyManagerPageGroup group = AddGroup(page, GroupPasses, "Passes");
+            IPropertyManagerPageTab tab = AddTab(page, TabPasses, "Passes");
+            _tabs[TabPasses] = tab;
+
+            IPropertyManagerPageGroup group = AddGroup(tab, GroupPasses, "Passes");
 
             AddLabel(group, IdDirectionLabel, "Direction");
             _direction = AddCombobox(
@@ -374,9 +445,12 @@ namespace GCam.SolidWorks.PropertyPages
                 "How far the toolpath may deviate from the model.");
         }
 
-        private void BuildLinkingGroup(IPropertyManagerPage2 page)
+        private void BuildLinkingTab(IPropertyManagerPage2 page)
         {
-            IPropertyManagerPageGroup group = AddGroup(page, GroupLinking, "Linking");
+            IPropertyManagerPageTab tab = AddTab(page, TabLinking, "Linking");
+            _tabs[TabLinking] = tab;
+
+            IPropertyManagerPageGroup group = AddGroup(tab, GroupLinking, "Linking");
 
             _leadIn = AddCheckbox(
                 group, IdLeadIn, "Lead in",
@@ -404,8 +478,6 @@ namespace GCam.SolidWorks.PropertyPages
             try
             {
                 Contour2dSettings settings = Settings();
-
-                _name.Text = _working.Name ?? string.Empty;
 
                 _toolName.Caption = ToolLabel();
                 ShowCuttingData();
@@ -572,24 +644,25 @@ namespace GCam.SolidWorks.PropertyPages
 
         // ---- Reacting --------------------------------------------------------
 
+        /// <summary>
+        /// Remembers which tab the user moved to, so a rebuild comes back to it.
+        /// </summary>
+        /// <remarks>
+        /// Returning true lets the click through; this only watches. The id is recorded
+        /// rather than the tab object because the object belongs to the build that is
+        /// about to be thrown away.
+        /// </remarks>
+        protected override bool OnTabClicked(int id)
+        {
+            _activeTab = id;
+            return true;
+        }
+
         protected override void OnButtonPress(int id)
         {
             if (id == IdToolBrowse && _pickToolIntoPart != null)
             {
                 BrowseForTool();
-            }
-        }
-
-        protected override void OnTextboxChanged(int id, string text)
-        {
-            if (_loading)
-            {
-                return;
-            }
-
-            if (id == IdName)
-            {
-                _working.Name = text;
             }
         }
 
