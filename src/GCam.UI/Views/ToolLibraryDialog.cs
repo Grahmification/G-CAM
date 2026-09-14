@@ -33,20 +33,27 @@ namespace GCam.UI.Views
         }
 
         /// <summary>
-        /// Opens the browser as a tool chooser. Returns the tool the user picked, or null.
+        /// Opens the browser as a tool chooser. Returns a copy of the tool the user
+        /// picked, stamped with the library it came from, or null if they picked nothing.
         /// </summary>
         /// <remarks>
-        /// Nothing calls this yet. It exists because assigning a tool to an operation is
-        /// the obvious next use, and having the entry point now means the window's
-        /// contract does not have to change then.
+        /// Two gestures choose a tool, because both are what people try: double-clicking
+        /// a row picks it and closes, and OK picks whichever row is selected. Cancel,
+        /// Escape and the close box pick nothing - backing out of a browse is not a
+        /// choice, and returning the last-highlighted row would assign a tool nobody
+        /// agreed to.
+        ///
+        /// The result is checked out of its library rather than handed over directly, so
+        /// the caller can put it in a part without the two sharing one object. See
+        /// <see cref="ToolLibraryWindow.CheckOut"/>.
         /// </remarks>
         public static Tool PickTool(IntPtr owner, IGCamSettings settings, IGCamLog log = null)
         {
-            Tool picked = null;
+            Tool activated = null;
             ToolLibraryWindow window = Show(
-                owner, settings, log, onActivated: tool => picked = tool);
+                owner, settings, log, onActivated: tool => activated = tool);
 
-            return picked ?? window.SelectedTool;
+            return window.CheckOut(activated ?? (window.Committed ? window.SelectedTool : null));
         }
 
         private static ToolLibraryWindow Show(

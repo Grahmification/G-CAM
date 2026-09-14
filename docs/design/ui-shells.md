@@ -8,9 +8,25 @@ them. Read this before adding a surface or moving one between technologies.
 | CommandManager tab, toolbar and menu | `GCamAddin.CommandManager.cs` | Five buttons: New Job, New Operation, Tool Library, Post Process, Simulate |
 | Manager Pane tab | `JobTreeTabs` → `JobTreeTabHost` → `JobTreeView` | ActiveX → WinForms → ElementHost → WPF; selecting it brings the G-CAM ribbon tab forward |
 | Job and Operation PropertyManager pages | `GCamPropertyPage` → `JobPropertyPage` / `OperationPropertyPage` | SOLIDWORKS-native, built by the API rather than WPF. Both are real and both work |
-| Tool library window | `ToolLibraryDialog.Show` → `ToolLibraryWindow` | Modal, parented to the SW frame |
+| Tool library window | `ToolLibraryDialog.ShowBrowser` / `PickTool` → `ToolLibraryWindow` | Modal, parented to the SW frame. One window, two modes — browse, or choose a tool for an operation |
 
 Post Process and Simulate are still deliberate no-ops.
+
+**The tool library window doubles as the tool picker**, and the difference is one
+delegate: `PickTool` subscribes to `ToolActivated`, which is what makes double-clicking a
+row choose it and close rather than open the editor. OK also chooses, taking whichever row
+is selected; Cancel, Escape and the close box choose nothing, because returning the
+last-highlighted row would assign a tool nobody agreed to.
+
+What comes back is **checked out**, not handed over — `ToolLibrary.CheckOut` copies the
+tool and stamps `SourceLibraryId` ([0003](../decisions/0003-jobs-embed-their-tools.md)).
+The window's tools belong to the open library, so a part that kept one would edit the
+library every time somebody changed the operation's cutter.
+
+The Operation page reaches this through a `Func<Tool>` supplied by `GCamAddin.Tools.cs`,
+because the page is in `GCam.SolidWorks` and the browser is WPF in `GCam.UI`. Neither
+project can see the other; the add-in is the only one that sees both. See
+[Operations](operations.md) for what happens to the tool once it arrives.
 
 **The toolbar buttons act on the default job**; the job tree's context menu is where a specific job or operation is reached, and it is the richer route — Edit, New Operation, Generate, Duplicate, Make Default, Delete. Post Process and Simulate do nothing at all yet.
 

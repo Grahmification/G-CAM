@@ -109,6 +109,127 @@ shown or while it is closed. A page cannot grow a control while it is on screen,
 why G-CAM rebuilds a page per show rather than reshaping one — see the `Visible` section
 below, which is the other half of that story and much the more dangerous half.
 
+### A combobox's item list cannot change once the page is shown — **Verified (2025 SP3)**
+
+**`Clear` and `InsertItem` each kill SOLIDWORKS outright** — instantly, on the first call,
+with no exception, no log line, no Windows Error Reporting entry and no dump. Same family
+as `IPropertyManagerPageControl.Visible` below, and worse: `Visible` at least takes about
+four shows, these take one call. Two separate crashes, one per method.
+
+`Clear`, `AddItems`, `InsertItem` and `DeleteItem` carry no Remark restricting *when* they
+may be called, unlike `AddControl2`, which says plainly that a control cannot join a page
+already on screen. **That silence is not permission.** The help does annotate what is legal
+while displayed when it means to — `IPropertyManagerPage2.Title` says "whether the page is
+displayed or not", `EnableButton` says "only after the page is displayed" — so an
+unannotated member should be read as page-build-time only.
+
+What is actually known, as opposed to inferred:
+
+| On a shown page | |
+| --- | --- |
+| `Combobox.Clear` | **Fatal**, measured |
+| `Combobox.InsertItem` | **Fatal**, measured |
+| `Label.Caption` | **Fatal**, measured |
+| `IPropertyManagerPageControl.Visible` | **Fatal**, measured (section below) |
+| `Numberbox.Value`, `Combobox.CurrentSelection` | **Unknown** — assume fatal |
+
+**Nothing written to a shown page has yet been seen to survive.** Two generalisations were
+tried and both were wrong, at the cost of a crash each:
+
+1. *"`Clear` is fatal because it invalidates the `CurrentSelection` index, so append with
+   `InsertItem` instead."* `InsertItem` died in the same place.
+2. *"Changing a control's structure is fatal; writing a value to a control that already
+   exists is fine."* `Label.Caption` is exactly such a value write, and it died too — as
+   `Visible` should already have warned, being an ordinary property on an existing control.
+
+The working rule is therefore the blunt one: **a shown page's controls are read-only.**
+Anything else needs measuring first.
+
+**The design consequence is not a workaround, it is a constraint.** A control whose
+*contents* must change while the page is up cannot be a combobox. Two wrong turns were
+taken before this was clear: first rebuilding the list with `Clear` + `AddItems`, then —
+on the theory that `Clear` was fatal because it invalidated the `CurrentSelection` index —
+appending with `InsertItem` instead. Both died at the same place. The list is simply frozen.
+
+So `OperationPropertyPage` shows the tool as a **label plus a Browse button**, HSMWorks'
+own shape, which needs no list: Browse is what adds a tool to the part, so the set of tools
+necessarily changes while the page is up, and no drop-down can survive that.
+
+### Changing what a shown page shows: rebuild it
+
+`GCamPropertyPage.RebuildAfterHandlerReturns` is the sanctioned way, and given the table
+above it is the *only* way. It closes the page and shows it again, which re-runs
+`BuildControls` and `LoadControls` with the page closed — the one state in which controls
+can be written to at all.
+
+Two details it gets right and a hand-rolled version would not:
+
+- **Deferred by a one-shot `System.Windows.Forms.Timer`, never immediate.** Closing the
+  page inside a handler leaves it gone when the handler returns to SOLIDWORKS, which the
+  `LockedPage` remark says may crash. The timer moves the work to a later turn of the
+  message pump, after the handler has returned normally.
+- **The derived page never sees the close.** `AfterClose` skips `PageClosed` and the tab
+  restore while rebuilding, so nothing is committed, the Manager Pane tab the user came
+  from is preserved, and `LoadControls` repopulates from the clone being edited — edits in
+  progress survive the rebuild.
+
+This is cheap because these pages are rebuilt for every show already; building one is a
+dozen API calls.
+
+**How it was found**, since the symptom names nothing: the crash leaves no trace anywhere,
+so the only evidence is which log line was written last. `BrowseForTool` was bisected with
+a `Log.Debug` between every call. That works only because `shared: true` on the Serilog
+file sink flushes per event, so the last line written is trustworthy even through a hard
+kill — see `LoggingSetup.cs`. It is the technique to reach for next time; there is nothing
+else to go on.
+
+Cleared by the same runs, and worth knowing because all three were suspects:
+`IModelDoc2::SetSaveFlag` from inside a live page handler, a modal WPF dialog shown from
+inside `OnButtonPress`, and the nested message pump that comes with it.
+
+### It is not a threading problem, and WPF is not involved — **Verified (2025 SP3)**
+
+Worth writing down because it is the natural suspicion and it is wrong, and because the
+same wrong turn was taken during the `Visible` investigation before it.
+
+**There is no `IThreadSafe` in the SOLIDWORKS API.** Every "Thread" topic in the 2025 help
+is a *cosmetic thread* — `ICThread`, `IThreadFeatureData`, `swThreadMethod_e` — screw
+threads on a part, not CPU threads. Checked against the installed CHM.
+
+**WPF does not run the dialog on another thread.** `Window.ShowDialog` pushes a nested
+`Dispatcher` frame on the *calling* thread; a WPF Dispatcher is affinitized to the thread
+that created the window, which here is SOLIDWORKS' main STA thread. There is no thread
+switch and so nothing to marshal back from. See [wpf-in-solidworks.md](wpf-in-solidworks.md).
+
+The evidence from the crashes themselves says the same thing four ways:
+
+- Each crash happened **after** the WPF dialog had closed and returned, on a direct COM
+  call to a page control.
+- `IModelDoc2::SetSaveFlag` in the same handler, with the same dialog just dismissed, was
+  fine.
+- The fix — a deferred rebuild driven by a **WinForms** timer, no WPF anywhere — works.
+- Each crash was **deterministic on the first call** of one named method. Threading faults
+  are intermittent and move around; these did neither.
+
+That last point generalises, and the `Visible` section below reached it first from the
+opposite direction: *a deterministic-looking crash that moves when you change unrelated
+things is a resource story, not a threading story.* A crash that reproduces on call one of
+a specific method is an API-contract story. Neither is a threading story.
+
+What genuinely is unsettled about WPF here is narrower and separate: re-entrancy from the
+nested pump (SOLIDWORKS can deliver notifications while a modal dialog is up — untested),
+modeless windows (Assumed, untested), and `ElementHost` keyboard and focus inside the
+FeatureManager tab, which is a real problem but a different one. Threading proper only
+starts to matter when toolpath calculation leaves the STA thread, which needs the
+`SwDispatcher` that does not exist yet.
+
+**A live `Visible` call is still in the codebase and is now a prime suspect.**
+`JobPropertyPage.ShowControlsFor` calls it from inside `OnComboboxSelectionChanged` when
+the stock mode changes — a shown page, the exact conditions that are fatal here. It is
+listed below as not yet exercised, which is the only reason it has not bitten. Changing
+stock mode on the Job page should be expected to crash until someone proves otherwise, and
+the fix is the same one this page took: choose a shape that does not need the call.
+
 ### `AddControl2` hides controls you do not explicitly make visible — **From docs**
 
 `swControlOptions_Visible` is mandatory with `AddControl2`. The older `AddControl` showed
@@ -318,3 +439,11 @@ Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
 | Page rebuilt per show, controls created pre-hidden | **Confirmed** |
 | Selection boxes: bodies and coordinate systems | **Not yet exercised** |
 | `Visible` on a user-driven stock mode change | **Not yet exercised** — the one remaining caller |
+| A button control, and `OnButtonPress` reaching the page | **Confirmed** — Browse… opens the tool picker |
+| A modal WPF dialog shown from inside `OnButtonPress` | **Confirmed** — the tool library browser, and the nested pump is fine |
+| `IModelDoc2::SetSaveFlag` from inside a live page handler | **Confirmed** |
+| `IPropertyManagerPageCombobox.Clear` on a shown page | **Confirmed fatal** — first call |
+| `IPropertyManagerPageCombobox.InsertItem` on a shown page | **Confirmed fatal** — first call |
+| `IPropertyManagerPageLabel.Caption` on a shown page | **Confirmed fatal** — first call |
+| Numberbox `Value` and combobox `CurrentSelection` on a shown page | **Not yet exercised** — assume fatal |
+| `RebuildAfterHandlerReturns` — deferred close and re-show | **Confirmed** — Browse rebuilds the Operation page, edits and selections survive |

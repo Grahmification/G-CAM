@@ -42,6 +42,11 @@ namespace GCam.SolidWorks.PropertyPages
         private IPropertyManagerPage2 _page;
         private bool _isOpen;
 
+        // A rebuild is a close and a show that the derived page must not see as either:
+        // no commit, no tab restore, no reloading of what it is editing.
+        private bool _rebuilding;
+        private System.Windows.Forms.Timer _rebuildTimer;
+
         // The document the page was shown against, and the Manager Pane tab that was
         // active at the time. Borrowed, never released - see manager-pane-tabs.md.
         private ModelDoc2 _shownAgainst;
@@ -176,8 +181,103 @@ namespace GCam.SolidWorks.PropertyPages
 
         // ---- Manager Pane tab -----------------------------------------------
 
+        /// <summary>
+        /// Rebuilds and re-shows the page once the current handler has returned, so it
+        /// displays content that changed while it was up.
+        /// </summary>
+        /// <remarks>
+        /// **This is the only way to change what a shown page shows.** A control's
+        /// contents are fixed once the page is displayed: a combobox's item list and a
+        /// label's caption both kill SOLIDWORKS outright if written to, with nothing in
+        /// any log - see docs/solidworks-api/property-manager-pages.md. Since the page is
+        /// rebuilt for every show anyway, building it again is cheap and is the sanctioned
+        /// shape rather than a workaround.
+        ///
+        /// **Deferred, never immediate.** Closing the page inside a handler leaves it gone
+        /// when the handler returns control to SOLIDWORKS, which the help says may crash -
+        /// the same warning that makes these pages `LockedPage`. A one-shot timer moves
+        /// the work to a later turn of the message pump, by which time the handler has
+        /// returned normally.
+        ///
+        /// The derived page sees nothing: no <see cref="PageClosed"/>, no tab restore, and
+        /// <see cref="LoadControls"/> repopulates from whatever it is editing, so edits in
+        /// progress survive.
+        /// </remarks>
+        protected void RebuildAfterHandlerReturns()
+        {
+            if (_rebuildTimer != null || !_isOpen)
+            {
+                return;
+            }
+
+            _rebuildTimer = new System.Windows.Forms.Timer { Interval = 1 };
+            _rebuildTimer.Tick += OnRebuildTick;
+            _rebuildTimer.Start();
+        }
+
+        /// <summary>Entry point 7. Runs on the STA thread, after the handler returned.</summary>
+        private void OnRebuildTick(object sender, EventArgs e)
+        {
+            try
+            {
+                StopRebuildTimer();
+                Rebuild();
+            }
+            catch (Exception ex)
+            {
+                Errors.Handle(ex, nameof(RebuildAfterHandlerReturns));
+            }
+        }
+
+        private void Rebuild()
+        {
+            if (!_isOpen)
+            {
+                return;
+            }
+
+            _log.Debug("{0}: rebuilding to show changed content.", Title);
+
+            _rebuilding = true;
+
+            try
+            {
+                // Cancel, not Okay: this is not the user accepting anything. AfterClose
+                // sees _rebuilding and skips PageClosed, so nothing is committed or lost.
+                _page.Close(false);
+                Show();
+            }
+            finally
+            {
+                _rebuilding = false;
+            }
+
+            _log.Debug("{0}: rebuilt.", Title);
+        }
+
+        private void StopRebuildTimer()
+        {
+            if (_rebuildTimer == null)
+            {
+                return;
+            }
+
+            _rebuildTimer.Stop();
+            _rebuildTimer.Tick -= OnRebuildTick;
+            _rebuildTimer.Dispose();
+            _rebuildTimer = null;
+        }
+
         private void RememberManagerPaneTab()
         {
+            // A rebuild must keep the tab the page was originally opened from. By now
+            // the active tab is the PropertyManager's own, so re-reading it would make
+            // OK land somewhere the user never was.
+            if (_rebuilding)
+            {
+                return;
+            }
+
             _shownAgainst = null;
             _returnToTab = -1;
 
@@ -233,6 +333,14 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected sealed override void AfterClose()
         {
+            // A rebuild closes the page on its way to showing it again. It is not a close
+            // the page is entitled to react to: committing here would accept edits the
+            // user has not finished, and restoring the tab would fight the re-show.
+            if (_rebuilding)
+            {
+                return;
+            }
+
             RestoreManagerPaneTab();
             PageClosed(_closeReason);
         }
@@ -330,6 +438,27 @@ namespace GCam.SolidWorks.PropertyPages
                 SlowIncr: increment / 10);
 
             return box;
+        }
+
+        /// <summary>
+        /// A push button. Presses arrive at <c>OnButtonPress</c> with this id.
+        /// </summary>
+        /// <remarks>
+        /// The caption is set explicitly as well as passed to <c>AddControl2</c>. A
+        /// button is the one control here whose caption really is its visible text -
+        /// <see cref="AddLabel"/> records that the boxes ignore theirs - and leaving it
+        /// to the shared path invites the wrong conclusion about which of the two is
+        /// doing the work.
+        /// </remarks>
+        protected static IPropertyManagerPageButton AddButton(
+            IPropertyManagerPageGroup group, int id, string caption, string tip)
+        {
+            var button = AddControl<IPropertyManagerPageButton>(
+                group, id, swPropertyManagerPageControlType_e.swControlType_Button, caption, tip);
+
+            button.Caption = caption;
+
+            return button;
         }
 
         protected static IPropertyManagerPageCheckbox AddCheckbox(
@@ -461,6 +590,7 @@ namespace GCam.SolidWorks.PropertyPages
         /// </summary>
         public void Dispose()
         {
+            StopRebuildTimer();
             ReleasePage();
         }
 

@@ -4,9 +4,11 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Built as far as slice 8 of the build order at the end of this document: a 2D contour
-generates from edges selected on a real part, draws, and persists, and there is a property
-page to set it up on. Nothing has been posted.
+Built as far as slice 9 of the build order at the end of this document: a 2D contour
+generates from edges selected on a real part, draws, and persists; there is a property
+page to set it up on, and a tool can be picked out of a library into the part. Nothing has
+been posted, and the page has real gaps — they are listed under
+[the property page](#the-property-page) rather than left to be discovered.
 
 The four decisions underneath this document are recorded separately:
 [0006](../decisions/0006-operation-parameters-are-values.md) (values, not expressions),
@@ -122,6 +124,23 @@ Taking a tool from a library copies it into `JobDocument.Tools` once, keeping `T
 and stamping `SourceLibraryId` exactly as [0003](../decisions/0003-jobs-embed-their-tools.md)
 already specifies. A second operation wanting the same tool **selects the existing part
 tool and shares it** — it does not copy again.
+
+**Browse on the Operation page is the way a tool gets into a part.** It opens the tool
+library browser as a picker ([UI shells](ui-shells.md)), checks the chosen tool out of its
+library, and hands it to `JobDocument.AddTool`, which is idempotent by `Tool.Id` — so
+picking a tool the part already holds selects the copy that is here. The page then
+re-reads the part's list rather than appending to its own, because the tool it gets back
+is the part's copy and not always the one picked.
+
+**Picking a tool writes to the part immediately, and Cancel on the page does not take it
+back.** Two reasons, and they are the ones already recorded elsewhere in this project: the
+tool list is the carousel, so a tool belongs to the part whether or not an operation uses
+it — an unused tool stays until `RemoveTool` takes it out — and the same logic makes
+creating a tool library write at once rather than waiting for a commit (see
+[architecture.md](../architecture.md)). Holding the tool on the page's clone instead would
+throw it away whenever somebody chose a cutter, thought better of the operation and
+cancelled. Adding a tool marks the document dirty for the same reason every other CAM edit
+does: SOLIDWORKS only offers to write during a save it has already decided to do.
 
 The split that makes sharing safe:
 
@@ -616,7 +635,7 @@ every other page. It builds the groups HSMWorks uses, in that order:
 
 | Group | Built by | Contents |
 | --- | --- | --- |
-| Tool | The base page | Part-tool picker, feeds and speeds, coolant |
+| Tool | The base page | The tool's name as a header, Browse…, feeds and speeds, coolant |
 | Geometry | The strategy | Selection boxes for what that strategy takes |
 | Heights | The base page | Five mode + offset rows |
 | Passes | The strategy | Stepover, stepdown, stock to leave, … |
@@ -639,6 +658,50 @@ that actually exists.
 A live preview follows the edit, as the Job page already does with its clone: the page
 edits a clone, the preview shows the clone, Cancel leaves nothing behind. Parameter edits
 redraw the *stock and heights* preview immediately; they do not regenerate the toolpath.
+**Not built yet** — see the gaps below.
+
+**The tool is a header label and a Browse button, not a drop-down**, which is HSMWorks'
+shape and — it turns out — the only shape available. A shown page's controls cannot be
+written to at all: `Combobox.Clear`, `Combobox.InsertItem` and `Label.Caption` have each
+killed SOLIDWORKS on their first call, with nothing in any log (verified 2025 SP3, see
+[property-manager-pages.md](../solidworks-api/property-manager-pages.md)). Browse is what
+puts a tool in the part, so the set of tools necessarily changes while the page is up, and
+no drop-down could survive that whatever the refresh mechanism.
+
+**Picking a tool therefore rebuilds the page** rather than updating it, through
+`GCamPropertyPage.RebuildAfterHandlerReturns`. The rebuild is invisible apart from a
+flicker: the page is rebuilt for every show anyway, edits in progress live on the clone
+and are reloaded, and the selections come back with `PageShown`.
+
+It reads "No tool chosen" when there is none. That state has to be visible: it is where
+every new operation starts, and on a part with no tools it is the only state until Browse
+is used. The very first version of this page had no way to say it — a not-found tool id
+was clamped to the first row — so the page displayed a tool while `Operation.ToolId` was
+still null, and generation refused with "has no tool" against a page that plainly showed
+one.
+
+**Only a tool reachable through a library can be chosen.** Browse opens the library
+browser, and a tool already in the part is re-picked from the library it came from, which
+works because `AddTool` is idempotent by `Tool.Id`. The gap is a part tool whose library
+has gone — from an old document, or a machine that never had that library — which cannot
+be selected at all. The fix is the part-tool list the browser is meant to grow, described
+above; it is the same feature, and it closes this at the same time.
+
+### What the page does not have yet
+
+Recorded here rather than left as an impression of completeness. None of these are
+decisions to leave them out; they are unbuilt.
+
+| Gap | Notes |
+| --- | --- |
+| `Comment` and `Enabled` | Both exist on `Operation` and are committed by the page, with no control to set them |
+| The `FromSelection` height mode | Offered in all five mode drop-downs, and it cannot work: there is no reference selection box to set `HeightSetting.Reference`, and `GenerationContextFactory.HeightOf` returns null on every path. Either wire both ends or take the mode out of the list |
+| `Operation.Validate()` | Never called. OK commits an operation with no tool or no contour without saying so, and the complaint arrives at generation time instead |
+| Lead `Distance`, `Sweep`, `VerticalRadius`, `Perpendicular` | Stored, round-tripped and read by the strategy; not editable |
+| Contour modifiers | `PropagateTangent`, `PropagateAlongZ` and `Reversed` are stored as intent but unreachable — and `OnSelectionboxListChanged` rebuilds the list wholesale, so they would reset on any selection edit anyway |
+| The derived feeds and speeds | Surface speed and feed per tooth are meant to be editable at both ends (see above); only the canonical values have boxes. `FeedsAndSpeeds` is already in Core |
+| Conditional visibility | Maximum stepdown shows when multiple depths is off; the lead-out radius shows when "same as lead in" is ticked. `JobPropertyPage.ShowControlsFor` is the pattern to copy |
+| The live preview | Described above, not built |
 
 ## Validation and state
 
@@ -674,13 +737,24 @@ while they are still cheap to change.
 | 7a | `Contour2dStrategy` + `Polyline` + offsetting via Clipper2 | The first real toolpath, and pure Core so the geometry can be asserted headlessly | **Done** — 2026-09-13, 24 tests |
 | 7b | `SolidWorks/Extraction` — selections → tessellated contours, `GenerationContextFactory`, Generate in the tree menu, toolpaths drawn | The half that needs a real part, and what makes 7a visible | **Done** — 2026-09-13, verified by hand on 2025 SP3 after two fixes: a missing part-frame transform, and a lead-in that plunged onto the wall |
 | 7c | A stopgap creation path: New Operation builds a contour operation from the current selection | **The build order had a hole**: the property page was last, and it is the only thing that can create an operation — so slices 5, 7a and 7b were all unverifiable. This unblocked them | **Superseded by 8** — the stand-in tool and fixed defaults are gone; New Operation still seeds from the selection, which is worth keeping |
-| 8 | The Operation property page | The real way to create and edit one. It replaces the guessing in 7c, not the creation itself | **Done** — 2026-09-13, verified by hand on 2025 SP3. Minimal by design; the absent controls are listed above |
+| 8 | The Operation property page | The real way to create and edit one. It replaces the guessing in 7c, not the creation itself | **Done** — 2026-09-13, verified by hand on 2025 SP3. The gaps are listed above |
+| 9 | Choosing a tool: Browse on the page → the library browser as a picker → `JobDocument.Tools` | 8 left no way to put a tool in a part, and an operation with no tool cannot generate | **Done** — 2026-09-13, verified by hand on 2025 SP3. Three crashes taught that a shown page's controls cannot be written to at all; picking a tool rebuilds the page instead |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an
 operation, so everything above it was untestable until a stopgap creation path was added
 as 7c. Worth remembering when ordering the next subsystem — "can this slice be exercised
 at all?" is a different question from "does this slice depend on that one?".
+
+**And it had the hole twice.** Slice 8 deleted 7c's stand-in tool — correctly, it was a
+stopgap — but the page it put in its place only *selects* from `JobDocument.Tools`, and
+nothing filled that list. `AddTool` had exactly two callers, both on the document-load
+path, so a fresh part had an empty drop-down, no operation could name a tool, and
+`GenerationContextFactory.ResolveTool` refused every generate. Slice 9 exists to close
+that. The lesson is narrower than the first one and worth having on its own: **when a
+slice removes a stopgap, the thing the stopgap stood in for is part of that slice**, not a
+follow-up. It read as complete because the page was the visible half and the visible half
+worked — on a part that already had tools stored in it.
 
 Two orderings were considered and rejected. **Rendering first** (slice 4 before 2) would
 show something in the 3D view on day one, but the renderer is already proven by the stock

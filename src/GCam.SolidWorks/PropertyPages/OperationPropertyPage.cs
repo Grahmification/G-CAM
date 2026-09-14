@@ -46,12 +46,13 @@ namespace GCam.SolidWorks.PropertyPages
 
         // Tool. Ids are spaced so a control can be added to a group without renumbering.
         private const int IdToolLabel = 20;
-        private const int IdTool = 21;
+        private const int IdToolName = 21;
         private const int IdSpindleRpm = 22;
         private const int IdCuttingFeed = 23;
         private const int IdPlungeFeed = 24;
         private const int IdCoolantLabel = 25;
         private const int IdCoolant = 26;
+        private const int IdToolBrowse = 27;
 
         // Geometry.
         private const int IdContours = 30;
@@ -94,6 +95,18 @@ namespace GCam.SolidWorks.PropertyPages
         private const int MarkContours = 1;
 
         /// <summary>
+        /// What the tool header reads when the operation has no tool.
+        /// </summary>
+        /// <remarks>
+        /// An operation with no tool has to be shown as such: it is the state every new
+        /// operation starts in, and on a part with no tools it is the only state until
+        /// Browse is used. A control that cannot say "none" ends up displaying a tool the
+        /// operation is not using, which is how the first version of this page came to
+        /// show one while <see cref="Operation.ToolId"/> was still null.
+        /// </remarks>
+        private const string NoToolCaption = "No tool chosen";
+
+        /// <summary>
         /// The height modes offered, in the order they appear. Kept beside the captions so
         /// the two cannot drift.
         /// </summary>
@@ -127,9 +140,11 @@ namespace GCam.SolidWorks.PropertyPages
 
         private readonly Func<ModelDoc2> _activeDocument;
         private readonly Func<JobDocument> _jobsForActiveDocument;
+        private readonly Func<Tool> _pickToolIntoPart;
 
         private IPropertyManagerPageTextbox _name;
-        private IPropertyManagerPageCombobox _tool;
+        private IPropertyManagerPageLabel _toolName;
+        private IPropertyManagerPageButton _toolBrowse;
         private IPropertyManagerPageNumberbox _spindleRpm;
         private IPropertyManagerPageNumberbox _cuttingFeed;
         private IPropertyManagerPageNumberbox _plungeFeed;
@@ -152,7 +167,10 @@ namespace GCam.SolidWorks.PropertyPages
         private Operation _target;
         private Operation _working;
         private Job _job;
-        private List<Tool> _tools = new List<Tool>();
+
+        /// <summary>The part tool the working operation uses, or null. Drives the header.</summary>
+        private Tool _currentTool;
+
         private bool _closing;
 
         // True while LoadControls is assigning. Setting a combobox or number box fires its
@@ -160,17 +178,26 @@ namespace GCam.SolidWorks.PropertyPages
         // combo would re-seed the feeds over the ones just loaded.
         private bool _loading;
 
+        /// <param name="pickToolIntoPart">
+        /// Chooses a tool from a library and puts it in the active part, returning the
+        /// part's own copy or null if nothing was picked. A delegate rather than a call,
+        /// because the browser is WPF in GCam.UI and this project cannot reference it -
+        /// the add-in is the only place that sees both halves. Null simply means the page
+        /// offers no Browse button.
+        /// </param>
         public OperationPropertyPage(
             SldWorks swApp,
             ErrorHandler errors,
             IGCamLog log,
             Func<ModelDoc2> activeDocument,
-            Func<JobDocument> jobsForActiveDocument)
+            Func<JobDocument> jobsForActiveDocument,
+            Func<Tool> pickToolIntoPart = null)
             : base(swApp, errors, log)
         {
             _activeDocument = activeDocument ?? throw new ArgumentNullException(nameof(activeDocument));
             _jobsForActiveDocument = jobsForActiveDocument
                                      ?? throw new ArgumentNullException(nameof(jobsForActiveDocument));
+            _pickToolIntoPart = pickToolIntoPart;
         }
 
         /// <summary>Raised when the page is accepted, with the operation as edited.</summary>
@@ -192,7 +219,7 @@ namespace GCam.SolidWorks.PropertyPages
             _closing = false;
 
             JobDocument jobs = _jobsForActiveDocument();
-            _tools = jobs?.Tools.ToList() ?? new List<Tool>();
+            _currentTool = jobs?.FindTool(_working.ToolId);
 
             Show();
         }
@@ -217,10 +244,24 @@ namespace GCam.SolidWorks.PropertyPages
         {
             IPropertyManagerPageGroup group = AddGroup(page, GroupTool, "Tool");
 
+            // A header reading the tool's name, with Browse under it - HSMWorks' shape,
+            // and the only shape available: a combobox's item list cannot change while
+            // the page is shown, and the list of part tools does change, because Browse
+            // is what changes it. See the remarks on BrowseForTool.
             AddLabel(group, IdToolLabel, "Tool");
-            _tool = AddCombobox(
-                group, IdTool, _tools.Select(ToolCaption),
-                "The tool this operation cuts with. Tools are shared across the part.");
+
+            // Not bolded: IPropertyManagerPageLabel.Bold takes a character range, so it
+            // would have to be re-applied every time the caption changes length - more
+            // calls on a live page, which is the thing that keeps killing SOLIDWORKS,
+            // bought for nothing but weight.
+            _toolName = AddLabel(group, IdToolName, NoToolCaption);
+
+            if (_pickToolIntoPart != null)
+            {
+                _toolBrowse = AddButton(
+                    group, IdToolBrowse, "Browse…",
+                    "Choose a tool from a library and copy it into this part.");
+            }
 
             _spindleRpm = AddNumberbox(
                 group, IdSpindleRpm, "Spindle speed (rpm)",
@@ -366,14 +407,8 @@ namespace GCam.SolidWorks.PropertyPages
 
                 _name.Text = _working.Name ?? string.Empty;
 
-                _tool.CurrentSelection = (short)Math.Max(0, _tools.FindIndex(
-                    t => string.Equals(t.Id, _working.ToolId, StringComparison.Ordinal)));
-
-                _spindleRpm.Value = _working.Cutting.SpindleRpm;
-                _cuttingFeed.Value = _working.Cutting.CuttingFeed;
-                _plungeFeed.Value = _working.Cutting.PlungeFeed;
-                _coolant.CurrentSelection =
-                    (short)Math.Max(0, Array.IndexOf(Coolants, _working.Cutting.Coolant));
+                _toolName.Caption = ToolLabel();
+                ShowCuttingData();
 
                 LoadHeight(IdClearanceMode, _working.Heights.Clearance);
                 LoadHeight(IdRetractMode, _working.Heights.Retract);
@@ -457,7 +492,93 @@ namespace GCam.SolidWorks.PropertyPages
             }
         }
 
+        // ---- The tool --------------------------------------------------------
+
+        /// <summary>What the tool header reads for the working operation.</summary>
+        private string ToolLabel() =>
+            _currentTool == null ? NoToolCaption : ToolCaption(_currentTool);
+
+        /// <summary>
+        /// Puts the working operation's feeds, speed and coolant into their boxes.
+        /// </summary>
+        /// <remarks>
+        /// The caller holds <c>_loading</c>: every assignment here fires a change
+        /// callback that would write the value straight back.
+        /// </remarks>
+        private void ShowCuttingData()
+        {
+            _spindleRpm.Value = _working.Cutting.SpindleRpm;
+            _cuttingFeed.Value = _working.Cutting.CuttingFeed;
+            _plungeFeed.Value = _working.Cutting.PlungeFeed;
+            _coolant.CurrentSelection =
+                (short)Math.Max(0, Array.IndexOf(Coolants, _working.Cutting.Coolant));
+        }
+
+        /// <summary>
+        /// Picks a tool from a library, puts it in the part, and selects it here.
+        /// </summary>
+        /// <remarks>
+        /// **Nothing here writes to a control, because a shown page does not accept it.**
+        /// Three separate calls have each killed SOLIDWORKS outright on their first use -
+        /// `Combobox.Clear`, `Combobox.InsertItem` and `Label.Caption` - with no
+        /// exception, no log line and no crash report, exactly like
+        /// `IPropertyManagerPageControl.Visible`. All verified on 2025 SP3 by bisecting
+        /// this method with log lines; see property-manager-pages.md.
+        ///
+        /// So the tool is shown as a header label with a Browse button under it -
+        /// HSMWorks' shape - and picking one **rebuilds the page** through
+        /// <see cref="GCamPropertyPage.RebuildAfterHandlerReturns"/> rather than updating
+        /// it in place. A drop-down would not have worked whatever the refresh mechanism:
+        /// Browse is what adds a tool to the part, so the list of tools necessarily
+        /// changes while the page is up.
+        ///
+        /// The cost is that only a tool reachable through a library can be chosen. Tools
+        /// already in the part are re-picked from the library they came from, which
+        /// works because <see cref="JobDocument.AddTool"/> is idempotent - but a part
+        /// tool whose library has gone cannot be selected at all. The fix is the
+        /// part-tool list the browser is meant to grow; see docs/design/operations.md.
+        ///
+        /// **The tool reaches the part as soon as it is picked, and Cancel does not take
+        /// it back.** That is deliberate, and it is what the tool list already means: a
+        /// tool is in the carousel whether or not an operation uses it, and an unused one
+        /// stays until somebody removes it deliberately
+        /// (<see cref="JobDocument.RemoveTool"/>). The same reasoning makes creating a
+        /// tool library write immediately - see architecture.md. Holding the tool on the
+        /// clone instead would throw it away whenever someone chose a cutter, thought
+        /// better of the operation, and cancelled.
+        ///
+        /// The part's list is re-read rather than appended to, because
+        /// <see cref="JobDocument.AddTool"/> is idempotent by <see cref="Tool.Id"/>:
+        /// picking a tool the part already has selects the copy that is here rather than
+        /// adding a second one, and the returned tool is that copy.
+        /// </remarks>
+        private void BrowseForTool()
+        {
+            Tool partTool = _pickToolIntoPart();
+
+            if (partTool == null)
+            {
+                return;
+            }
+
+            _currentTool = partTool;
+            _working.UseTool(partTool);
+
+            // Nothing is written into the controls - the header caption and the feed
+            // boxes are set by LoadControls when the page is built again. Writing them
+            // now is what kills SOLIDWORKS; see the remarks above.
+            RebuildAfterHandlerReturns();
+        }
+
         // ---- Reacting --------------------------------------------------------
+
+        protected override void OnButtonPress(int id)
+        {
+            if (id == IdToolBrowse && _pickToolIntoPart != null)
+            {
+                BrowseForTool();
+            }
+        }
 
         protected override void OnTextboxChanged(int id, string text)
         {
@@ -501,29 +622,6 @@ namespace GCam.SolidWorks.PropertyPages
 
             switch (id)
             {
-                case IdTool:
-                    if (item >= 0 && item < _tools.Count)
-                    {
-                        // Re-seeds the feeds, which is why the boxes are reloaded after.
-                        _working.UseTool(_tools[item]);
-
-                        _loading = true;
-                        try
-                        {
-                            _spindleRpm.Value = _working.Cutting.SpindleRpm;
-                            _cuttingFeed.Value = _working.Cutting.CuttingFeed;
-                            _plungeFeed.Value = _working.Cutting.PlungeFeed;
-                            _coolant.CurrentSelection =
-                                (short)Math.Max(0, Array.IndexOf(Coolants, _working.Cutting.Coolant));
-                        }
-                        finally
-                        {
-                            _loading = false;
-                        }
-                    }
-
-                    break;
-
                 case IdCoolant:
                     if (item >= 0 && item < Coolants.Length)
                     {

@@ -15,7 +15,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Diagnostics` — logging, error policy, user exceptions | Done | [error-handling.md](error-handling.md) |
 | `Core/Settings` — XML settings store | Done | |
 | `Core/Tooling` — tools, holders, cutter profiles, libraries, HSM import, edit sessions | Done | |
-| `UI/Views` — error dialog, tool library browser and editor, profile preview | Done | [UI shells](design/ui-shells.md) |
+| `UI/Views` — error dialog, tool library browser and editor, profile preview | Done. The browser doubles as the tool picker the Operation page browses with | [UI shells](design/ui-shells.md) |
 | `AddIn` — CommandManager, COM registration | Done | [UI shells](design/ui-shells.md) |
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done | [UI shells](design/ui-shells.md) |
 | `Core/Model` — Job, Stock, JobDocument, the part's tool list | Done, and persisted | [Jobs](design/jobs.md) |
@@ -23,7 +23,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done for closed contours | [Operations](design/operations.md) |
 | `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh | Done for what exists to draw | [Jobs](design/jobs.md) |
 | `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done | [Jobs](design/jobs.md) |
-| `SolidWorks/PropertyPages` — handler base, shared page base, Job and Operation pages | Done (2025 SP3). The Operation page is deliberately minimal — see the gaps in the design note | [UI shells](design/ui-shells.md) |
+| `SolidWorks/PropertyPages` — handler base, shared page base, Job and Operation pages | Done (2025 SP3). The Operation page has real gaps, tabulated under "the property page" in the design note | [Operations](design/operations.md) |
 | `SolidWorks/Selection` — selection boxes to body and coordinate-system names | Done | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Done; a contour generates from selected edges on a real part (2025 SP3) | [Operations](design/operations.md) |
@@ -160,6 +160,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │       ├── GCamAddin.CommandManager.cs   toolbar, menu and ribbon tab construction
 │       ├── GCamAddin.Callbacks.cs     the methods those buttons resolve by name
 │       ├── GCamAddin.Jobs.cs          job commands behind the tree and the buttons
+│       ├── GCamAddin.Tools.cs         the library browser as a picker → the part's
+│       │                              tool list; the join UI and SolidWorks cannot make
 │       ├── GCamAddinRegistration.cs   COM registration (already written)
 │       ├── Composition/               DI wiring, Serilog setup, AssemblyResolver
 │       ├── Diagnostics/               Serilog adapter for Core's IGCamLog

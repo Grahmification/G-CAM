@@ -229,6 +229,10 @@ namespace GCam.AddIn
         /// The document and its tools are resolved per show rather than captured, for the
         /// same reason the Job page resolves its preview that way: one page serves
         /// whichever part is in front.
+        ///
+        /// Choosing a tool is passed in as a delegate because the page cannot reach the
+        /// browser: it lives in GCam.SolidWorks and the browser is WPF in GCam.UI. See
+        /// <see cref="PickToolIntoPart"/>.
         /// </remarks>
         private OperationPropertyPage CreateOperationPage()
         {
@@ -237,7 +241,8 @@ namespace GCam.AddIn
                 _errors,
                 _log,
                 () => _swApp.ActiveDoc as ModelDoc2,
-                () => _jobTreeTabs?.JobsForActiveDocument());
+                () => _jobTreeTabs?.JobsForActiveDocument(),
+                PickToolIntoPart);
 
             page.Committed += OnOperationCommitted;
             return page;

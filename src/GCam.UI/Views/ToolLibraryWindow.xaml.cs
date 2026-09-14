@@ -46,6 +46,31 @@ namespace GCam.UI.Views
         /// <summary>Raised when a tool row is double-clicked.</summary>
         public event EventHandler<Tool> ToolActivated;
 
+        /// <summary>
+        /// A copy of <paramref name="tool"/> taken out of the library it belongs to, or
+        /// null if it is not in the library currently open.
+        /// </summary>
+        /// <remarks>
+        /// Checked out rather than handed straight over. The tools in this window belong
+        /// to the open <see cref="ToolLibrary"/>, so a part that kept one would edit the
+        /// library every time someone changed the operation's cutter.
+        /// <see cref="ToolLibrary.CheckOut"/> is the Core rule for taking a tool out: it
+        /// keeps <see cref="Tool.Id"/> and stamps <see cref="Tool.SourceLibraryId"/>, so
+        /// the pair still identifies the library entry it came from - see
+        /// docs/decisions/0003-jobs-embed-their-tools.md.
+        /// </remarks>
+        public Tool CheckOut(Tool tool)
+        {
+            ToolLibrary library = _model.CurrentLibrary;
+
+            if (tool == null || library == null || library.FindById(tool.Id) == null)
+            {
+                return null;
+            }
+
+            return library.CheckOut(tool.Id);
+        }
+
         private void OnAddFolder(object sender, RoutedEventArgs e)
         {
             // WinForms' folder browser rather than a WPF one: WPF has no folder picker,
