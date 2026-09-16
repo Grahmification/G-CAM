@@ -13,6 +13,7 @@ namespace GCam.UI.ViewModels
         private bool _isSelected;
         private bool _isExpanded = true;
         private bool _isEditing;
+        private bool _isSuppressed;
 
         protected JobTreeNode(string name)
         {
@@ -58,6 +59,16 @@ namespace GCam.UI.ViewModels
 
         /// <summary>Whether this kind of node can be renamed at all.</summary>
         public virtual bool CanRename => false;
+
+        /// <summary>
+        /// Drawn greyed out. Only an operation is ever suppressed, but the flag is on the
+        /// base because one label template serves every kind of node.
+        /// </summary>
+        public bool IsSuppressed
+        {
+            get => _isSuppressed;
+            set => Set(ref _isSuppressed, value);
+        }
     }
 
     /// <summary>A job, with its operations underneath it.</summary>
@@ -95,10 +106,21 @@ namespace GCam.UI.ViewModels
             : base(operation.Name)
         {
             Operation = operation;
+            IsSuppressed = !operation.Enabled;
         }
 
         public Operation Operation { get; }
 
         public override string Glyph => "⚙";
+
+        /// <summary>
+        /// Operations rename in place, like jobs.
+        /// </summary>
+        /// <remarks>
+        /// This is the *only* way to rename one: the Operation property page deliberately
+        /// has no name field, using the operation's name as its panel title instead, on the
+        /// grounds that the tree already renames in place. See docs/design/operations.md.
+        /// </remarks>
+        public override bool CanRename => true;
     }
 }

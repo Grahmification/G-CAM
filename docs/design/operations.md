@@ -4,12 +4,14 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Built as far as slice 11 of the build order at the end of this document, all of it verified
-by hand on 2025 SP3: a 2D contour generates from edges selected on a real part — open
-profiles as well as closed — draws, and persists; there is a five-tab property page to set
-it up on, a tool can be picked out of a library into the part, and each contour can be
-reversed to cut its other side. Nothing has been posted, and the page has real gaps — they
-are listed under [the property page](#the-property-page) rather than left to be discovered.
+Built as far as slice 12 of the build order at the end of this document, everything up to
+slice 11 verified by hand on 2025 SP3: a 2D contour generates from edges selected on a real
+part — open profiles as well as closed — draws, and persists; there is a five-tab property
+page to set it up on, a tool can be picked out of a library into the part, and each contour
+can be reversed to cut its other side. The job tree deletes, duplicates, renames,
+suppresses and generates one — see [In the job tree](#in-the-job-tree). Nothing has been
+posted, and the page has real gaps — they are listed under
+[the property page](#the-property-page) rather than left to be discovered.
 
 The four decisions underneath this document are recorded separately:
 [0006](../decisions/0006-operation-parameters-are-values.md) (values, not expressions),
@@ -776,7 +778,8 @@ decisions to leave them out; they are unbuilt.
 
 | Gap | Notes |
 | --- | --- |
-| `Comment` and `Enabled` | Both exist on `Operation` and are committed by the page, with no control to set them |
+| `Comment` | Exists on `Operation` and is committed by the page, with no control to set it |
+| `Enabled` | Not on the page. Set from the job tree's Suppress command instead — see [In the job tree](#in-the-job-tree) — which is where HSMWorks puts it too |
 | The `FromSelection` height mode | Offered in all five mode drop-downs, and it cannot work: there is no reference selection box to set `HeightSetting.Reference`, and `GenerationContextFactory.HeightOf` returns null on every path. Either wire both ends or take the mode out of the list |
 | `Operation.Validate()` | Never called. OK commits an operation with no tool or no contour without saying so, and the complaint arrives at generation time instead |
 | Lead `Distance`, `Sweep`, `VerticalRadius`, `Perpendicular` | Stored, round-tripped and read by the strategy; not editable |
@@ -785,6 +788,32 @@ decisions to leave them out; they are unbuilt.
 | Conditional visibility | Maximum stepdown shows when multiple depths is off; the lead-out radius shows when "same as lead in" is ticked. `JobPropertyPage.ShowControlsFor` is the pattern to copy |
 | The live preview | Described above, not built |
 | Inside profiles | Only the outside of a closed contour can be cut — see the offsetting note under 2D contouring. A pocket needs the offset inward, and no setting asks for it |
+
+## In the job tree
+
+An operation is created and edited on its property page, but everything you do *to* one —
+delete it, copy it, rename it, suppress it, generate just that one — is the tree's context
+menu. The menu itself is described in [UI shells](ui-shells.md); what matters here is what
+each command means to the model:
+
+| Command | Means |
+| --- | --- |
+| Rename | `Job.RenameOperation`. Unique within the job, blank refused. **This is the only way to rename an operation** — the page deliberately has none, using the name as its panel title |
+| Generate | The same `GenerationQueue` as a job, holding one item, so a solo generate takes exactly the path it would inside a job — including how a failure is recorded |
+| Suppress | `Operation.Enabled`. The operation keeps its toolpath and parameters, is skipped by generation, is not drawn, and posts nothing. Greyed out in the tree so the toolpath vanishing has a visible cause |
+| Duplicate | `Job.DuplicateOperation`. Directly after the original, fresh id, no toolpath |
+| Delete | `Job.RemoveOperation`, after asking. Final — there is no undo, and the toolpath goes with it |
+
+**Suppressing does not make the operation stale.** Nothing about it changed, so its own
+path is still exactly what its parameters describe. What changed is the stock reaching
+everything below it, in both directions, which is what
+`Staleness.OperationEnabledChanged` covers. Deleting and duplicating use
+`OperationOrderChanged` for the same reason.
+
+**A deleted operation's toolpath leaves the screen through the refresh**, not through
+anything that knows it was deleted: `JobPreview` tracks the layers it put up and rebuilds
+them all from the job it is handed. Its stored stream is a different matter — see
+[storage](../solidworks-api/third-party-storage.md#deleting-leaves-streams-behind).
 
 ## Validation and state
 
@@ -824,6 +853,7 @@ while they are still cheap to change.
 | 9 | Choosing a tool: Browse on the page → the library browser as a picker → `JobDocument.Tools` | 8 left no way to put a tool in a part, and an operation with no tool cannot generate | **Done** — 2026-09-13, verified by hand on 2025 SP3. Three crashes taught that a shown page's controls cannot be written to at all; picking a tool rebuilds the page instead |
 | 10 | Open profiles: single-sided offset, open chains kept, per-contour Reverse | A partial selection was refused outright, which is most of what a 2D contour is used for. Only the offsetter was blocking — the strategy already cut several contours, and chaining already produced open ones | **Done** — 2026-09-13, 21 tests |
 | 11 | Three bugs the slices above exposed: leads on the wrong side, no lead-out on an open profile, and selections that would not restore | Each was invisible until something else worked. None is a slice; they are here because the build order is the record of what was actually done | **Done** — 2026-09-13, 9 tests, verified by hand on 2025 SP3 |
+| 12 | The tree's operation commands: rename, generate, suppress, duplicate, delete — and the dirty-marking every tree edit was missing | Slice 8 made operations creatable and editable and left no way to get rid of one. Two bugs came out with it: <kbd>Del</kbd> on an operation deleted its whole job, and no tree edit ever marked the part dirty | **Done** — 2026-09-15, 13 tests |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an

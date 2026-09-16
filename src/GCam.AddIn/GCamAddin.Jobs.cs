@@ -174,33 +174,103 @@ namespace GCam.AddIn
         {
             try
             {
-                var model = _swApp.ActiveDoc as ModelDoc2;
-                JobDocument jobs = _jobTreeTabs?.JobsFor(model);
-
-                if (job == null || model == null || jobs == null)
-                {
-                    return;
-                }
-
-                var queue = new GenerationQueue(
-                    _strategies,
-                    new GenerationContextFactory(_swApp, model, jobs, _log),
-                    _log);
-
-                GenerationResult result = queue.Generate(job);
-
-                _log.Info("Generated job '{0}': {1}", job.Name, result);
-
-                // The toolpaths are part of the document now, so the part has unsaved
-                // changes even though nothing about the model moved.
-                _jobTreeTabs.MarkDirty(model);
-
-                _jobTreeTabs.RefreshJobs(model);
-                _jobTreeTabs.SelectJob(model, job);
+                Generate(
+                    job,
+                    (queue, target) => queue.Generate(target),
+                    "job '" + job?.Name + "'");
             }
             catch (Exception ex)
             {
                 _errors.Handle(ex, nameof(GenerateJob));
+            }
+        }
+
+        /// <summary>
+        /// Entry point 11. Computes the toolpath for one operation.
+        /// </summary>
+        /// <remarks>
+        /// The same queue as a whole job, holding one item - so an operation generated on
+        /// its own goes through exactly the path it would as part of a job, including how
+        /// a failure is recorded. Everything the remarks on <see cref="GenerateJob"/> say
+        /// about the STA thread applies here too.
+        /// </remarks>
+        public void GenerateOperation(Job job, Operation operation)
+        {
+            try
+            {
+                if (operation == null)
+                {
+                    return;
+                }
+
+                Generate(
+                    job,
+                    (queue, target) => queue.Generate(target, operation),
+                    "operation '" + operation.Name + "'");
+            }
+            catch (Exception ex)
+            {
+                _errors.Handle(ex, nameof(GenerateOperation));
+            }
+        }
+
+        /// <summary>
+        /// Builds the queue for the document in front and runs whichever generate was
+        /// asked for, then puts the results on screen.
+        /// </summary>
+        /// <remarks>
+        /// Shared so that one operation and a whole job cannot drift apart in how they
+        /// mark the part dirty or refresh the tree - the parts that are easy to forget in
+        /// a second copy.
+        /// </remarks>
+        private void Generate(
+            Job job, Func<GenerationQueue, Job, GenerationResult> run, string what)
+        {
+            var model = _swApp.ActiveDoc as ModelDoc2;
+            JobDocument jobs = _jobTreeTabs?.JobsFor(model);
+
+            if (job == null || model == null || jobs == null)
+            {
+                return;
+            }
+
+            var queue = new GenerationQueue(
+                _strategies,
+                new GenerationContextFactory(_swApp, model, jobs, _log),
+                _log);
+
+            GenerationResult result = run(queue, job);
+
+            _log.Info("Generated {0}: {1}", what, result);
+
+            // The toolpaths are part of the document now, so the part has unsaved
+            // changes even though nothing about the model moved.
+            _jobTreeTabs.MarkDirty(model);
+
+            // Rebuilds the tree, which is also what redraws the toolpaths. The refresh
+            // puts the selection back where it was, so generating one operation leaves the
+            // user on it rather than jumping to its job.
+            _jobTreeTabs.RefreshJobs(model);
+        }
+
+        /// <summary>
+        /// Entry point 10. The tree changed the model, so the part is dirty.
+        /// </summary>
+        /// <remarks>
+        /// Deleting, duplicating, renaming or suppressing happens in the viewmodel without
+        /// a property page, so this is the only thing on those paths that reaches
+        /// <c>SetSaveFlag</c>. Without it SOLIDWORKS never offers the save that writes the
+        /// storage and the edit is lost at close - see <see cref="IJobEditor"/>.
+        /// </remarks>
+        public void DocumentChanged()
+        {
+            try
+            {
+                _jobTreeTabs?.MarkDirty(_swApp.ActiveDoc as ModelDoc2);
+            }
+            catch (Exception ex)
+            {
+                _errors.Handle(ex, nameof(DocumentChanged));
             }
         }
 

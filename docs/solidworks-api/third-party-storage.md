@@ -77,6 +77,28 @@ Tagged *Assumed* rather than Verified: it is the documented OLE limit, not somet
 has tested. Confirm by attempting a 40-character element name before relying on it for
 anything else.
 
+## Deleting leaves streams behind — **Verified by reading the code, 2026-09-15**
+
+Toolpath streams are numbered `tp0001` upwards from a **fresh walk of the document on
+every save**, and a save only ever *writes*. So deleting an operation that had a toolpath —
+or one simply losing its path — renumbers everything below it and strands the
+highest-numbered stream: nothing reads it again, because the operation-id → stream-name
+mapping in `model.xml` only names the streams that exist now.
+
+That is dead weight in every copy of the part from then on, and a part file is the thing
+that gets emailed around. `JobDocumentStorage.PruneToolpathStreams` therefore walks upward
+from the last stream it wrote, calling `IStorage::DestroyElement`, and stops when one is
+not there — safe because the writer numbers them contiguously from 1.
+
+**It can never throw**, because the caller's next statement is `Commit`. A tidy-up is
+worth nothing beside the save it would otherwise abandon, so the whole walk is inside a
+`try`, with the expected `COMException` (no such element) swallowed as the end of the walk
+and anything else logged.
+
+*Tagged from the code and the OLE contract rather than Verified on a machine: nobody has
+yet opened a part, generated, deleted and saved, and confirmed the element is gone. Doing
+that is the same experiment as the toolpath round-trip listed below — do both at once.*
+
 ## What the tree looks like
 
 The help gives the layout SOLIDWORKS builds around us:
@@ -116,7 +138,8 @@ Still unexercised, and worth checking when the chance comes:
 - **Toolpath streams.** Operations do generate toolpaths now, so a save after generating
   should write them - but nobody has confirmed a generated path survives a close and
   reopen. That is the one worth checking first: it is the only stored data with its own
-  stream, and `tp0001` has never been read back.
+  stream, and `tp0001` has never been read back. Delete one of two generated operations in
+  the same sitting and the pruning above is exercised with it.
 - **Several parts open at once**, which is what the one-subscriber-per-document design
   exists for. A single part cannot show whether it was needed.
 - **Save All**, and auto-recover saves through `AutoSaveToStorageStoreNotify`.

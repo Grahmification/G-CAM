@@ -22,7 +22,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4, Polyline | Started — what stock, rendering and contouring need | |
 | `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done. Closed contours by orientation; one side of an open path by extracting it from Clipper's ribbon | [Operations](design/operations.md) |
 | `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh | Done for what exists to draw | [Jobs](design/jobs.md) |
-| `UI` — job tree: rename in place, context menu, double-click and Enter to edit | Done | [Jobs](design/jobs.md) |
+| `UI` — job tree: rename in place, a context menu per node kind, double-click and Enter to edit. Operations delete, duplicate, rename, suppress and generate from it | Done | [Jobs](design/jobs.md), [UI shells](design/ui-shells.md) |
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job and Operation pages | Done (2025 SP3). The Operation page is five tabs and rebuilds itself to show a change; its real gaps are tabulated under "the property page" in the design note | [Operations](design/operations.md) |
 | `SolidWorks/Selection` — selection boxes to bodies, coordinate systems and contour edges, stored and restored | Done (2025 SP3) | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |

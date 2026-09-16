@@ -42,6 +42,17 @@
                                     <DataTrigger Binding="{Binding IsDefault}" Value="True">
                                         <Setter Property="FontWeight" Value="SemiBold" />
                                     </DataTrigger>
+
+                                    <!--
+                                        A suppressed operation is skipped by generation,
+                                        not drawn and never posted. Without something to
+                                        see here, suppressing one looks like its toolpath
+                                        vanishing for no reason.
+                                    -->
+                                    <DataTrigger Binding="{Binding IsSuppressed}" Value="True">
+                                        <Setter Property="Foreground" Value="#9AA4AE" />
+                                        <Setter Property="FontStyle" Value="Italic" />
+                                    </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </TextBlock.Style>

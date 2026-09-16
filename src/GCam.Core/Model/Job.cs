@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using GCam.Core.Diagnostics;
 
 namespace GCam.Core.Model
 {
@@ -87,6 +89,120 @@ namespace GCam.Core.Model
             }
 
             return stem + n;
+        }
+
+        /// <summary>Takes an operation out of this job.</summary>
+        /// <remarks>
+        /// The operation's toolpath goes with it. Marking whatever machined what it left
+        /// behind is <see cref="Generation.Staleness.OperationOrderChanged"/>'s job and
+        /// the caller's to ask for - Model cannot reference Generation, and the rule is
+        /// the same one reordering needs.
+        /// </remarks>
+        public bool RemoveOperation(Operation operation)
+        {
+            return operation != null && Operations.Remove(operation);
+        }
+
+        /// <summary>
+        /// Copies an operation, placing the copy directly after the original.
+        /// </summary>
+        /// <remarks>
+        /// The same shape as <see cref="JobDocument.Duplicate"/>: a fresh id, a unique
+        /// name, and a position that says what it came from. The copy starts ungenerated
+        /// because <see cref="Operation.CloneAsNew"/> drops the toolpath - a path computed
+        /// for something else is worse than no path at all.
+        /// </remarks>
+        public Operation DuplicateOperation(Operation operation)
+        {
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            int index = Operations.IndexOf(operation);
+            if (index < 0)
+            {
+                throw new ArgumentException("That operation is not in this job.", nameof(operation));
+            }
+
+            Operation copy = operation.CloneAsNew();
+            copy.Name = MakeOperationNameUnique(operation.Name, copy);
+
+            Operations.Insert(index + 1, copy);
+            return copy;
+        }
+
+        /// <summary>
+        /// Renames an operation.
+        /// </summary>
+        /// <remarks>
+        /// Names are unique within a job rather than across the part, because that is the
+        /// scope <see cref="NextOperationName"/> already numbers in and the scope an
+        /// operation is read in - two jobs may each have a "2D Contour1" without anyone
+        /// being confused.
+        /// </remarks>
+        /// <exception cref="GCamUserException">
+        /// The name is blank, or another operation in this job already has it.
+        /// </exception>
+        public void RenameOperation(Operation operation, string newName)
+        {
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            string trimmed = (newName ?? string.Empty).Trim();
+
+            if (trimmed.Length == 0)
+            {
+                throw new GCamUserException("An operation needs a name.");
+            }
+
+            if (string.Equals(trimmed, operation.Name, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (IsOperationNameTaken(trimmed, operation))
+            {
+                throw new GCamUserException(
+                    $"There is already an operation called '{trimmed}' in this job.");
+            }
+
+            operation.Name = trimmed;
+        }
+
+        /// <summary>
+        /// <paramref name="wanted"/> if it is free in this job, otherwise it with " (2)",
+        /// " (3)" and so on appended until it is.
+        /// </summary>
+        private string MakeOperationNameUnique(string wanted, Operation exclude)
+        {
+            string baseName = string.IsNullOrWhiteSpace(wanted)
+                ? NextOperationName("Operation")
+                : wanted.Trim();
+
+            if (!IsOperationNameTaken(baseName, exclude))
+            {
+                return baseName;
+            }
+
+            int suffix = 2;
+            string candidate;
+            do
+            {
+                candidate = baseName + " (" + suffix.ToString(CultureInfo.InvariantCulture) + ")";
+                suffix++;
+            }
+            while (IsOperationNameTaken(candidate, exclude));
+
+            return candidate;
+        }
+
+        private bool IsOperationNameTaken(string name, Operation exclude)
+        {
+            return Operations.Any(o => !ReferenceEquals(o, exclude)
+                                       && string.Equals(o?.Name, name, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>Deep copy, keeping the id.</summary>

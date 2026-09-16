@@ -156,11 +156,16 @@ namespace GCam.SolidWorks.Persistence
 
                 // The same walk the XML used to name the streams, so the two cannot
                 // disagree about which path belongs to which operation.
-                foreach (ToolpathStreamEntry entry in GcamDocumentXml.ToolpathStreams(document))
+                IReadOnlyList<ToolpathStreamEntry> streams =
+                    GcamDocumentXml.ToolpathStreams(document);
+
+                foreach (ToolpathStreamEntry entry in streams)
                 {
                     ComStreams.WriteStream(
                         storage, entry.StreamName, ToolpathBinary.ToBytes(entry.Operation.Toolpath));
                 }
+
+                PruneToolpathStreams(storage, streams.Count);
 
                 storage.Commit(0);
 
@@ -183,6 +188,46 @@ namespace GCam.SolidWorks.Persistence
         public void MarkDirty(ModelDoc2 model)
         {
             model?.SetSaveFlag();
+        }
+
+        /// <summary>
+        /// Deletes the toolpath streams left over from a save that had more of them.
+        /// </summary>
+        /// <remarks>
+        /// Streams are numbered <c>tp0001</c> upwards from a fresh walk of the document
+        /// every save, so an operation being deleted - or simply losing its toolpath -
+        /// leaves the highest-numbered streams behind. Nothing reads them: the mapping in
+        /// <c>model.xml</c> only names the ones that exist now. They are dead weight in
+        /// every copy of the part from then on, and the part is what gets emailed around.
+        ///
+        /// Walks upwards until one is not there, which is safe because the writer numbers
+        /// them contiguously from 1. The cap is belt and braces against a
+        /// <c>DestroyElement</c> that reports success for a name that was never there.
+        ///
+        /// <b>Never lets a failure reach the caller</b>, because the caller's next
+        /// statement is <c>Commit</c>. Tidying is worth nothing beside the save it would
+        /// otherwise abandon.
+        /// </remarks>
+        private void PruneToolpathStreams(IStorage storage, int kept)
+        {
+            const int Cap = 1000;
+
+            try
+            {
+                for (int index = kept + 1; index <= kept + Cap; index++)
+                {
+                    storage.DestroyElement(GcamDocumentFormat.ToolpathStreamName(index));
+                    _log.Debug("Removed the unused toolpath stream {0}.", index);
+                }
+            }
+            catch (COMException)
+            {
+                // The expected end of the walk: there is no stream with that name.
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("Could not tidy up unused toolpath streams: {0}", ex.Message);
+            }
         }
 
         private void LoadToolpaths(

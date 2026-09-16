@@ -35,5 +35,32 @@ namespace GCam.Core.Abstractions
         /// see SOLIDWORKS. The same arrangement as the rest of this interface.
         /// </remarks>
         void GenerateJob(Job job);
+
+        /// <summary>Computes the toolpath for one operation.</summary>
+        /// <remarks>
+        /// Separate from <see cref="GenerateJob"/> rather than a flag on it, because the
+        /// two are different requests: a job generate runs everything in tree order and is
+        /// what you ask for before posting, while this is what you ask for while setting
+        /// one operation up. <see cref="Generation.GenerationQueue"/> already offers both.
+        /// </remarks>
+        void GenerateOperation(Job job, Operation operation);
+
+        /// <summary>
+        /// The tree changed the model itself, so the part has unsaved CAM changes.
+        /// </summary>
+        /// <remarks>
+        /// Deleting, duplicating, renaming, suppressing or re-defaulting happens in the
+        /// viewmodel against Core objects, with no property page involved - so nothing on
+        /// those paths would otherwise reach <c>IModelDoc2::SetSaveFlag</c>. Without it
+        /// SOLIDWORKS never offers the save that writes the document's storage, and the
+        /// edit is gone at close with nobody asked: the same failure the property pages
+        /// already guard against by marking dirty on commit.
+        ///
+        /// Stated rather than done here for the usual reason - the tree cannot see
+        /// SOLIDWORKS - and deliberately carries no argument. The tree the user is
+        /// clicking belongs to the document in front, which is what the implementation
+        /// resolves.
+        /// </remarks>
+        void DocumentChanged();
     }
 }

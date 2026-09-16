@@ -28,7 +28,49 @@ because the page is in `GCam.SolidWorks` and the browser is WPF in `GCam.UI`. Ne
 project can see the other; the add-in is the only one that sees both. See
 [Operations](operations.md) for what happens to the tool once it arrives.
 
-**The toolbar buttons act on the default job**; the job tree's context menu is where a specific job or operation is reached, and it is the richer route — Edit, New Operation, Generate, Duplicate, Make Default, Delete. Post Process and Simulate do nothing at all yet.
+**The toolbar buttons act on the default job**; the job tree's context menu is where a specific job or operation is reached, and it is the richer route. Post Process and Simulate do nothing at all yet.
+
+**There are two menus, one per kind of node**, built fresh on each right-click so
+enablement cannot go stale:
+
+| | Items |
+| --- | --- |
+| Job | Edit…, Rename, New Operation…, Generate, Duplicate, Make Default, Delete |
+| Operation | Edit…, Rename, Generate, Suppress, Duplicate, Delete |
+
+Two menus rather than one that hides rows, because the two share almost nothing beyond
+the verbs: Make Default and New Operation mean nothing on an operation, and Suppress
+means nothing on a job. Generate is greyed out on a suppressed operation, since
+`GenerationQueue` skips one — offering a command guaranteed to do nothing is worse than
+not offering it.
+
+**The row that was right-clicked comes from `OriginalSource`, never from `sender`.**
+Right-click selects the row before the menu opens, and that handler is on
+`PreviewMouseRightButtonDown` — a **tunnelling** event, which runs root-first. An
+operation's parent job therefore gets it first, and `e.Handled` stops the tunnel before
+the operation's own item is reached, so `sender` is the *outermost* row rather than the
+one under the cursor. That put the selection on the job and gave you the job's menu.
+`OriginalSource` is the element the input system hit-tested whichever way the event is
+routed, so the innermost `TreeViewItem` above it is always the right row. Worth knowing
+because the obvious reading — that handling the event stops it reaching the parent — is
+true of bubbling events and exactly backwards here.
+
+**Delete acts on the node under the cursor, and nothing else does.** Everywhere else an
+operation node stands in for its job — New Operation, the 3D preview, the job menu — and
+Delete is the one place where that would be destructive. It was: <kbd>Del</kbd> on an
+operation deleted its entire job, silently, because `DeleteSelected` read
+`SelectedJobNode` like everything around it.
+
+Both kinds ask before deleting. There is no undo — `Core/Commands` is unbuilt — and a
+delete takes a generated toolpath with it.
+
+**Every tree edit ends in `IJobEditor.DocumentChanged()`.** The tree mutates Core objects
+directly, with no property page involved, so nothing on those paths would otherwise reach
+`IModelDoc2::SetSaveFlag`; SOLIDWORKS would then never offer the save that writes the
+document's storage, and the edit would be gone at close with nobody asked. Delete,
+Duplicate, Rename, Make Default and Suppress all go through it. The pages have always
+marked dirty on commit — the tree did not, so every job deleted or renamed before this
+was lost unless something else happened to dirty the part.
 
 **The Manager Pane tab is where jobs live** — the icon strip beside the
 FeatureManager design tree and the PropertyManager, the same place HSMWorks puts its CAM

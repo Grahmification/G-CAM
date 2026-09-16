@@ -22,6 +22,19 @@ all of it is in Core, where headless tests reach it. The same reasoning that put
 `ToolSearch` there. `JobTreeViewModel` turns that model into nodes and holds selection
 and edit state, and nothing else.
 
+**`Job` owns the same rules one level down.** `RemoveOperation`, `DuplicateOperation` and
+`RenameOperation` sit beside `NextOperationName` for exactly the reason the job-level ones
+sit on `JobDocument`: they are rules about the model, and there is no `GCam.UI.Tests`
+project to reach them in a viewmodel. Operation names are unique **within a job**, not
+across the part — that is the scope `NextOperationName` already numbers in, and two jobs
+may each hold a "2D Contour1" without anyone being confused. A duplicate lands directly
+after its original with a fresh id and no toolpath, mirroring `JobDocument.Duplicate`.
+
+What the tree does *not* own: staleness. Deleting or duplicating an operation changes what
+reaches everything below it, so the viewmodel asks `Staleness.OperationOrderChanged`, and
+suppressing one asks `Staleness.OperationEnabledChanged`. Those rules live in
+`Core/Generation`, which `Core/Model` cannot reference.
+
 **Three things meet at the job tree, and none of them can see the other two.** The tree
 is WPF in `GCam.UI`, which never references SOLIDWORKS. The property pages are in
 `GCam.SolidWorks`, which does not know the tree exists. So the tree states intent through
