@@ -43,6 +43,29 @@ namespace GCam.Core.Model
         /// </remarks>
         public IReadOnlyList<Tool> Tools => _tools;
 
+        /// <summary>
+        /// True when there is nothing here worth writing into the part.
+        /// </summary>
+        /// <remarks>
+        /// **Jobs only.** A part with no jobs is a part G-CAM has not been used on, and
+        /// writing our storage node into it would put a few hundred bytes of empty XML
+        /// into every part anyone opens and saves with the add-in loaded - including every
+        /// part that has nothing to do with CAM.
+        ///
+        /// **Tools are deliberately not counted, and that has a cost.** A tool is checked
+        /// into the part the moment it is picked, before any operation commits, so a part
+        /// can hold tools and no jobs - and this says such a part is not worth storing, so
+        /// those tools are dropped on the next save. That is a narrow window in practice:
+        /// once a part has been saved with a job in it the storage exists, and
+        /// <c>JobStorageHook</c> keeps writing from then on whatever the document holds, so
+        /// the tools survive. The exposed case is picking a tool, abandoning the job, and
+        /// saving before anything else was ever stored.
+        ///
+        /// Used only to decide whether to write. Nothing else should treat a tool-only
+        /// document as empty.
+        /// </remarks>
+        public bool HasNothingToStore => _jobs.Count == 0;
+
         public Tool FindTool(string toolId)
         {
             if (string.IsNullOrEmpty(toolId))

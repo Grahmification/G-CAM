@@ -104,6 +104,13 @@ document notifications appears — persistence, most likely — that is the mome
 document dirty**, or SOLIDWORKS never offers the save that would write it, and the user
 loses the work without being asked.
 
+**A part with no jobs is never written to.** `JobDocument.HasNothingToStore` is the test,
+and it counts jobs only — asking SOLIDWORKS for the storage node in order to write is what
+*creates* it, so without this every part anyone opened and saved with the add-in loaded
+picked up a few hundred bytes of empty G-CAM XML. The exception, and the reason the rule is
+not simply "no jobs, no write": a part that already holds G-CAM data is always written,
+so that deleting the last job survives a reopen.
+
 ## What a job points at
 
 **Bodies and coordinate systems are `GeometryRef`s**, carrying SOLIDWORKS' own persistent

@@ -77,6 +77,39 @@ Tagged *Assumed* rather than Verified: it is the documented OLE limit, not somet
 has tested. Confirm by attempting a 40-character element name before relying on it for
 anything else.
 
+## Asking for the store creates it — **From docs, acted on 2026-09-16**
+
+`IGet3rdPartyStorageStore(name, **true**)` does not just hand over a node that is already
+there; the `true` means "I am storing", and it **creates** one. Combined with
+`SaveToStorageStoreNotify` firing on every save of every open part while the add-in is
+loaded, that meant G-CAM wrote 247 bytes of empty XML — an empty `gcamDocument` with an
+empty tool library and an empty `<jobs/>` — into **every part anybody opened and saved**,
+CAM or not. Plus the compound-file overhead of a node and a stream, so 1–2 KB in the file.
+
+Opening was never the problem: the read path passes `false`, which returns null for a part
+with no G-CAM data and creates nothing, and nothing on the open path calls `SetSaveFlag`.
+Open a part and close it and there is no trace. It was the save.
+
+`JobStorageHook` now returns without touching the storage when the document
+`HasNothingToStore` — no jobs — **and the part had none when it was opened**. Both halves
+are load-bearing:
+
+- Without the first, every part gets the node.
+- **Without the second, deleting the last job would not stick.** The old jobs would stay in
+  the file and come back on reopen, which is a far worse bug than the one being fixed. Once
+  a part has stored data, every later save writes, including a save of an empty document.
+
+**Nothing extra is asked of the storage to decide this.** Whether the part had data is
+known for free at open time, because `LoadJobs` has already run by the time the hook is
+built — the flag is `tab.Jobs.Jobs.Count > 0`. Probing the store from inside the save
+notification would have been the obvious implementation and would mean a second
+get/release pair inside a notification, which nothing here has exercised.
+
+Parts already carrying the empty node keep it: that path sees a store it did not create and
+writes into it as before. Cleaning them up would mean destroying `model.xml` from inside
+the save notification, which was weighed and declined as the riskier change in the one file
+where a mistake loses work.
+
 ## Deleting leaves streams behind — **Verified by reading the code, 2026-09-15**
 
 Toolpath streams are numbered `tp0001` upwards from a **fresh walk of the document on
@@ -140,6 +173,9 @@ Still unexercised, and worth checking when the chance comes:
   reopen. That is the one worth checking first: it is the only stored data with its own
   stream, and `tp0001` has never been read back. Delete one of two generated operations in
   the same sitting and the pruning above is exercised with it.
+- **That a part with no jobs is left untouched.** Open a plain part, save it, close
+  SOLIDWORKS and check the file size is unchanged — then create a job, save, delete the
+  job, save again, reopen, and confirm the job is still gone.
 - **Several parts open at once**, which is what the one-subscriber-per-document design
   exists for. A single part cannot show whether it was needed.
 - **Save All**, and auto-recover saves through `AutoSaveToStorageStoreNotify`.

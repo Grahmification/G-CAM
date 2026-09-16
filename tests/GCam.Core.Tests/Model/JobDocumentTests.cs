@@ -2,6 +2,7 @@ using System.Linq;
 using GCam.Core.Diagnostics;
 using GCam.Core.Model;
 using GCam.Core.Strategies.Contour2d;
+using GCam.Core.Tooling;
 using Xunit;
 
 namespace GCam.Core.Tests.Model
@@ -11,6 +12,60 @@ namespace GCam.Core.Tests.Model
         private static Job SampleJob(string name = null)
         {
             return new Job { Name = name };
+        }
+
+        [Fact]
+        public void A_fresh_document_has_nothing_to_store()
+        {
+            // What keeps G-CAM's storage node out of every part anyone opens and saves
+            // with the add-in loaded.
+            Assert.True(new JobDocument().HasNothingToStore);
+        }
+
+        [Fact]
+        public void One_job_is_enough_to_be_worth_storing()
+        {
+            var document = new JobDocument();
+            document.AddNew();
+
+            Assert.False(document.HasNothingToStore);
+        }
+
+        [Fact]
+        public void A_job_with_no_operations_still_counts()
+        {
+            // It is still a stock setup, a coordinate system and a work offset somebody
+            // entered.
+            var document = new JobDocument();
+            Job job = document.AddNew();
+
+            Assert.Empty(job.Operations);
+            Assert.False(document.HasNothingToStore);
+        }
+
+        [Fact]
+        public void Tools_alone_are_not_worth_storing()
+        {
+            // Deliberate, and it has a cost - a part holding tools and no jobs drops them
+            // on the next save. Pinned here so the consequence stays a decision rather
+            // than a surprise; see JobDocument.HasNothingToStore.
+            var document = new JobDocument();
+            document.AddTool(new Tool { Id = "t1", Name = "6mm flat" });
+
+            Assert.Single(document.Tools);
+            Assert.True(document.HasNothingToStore);
+        }
+
+        [Fact]
+        public void Deleting_the_last_job_leaves_nothing_to_store()
+        {
+            // This one must still be *written* when the part already has data, or the
+            // deletion does not survive a reopen. JobStorageHook is what knows that.
+            var document = new JobDocument();
+            Job job = document.AddNew();
+            document.Remove(job);
+
+            Assert.True(document.HasNothingToStore);
         }
 
         [Fact]

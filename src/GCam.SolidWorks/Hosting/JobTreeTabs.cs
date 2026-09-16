@@ -357,8 +357,15 @@ namespace GCam.SolidWorks.Hosting
 
                 if (_storage != null)
                 {
+                    // Whether the part already carries G-CAM data, known for free because
+                    // LoadJobs has just tried to read it - no second trip to the storage,
+                    // and nothing asked of it from inside a save notification. A part that
+                    // has none is never written to unless a job is created in it; see
+                    // JobStorageHook.OnSaveToStorage.
+                    bool hasStoredData = tab.Jobs.Jobs.Count > 0;
+
                     tab.Storage = new JobStorageHook(
-                        part, model, _storage, () => tab.Jobs, _errors, _log);
+                        part, model, _storage, () => tab.Jobs, hasStoredData, _errors, _log);
                 }
 
                 // Subscribed after the jobs are loaded, so the load's own settling cannot

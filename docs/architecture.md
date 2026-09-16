@@ -32,7 +32,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Generation` — queue, progress, staleness rules | Done; runs on the STA thread until an `SwDispatcher` exists | [Operations](design/operations.md) |
 | `SolidWorks/Events` — `PartRebuildWatcher`, one per part | Done; **not yet verified on 2025 SP3** | [Rebuild notifications](solidworks-api/rebuild-notifications.md) |
 | `Core/Persistence` — the stored document format and the toolpath bytes | Done, round-tripped headlessly | [Operations](design/operations.md) |
-| `SolidWorks/Persistence` — getting those bytes into the part | Done; a job survives a close and reopen (2025 SP3). Toolpath streams still unexercised | [Storage](solidworks-api/third-party-storage.md) |
+| `SolidWorks/Persistence` — getting those bytes into the part | Done; a job survives a close and reopen (2025 SP3). A part with no jobs is never written to — **not yet verified**. Toolpath streams still unexercised | [Storage](solidworks-api/third-party-storage.md) |
 | `Core/Simulation`, `Commands`, `Posting` | Not started | |
 | `Core/Geometry` — Brep, Faceting, Query | Not started; only what contouring needed exists | |
 | `Posts` | Empty project | |
