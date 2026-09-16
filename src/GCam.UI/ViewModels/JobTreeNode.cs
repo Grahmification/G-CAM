@@ -14,6 +14,8 @@ namespace GCam.UI.ViewModels
         private bool _isExpanded = true;
         private bool _isEditing;
         private bool _isSuppressed;
+        private OperationBadge _badge;
+        private string _statusText;
 
         protected JobTreeNode(string name)
         {
@@ -69,6 +71,29 @@ namespace GCam.UI.ViewModels
             get => _isSuppressed;
             set => Set(ref _isSuppressed, value);
         }
+
+        /// <summary>
+        /// The mark drawn in the corner of <see cref="Glyph"/>. On the base for the same
+        /// reason as <see cref="IsSuppressed"/>; a job never earns one.
+        /// </summary>
+        public OperationBadge Badge
+        {
+            get => _badge;
+            set => Set(ref _badge, value);
+        }
+
+        /// <summary>
+        /// The row's tooltip, or null for a node with nothing to explain.
+        /// </summary>
+        /// <remarks>
+        /// Null rather than empty on purpose - WPF suppresses a null tooltip and shows an
+        /// empty box for "".
+        /// </remarks>
+        public string StatusText
+        {
+            get => _statusText;
+            set => Set(ref _statusText, value);
+        }
     }
 
     /// <summary>A job, with its operations underneath it.</summary>
@@ -107,6 +132,8 @@ namespace GCam.UI.ViewModels
         {
             Operation = operation;
             IsSuppressed = !operation.Enabled;
+            Badge = OperationStatus.Badge(operation.State);
+            StatusText = OperationStatus.Describe(operation);
         }
 
         public Operation Operation { get; }

@@ -4,7 +4,7 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Built as far as slice 12 of the build order at the end of this document, everything up to
+Built as far as slice 13 of the build order at the end of this document, everything up to
 slice 11 verified by hand on 2025 SP3: a 2D contour generates from edges selected on a real
 part — open profiles as well as closed — draws, and persists; there is a five-tab property
 page to set it up on, a tool can be picked out of a library into the part, and each contour
@@ -810,6 +810,49 @@ everything below it, in both directions, which is what
 `Staleness.OperationEnabledChanged` covers. Deleting and duplicating use
 `OperationOrderChanged` for the same reason.
 
+### The state badge
+
+An operation's glyph carries a small disc in its corner saying whether its toolpath can be
+believed. `OperationStatus` in `Core/Model` decides which — in Core, not the viewmodel,
+for the reason architecture.md gives for `ToolSearch`: it is a rule, and Core is the only
+place a headless test reaches it. The tree owns *where* the badge is drawn; Core owns
+*whether* there is one.
+
+| State | Badge | |
+| --- | --- | --- |
+| `Generated` | none | |
+| `Warning` | amber **!** | There is a usable path; the message says what to read |
+| `Stale`, `NotGenerated`, `Failed`, `Generating` | red **✕** | Nothing here to trust yet |
+
+**Three badges for six states, deliberately.** The badge answers a narrower question than
+the state does — *can I believe this toolpath?* — and an icon distinguishing all six would
+be decoded rather than glanced at. Nothing is lost, because the state's own words are in
+the tooltip. Splitting `Failed` out from the other three is one `case` if it turns out to
+be wanted.
+
+**`Generating` keeps the error badge rather than clearing it.** Blanking it for the length
+of a run would read as "done" while the operation still has nothing anyone should believe.
+It is unobservable today — generation runs synchronously on the STA thread, so the tree is
+never repainted mid-run — and will matter the moment that moves off it.
+
+**The words live beside the badge, in `OperationStatus.Label`.** The tooltip is their only
+caller today; the posting warning and the generation report are meant to be the next two.
+Six states described in three places is how `Stale` ends up with three different names in
+one product. `Describe` puts `StateMessage` underneath, which for a failure is the only
+place the reason appears outside the log, and says "Suppressed" first when it is — because
+that operation's state will not change however often the job is generated.
+
+Drawn as vector geometry (an `Ellipse` and a `Path`, switched by `DataTrigger` on the
+node's `Badge`), matching `ToolTypeIconConverter`'s reasoning: crisp at any DPI, and the
+colour is ours rather than the font's. The white ring around the disc is what keeps it
+legible against the glyph behind it.
+
+**A job's icon does not roll its operations up.** A job with twelve operations, one of them
+stale, looks no different from a clean one until it is expanded. HSMWorks does roll up, and
+it is what would make a collapsed tree worth reading before posting — deliberately left for
+when someone wants it, since it needs a rule for what "worst" means and a refresh whenever
+any operation's state changes.
+
 **A deleted operation's toolpath leaves the screen through the refresh**, not through
 anything that knows it was deleted: `JobPreview` tracks the layers it put up and rebuilds
 them all from the job it is handed. Its stored stream is a different matter — see
@@ -819,8 +862,9 @@ them all from the job it is handed. Its stored stream is a different matter — 
 
 `Operation.Validate()` returns the problems a user can act on, in the same shape as
 `Job.Validate()`: no tool chosen, heights inverted, empty selection, a reference that no
-longer resolves, a tolerance of zero. The tree shows state per operation with the message
-in the tooltip and the detail in the log.
+longer resolves, a tolerance of zero. The tree shows state per operation as a badge on its
+icon with the message in the tooltip — see [The state badge](#the-state-badge) — and the
+detail in the log.
 
 | State | Means |
 | --- | --- |
@@ -854,6 +898,7 @@ while they are still cheap to change.
 | 10 | Open profiles: single-sided offset, open chains kept, per-contour Reverse | A partial selection was refused outright, which is most of what a 2D contour is used for. Only the offsetter was blocking — the strategy already cut several contours, and chaining already produced open ones | **Done** — 2026-09-13, 21 tests |
 | 11 | Three bugs the slices above exposed: leads on the wrong side, no lead-out on an open profile, and selections that would not restore | Each was invisible until something else worked. None is a slice; they are here because the build order is the record of what was actually done | **Done** — 2026-09-13, 9 tests, verified by hand on 2025 SP3 |
 | 12 | The tree's operation commands: rename, generate, suppress, duplicate, delete — and the dirty-marking every tree edit was missing | Slice 8 made operations creatable and editable and left no way to get rid of one. Two bugs came out with it: <kbd>Del</kbd> on an operation deleted its whole job, and no tree edit ever marked the part dirty | **Done** — 2026-09-15, 13 tests |
+| 13 | `OperationStatus` and the state badge in the tree | `OperationState` had been modelled, persisted and corrected on load since slice 6a, and was invisible: a stale operation looked exactly like a generated one, which made staleness a rule nobody could act on | **Done** — 2026-09-16, 18 tests |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an

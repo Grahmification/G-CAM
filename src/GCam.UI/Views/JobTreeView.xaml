@@ -29,12 +29,72 @@
             <EventSetter Event="MouseDoubleClick" Handler="OnNodeDoubleClick" />
         </Style>
 
+        <!--
+            The state badge: a small disc in the corner of an operation's glyph, red when
+            there is no toolpath to trust and amber when there is one worth reading about.
+            A job never carries one, so the default is Collapsed and only the triggers
+            below turn it on.
+
+            Drawn as vector geometry rather than an emoji for the reason
+            ToolTypeIconConverter gives: crisp at any DPI, and the colour is ours to
+            choose rather than the font's. The white stroke around the disc is what keeps
+            it legible against the gear behind it.
+        -->
+        <Style x:Key="BadgeDisc" TargetType="Ellipse">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Stroke" Value="White" />
+            <Setter Property="StrokeThickness" Value="1" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Badge}" Value="Error">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Setter Property="Fill" Value="#D0342C" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Badge}" Value="Warning">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Setter Property="Fill" Value="#E8A317" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!--
+            The mark inside the disc, in a nominal 9x9 box. Round caps are what let the
+            exclamation mark's dot be a zero-length segment rather than a second shape.
+        -->
+        <Style x:Key="BadgeMark" TargetType="Path">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Stroke" Value="White" />
+            <Setter Property="StrokeThickness" Value="1.4" />
+            <Setter Property="StrokeStartLineCap" Value="Round" />
+            <Setter Property="StrokeEndLineCap" Value="Round" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Badge}" Value="Error">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Setter Property="Data" Value="M 3,3 L 6,6 M 6,3 L 3,6" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Badge}" Value="Warning">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Setter Property="Data" Value="M 4.5,2.3 L 4.5,5.1 M 4.5,6.9 L 4.5,6.9" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- The label, which becomes a text box while the node is being renamed. -->
         <DataTemplate x:Key="NodeLabel">
-            <Grid Margin="0,1">
+            <Grid Margin="0,1" ToolTip="{Binding StatusText}">
                 <StackPanel Orientation="Horizontal"
                             Visibility="{Binding IsEditing, Converter={StaticResource NotToVisibility}}">
-                    <TextBlock Text="{Binding Glyph}" Margin="0,0,5,0" />
+                    <!--
+                        The glyph and its badge share one cell, so the badge sits over the
+                        gear's bottom-right corner and the row's layout is unchanged.
+                    -->
+                    <Grid Margin="0,0,5,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Glyph}" />
+                        <Grid Width="9" Height="9" Margin="0,0,-2,-1"
+                              HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                            <Ellipse Style="{StaticResource BadgeDisc}" />
+                            <Path Style="{StaticResource BadgeMark}" />
+                        </Grid>
+                    </Grid>
                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
