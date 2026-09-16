@@ -151,31 +151,51 @@ namespace GCam.Core.Generation
         /// <summary>
         /// SOLIDWORKS rebuilt the part.
         /// </summary>
+        /// <returns>
+        /// How many operations this actually changed.
+        /// </returns>
         /// <remarks>
         /// Everything, everywhere. A rebuild can move any face, and nothing short of
         /// re-resolving every selection would say which - which costs as much as
         /// regenerating. The bluntest rule here, and the one most likely to mark something
         /// stale unnecessarily.
+        ///
+        /// **The count is the point of the return value.** This one fires on every rebuild
+        /// the user asks for, including the many that change nothing we care about, and the
+        /// caller redraws the tree and the whole 3D scene when it does. Nearly all of those
+        /// rebuilds mark nothing - no operation has been generated yet, or they are already
+        /// stale - and a count of zero is what lets the caller do nothing at all.
         /// </remarks>
-        public static void ModelRebuilt(JobDocument document)
+        public static int ModelRebuilt(JobDocument document)
         {
             if (document?.Jobs == null)
             {
-                return;
+                return 0;
             }
+
+            int marked = 0;
 
             foreach (Job job in document.Jobs)
             {
-                MarkAll(job?.Operations);
+                marked += MarkAll(job?.Operations);
             }
+
+            return marked;
         }
 
-        private static void MarkAll(IEnumerable<Operation> operations)
+        private static int MarkAll(IEnumerable<Operation> operations)
         {
+            int marked = 0;
+
             foreach (Operation operation in operations ?? Enumerable.Empty<Operation>())
             {
-                MarkStale(operation);
+                if (MarkStale(operation))
+                {
+                    marked++;
+                }
             }
+
+            return marked;
         }
     }
 }

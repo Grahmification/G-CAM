@@ -35,6 +35,13 @@ namespace GCam.Core.Tests.Generation
             };
         }
 
+        private static Operation Stale(string name)
+        {
+            Operation operation = Generated(name);
+            operation.State = OperationState.Stale;
+            return operation;
+        }
+
         [Fact]
         public void A_generated_operation_goes_stale()
         {
@@ -205,6 +212,38 @@ namespace GCam.Core.Tests.Generation
             Assert.All(
                 document.Jobs.SelectMany(j => j.Operations),
                 o => Assert.Equal(OperationState.Stale, o.State));
+        }
+
+        [Fact]
+        public void A_rebuild_reports_how_many_operations_it_changed()
+        {
+            var document = new JobDocument();
+            Job job = document.AddNew();
+            job.Operations.Add(Generated("A"));
+            job.Operations.Add(Generated("B"));
+
+            Assert.Equal(2, Staleness.ModelRebuilt(document));
+        }
+
+        [Fact]
+        public void A_rebuild_that_changes_nothing_reports_nothing()
+        {
+            // The count is what stops every Ctrl+B redrawing the tree and the whole 3D
+            // scene. Nearly every rebuild lands here: nothing generated yet, or everything
+            // already stale.
+            var document = new JobDocument();
+            Job job = document.AddNew();
+            job.Operations.Add(new Operation(new Contour2dSettings()) { Name = "Never run" });
+            job.Operations.Add(Stale("Already out of date"));
+
+            Assert.Equal(0, Staleness.ModelRebuilt(document));
+        }
+
+        [Fact]
+        public void A_rebuild_of_a_part_with_no_jobs_reports_nothing()
+        {
+            Assert.Equal(0, Staleness.ModelRebuilt(new JobDocument()));
+            Assert.Equal(0, Staleness.ModelRebuilt(null));
         }
 
         [Fact]

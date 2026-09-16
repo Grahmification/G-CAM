@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
 using GCam.Core.Model;
+using GCam.SolidWorks.Events;
 using GCam.SolidWorks.Persistence;
 using GCam.SolidWorks.Rendering;
 using GCam.UI.ViewModels;
@@ -213,6 +214,9 @@ namespace GCam.SolidWorks.Hosting
 
             /// <summary>Saves this document's jobs into it. Null for a part that has none.</summary>
             public JobStorageHook Storage { get; set; }
+
+            /// <summary>Marks this document's operations stale when the part is rebuilt.</summary>
+            public PartRebuildWatcher Rebuilds { get; set; }
         }
 
         /// <summary>
@@ -356,6 +360,12 @@ namespace GCam.SolidWorks.Hosting
                     tab.Storage = new JobStorageHook(
                         part, model, _storage, () => tab.Jobs, _errors, _log);
                 }
+
+                // Subscribed after the jobs are loaded, so the load's own settling cannot
+                // mark a freshly opened part's operations stale before anyone has seen
+                // them.
+                tab.Rebuilds = new PartRebuildWatcher(
+                    part, () => tab.Jobs, () => RefreshJobs(model), _errors, _log);
             }
 
             _log.Debug("G-CAM tab added to {0}.", Describe(model));
@@ -478,6 +488,10 @@ namespace GCam.SolidWorks.Hosting
             // declined. Nothing to flush here - writing is only legal inside the
             // notification this is unsubscribing from.
             tab.Storage?.Dispose();
+
+            // Before the document goes, and before anything else can queue a redraw of a
+            // scene that is about to be torn down.
+            tab.Rebuilds?.Dispose();
 
             var part = model as PartDoc;
             if (part != null)

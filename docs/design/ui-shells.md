@@ -83,8 +83,18 @@ document exists — see
 [manager-pane-tabs.md](../solidworks-api/manager-pane-tabs.md), which also covers which of
 these COM objects may be released and which must not.
 
-`Events/` does not exist yet; `JobTreeTabs` subscribes directly. Factor the subscriptions
-out when persistence becomes a second subscriber, not before.
+**`Events/` now exists**, holding `PartRebuildWatcher` — the per-document subscriber that
+marks operations stale when the part is rebuilt (see
+[rebuild-notifications.md](../solidworks-api/rebuild-notifications.md)). It was the third
+subscriber, which is the trigger this note had always named for factoring an events layer
+out of `JobTreeTabs`.
+
+**Only the new one moved.** `JobTreeTabs` still subscribes directly to
+`ActiveModelDocChangeNotify` and `FileCloseNotify`, and `JobStorageHook` still owns the
+storage notifications. Those two are application-level and document-level respectively and
+work; moving them is a refactor with no behaviour change, and it can happen when something
+needs it to rather than for tidiness. What the folder settles now is where the *next*
+subscription goes.
 
 **Property pages are rebuilt for every show, not cached.** Reusing one means reshaping it
 before each show, and reshaping means `IPropertyManagerPageControl.Visible`, which kills

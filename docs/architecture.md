@@ -30,6 +30,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Model` — Operation, heights, geometry references, Toolpath | Done | [Operations](design/operations.md) |
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates; face, adaptive and drill are designed only | [Operations](design/operations.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; runs on the STA thread until an `SwDispatcher` exists | [Operations](design/operations.md) |
+| `SolidWorks/Events` — `PartRebuildWatcher`, one per part | Done; **not yet verified on 2025 SP3** | [Rebuild notifications](solidworks-api/rebuild-notifications.md) |
 | `Core/Persistence` — the stored document format and the toolpath bytes | Done, round-tripped headlessly | [Operations](design/operations.md) |
 | `SolidWorks/Persistence` — getting those bytes into the part | Done; a job survives a close and reopen (2025 SP3). Toolpath streams still unexercised | [Storage](solidworks-api/third-party-storage.md) |
 | `Core/Simulation`, `Commands`, `Posting` | Not started | |
@@ -147,7 +148,9 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   ├── Hosting/                   JobTreeTabHost — COM-visible WinForms shell;
 │   │   │                              JobTreeTabs — one Manager Pane tab per part
 │   │   ├── Threading/                 SwDispatcher — marshal to SW's STA thread
-│   │   ├── Events/                    document + view event subscriptions
+│   │   ├── Events/                    document + view event subscriptions.
+│   │   │                              PartRebuildWatcher — one per part, marks its
+│   │   │                              operations stale on RegenPostNotify2
 │   │   └── Com/                       ComRelease helpers
 │   │
 │   ├── GCam.UI/                       WPF; references Core, never SolidWorks

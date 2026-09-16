@@ -4,7 +4,7 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Built as far as slice 13 of the build order at the end of this document, everything up to
+Built as far as slice 14 of the build order at the end of this document, everything up to
 slice 11 verified by hand on 2025 SP3: a 2D contour generates from edges selected on a real
 part — open profiles as well as closed — draws, and persists; there is a five-tab property
 page to set it up on, a tool can be picked out of a library into the part, and each contour
@@ -508,9 +508,22 @@ settings report `DependsOnPrecedingStock` depends on every enabled operation abo
 Editing, reordering, disabling or deleting an operation marks it and every dependent
 operation below it stale. Reordering is therefore a real edit, not a view change.
 
-Watching for the rebuild means a third subscriber to the document notifications, after
-the tab sync and the renderer. That is the trigger `docs/design/ui-shells.md` names for
-factoring `Events/` out of `JobTreeTabs` — do it then, not before.
+**The rebuild is watched by `GCam.SolidWorks/Events/PartRebuildWatcher`**, one per open
+part, on `PartDoc.RegenPostNotify2` — which covers a rollback as well as a rebuild. It
+marks stale inside the notification and defers the redraw to the message pump; the
+reasoning, and what is still unverified about it, is in
+[rebuild-notifications.md](../solidworks-api/rebuild-notifications.md).
+
+`Staleness.ModelRebuilt` returns how many operations it changed, and the watcher does
+nothing for zero. Nearly every rebuild marks nothing — no operation generated yet, or
+everything already stale — and the alternative is rebuilding the tree and the whole 3D
+scene on every <kbd>Ctrl</kbd>+<kbd>B</kbd>.
+
+This was modelled from the start and wired up only on 2026-09-16, which is worth
+remembering: `Staleness.ModelRebuilt` existed, was tested, and had **no callers at all**,
+so changing a dimension left every toolpath on screen at full strength with every
+operation still calling itself Generated. A rule with no caller reads exactly like a rule
+that works.
 
 ## The toolpath
 
@@ -899,6 +912,7 @@ while they are still cheap to change.
 | 11 | Three bugs the slices above exposed: leads on the wrong side, no lead-out on an open profile, and selections that would not restore | Each was invisible until something else worked. None is a slice; they are here because the build order is the record of what was actually done | **Done** — 2026-09-13, 9 tests, verified by hand on 2025 SP3 |
 | 12 | The tree's operation commands: rename, generate, suppress, duplicate, delete — and the dirty-marking every tree edit was missing | Slice 8 made operations creatable and editable and left no way to get rid of one. Two bugs came out with it: <kbd>Del</kbd> on an operation deleted its whole job, and no tree edit ever marked the part dirty | **Done** — 2026-09-15, 13 tests |
 | 13 | `OperationStatus` and the state badge in the tree | `OperationState` had been modelled, persisted and corrected on load since slice 6a, and was invisible: a stale operation looked exactly like a generated one, which made staleness a rule nobody could act on | **Done** — 2026-09-16, 18 tests |
+| 14 | `PartRebuildWatcher` — the rebuild that nothing was listening for | Slice 13 made staleness visible, which is what exposed it: `Staleness.ModelRebuilt` had been written and tested since slice 5 with no caller anywhere, so editing a dimension invalidated nothing | **Done** — 2026-09-16, 3 tests. **Not yet verified on 2025 SP3** |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an
