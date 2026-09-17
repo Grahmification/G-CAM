@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
@@ -37,6 +40,50 @@ namespace GCam.UI.Views
         private ErrorHandler _errors;
         private WinForms.ContextMenuStrip _nodeMenu;
 
+        /// <summary>
+        /// True while this view is moving WPF's own selection, so the change it provokes is
+        /// not read back as the user asking for something.
+        /// </summary>
+        private bool _drivingSelection;
+
+        /// <summary>
+        /// Changes the selection, ignoring whatever the tree says about it while the change
+        /// is being made.
+        /// </summary>
+        /// <remarks>
+        /// <b>This is what stops a selection change re-entering the one it came from, and
+        /// that is a crash, not an untidiness.</b> Changing the selection writes
+        /// <c>IsCurrent</c> back onto the rows, which is <c>TreeViewItem.IsSelected</c>,
+        /// which makes the <see cref="TreeView"/> raise <c>SelectedItemChanged</c> - inside
+        /// the handler that is already running, and from there into the 3D preview and its
+        /// SOLIDWORKS COM calls. Shift-clicking a row <i>above</i> the anchor took
+        /// SOLIDWORKS down that way; clicking below it did not, because only the upward
+        /// range reported a change it had not made.
+        ///
+        /// That false positive is fixed where it belongs, in
+        /// <c>MultiSelection.ExtendTo</c>. This is the guard that makes the re-entry
+        /// harmless whatever else learns to report one - every route into the selection goes
+        /// through here.
+        /// </remarks>
+        private void Apply(Action change)
+        {
+            if (_drivingSelection)
+            {
+                return;
+            }
+
+            _drivingSelection = true;
+
+            try
+            {
+                change();
+            }
+            finally
+            {
+                _drivingSelection = false;
+            }
+        }
+
         public JobTreeView()
         {
             InitializeComponent();
@@ -72,14 +119,105 @@ namespace GCam.UI.Views
 
         // ---- Selection -------------------------------------------------------
 
+        /// <summary>
+        /// Applies the click, Ctrl-click and Shift-click rules to the row under the cursor.
+        /// </summary>
+        /// <remarks>
+        /// <b>The row comes from <see cref="RoutedEventArgs.OriginalSource"/>, never from
+        /// <c>sender</c></b> - see the remarks on <see cref="OnNodeRightClick"/>, which is
+        /// where that was learned.
+        ///
+        /// <b>Wired to the TreeView, not to each row</b>, and that is not a tidiness
+        /// choice. <c>PreviewMouseLeftButtonDown</c> tunnels, so a handler on the rows runs
+        /// once for an operation's own row and once for the job's row above it - and a
+        /// Ctrl-click that toggles twice selects nothing at all. One subscription on the
+        /// tree runs once, whatever was clicked.
+        ///
+        /// Deliberately not marked handled: WPF still moves its own single selection to the
+        /// clicked row, which is what carries the focus and the keyboard with it.
+        /// <see cref="OnTreeSelectionChanged"/> knows to leave the result alone.
+        /// </remarks>
+        private void OnNodeLeftClick(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                JobTreeNode node = NodeUnder(e.OriginalSource as DependencyObject);
+
+                if (node == null || _model == null)
+                {
+                    return;
+                }
+
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    Apply(() => _model.ToggleSelection(node));
+                }
+                else if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                {
+                    Apply(() => _model.ExtendSelectionTo(node));
+                }
+                else
+                {
+                    Apply(() => _model.SelectOnly(node));
+                }
+            }
+            catch (Exception ex)
+            {
+                Handle(ex, nameof(OnNodeLeftClick));
+            }
+        }
+
+        /// <summary>
+        /// Follows WPF's own selection, which is what the keyboard moves.
+        /// </summary>
+        /// <remarks>
+        /// Three of the four ways this fires are already accounted for elsewhere, and the
+        /// guards are what stop them undoing each other:
+        ///
+        /// Ctrl is down, so a Ctrl-click has just been dealt with by
+        /// <see cref="OnNodeLeftClick"/>, which may well have <i>deselected</i> the row WPF
+        /// has now made current - reselecting it here is the one thing that must not happen.
+        /// Shift is down, so this is a Shift-arrow, and the range is extended rather than
+        /// replaced. Or the row is already the anchor and already selected, which means the
+        /// viewmodel drove this itself - restoring a selection after a rebuild, most often -
+        /// and collapsing its work to one row would undo it.
+        ///
+        /// What is left is a plain arrow key, or a click whose selection has already been
+        /// made and matches. Both mean the same thing: this row alone.
+        /// </remarks>
         private void OnTreeSelectionChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
             try
             {
-                if (_model != null)
+                if (_model == null || _drivingSelection)
                 {
-                    _model.SelectedNode = e.NewValue as JobTreeNode;
+                    return;
                 }
+
+                // Null means the tree is being rebuilt underneath us. The viewmodel is
+                // holding the selection across that itself.
+                if (!(e.NewValue is JobTreeNode node))
+                {
+                    return;
+                }
+
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+                {
+                    Apply(() => _model.ExtendSelectionTo(node));
+                    return;
+                }
+
+                if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+                {
+                    return;
+                }
+
+                if (ReferenceEquals(_model.SelectedNode, node) && _model.IsSelected(node))
+                {
+                    return;
+                }
+
+                Apply(() => _model.SelectOnly(node));
             }
             catch (Exception ex)
             {
@@ -88,10 +226,14 @@ namespace GCam.UI.Views
         }
 
         /// <summary>
-        /// Selects the row under the cursor before the context menu opens, so the menu
-        /// acts on what was right-clicked rather than on whatever was selected before.
+        /// Makes sure the context menu is about to act on something the user can see is
+        /// selected.
         /// </summary>
         /// <remarks>
+        /// <b>A right-click inside the selection leaves it alone</b>, which is what makes
+        /// "select three operations, right-click, Delete" mean the three. Only a click on a
+        /// row that is not selected replaces the selection with it.
+        ///
         /// <b>The row comes from <see cref="RoutedEventArgs.OriginalSource"/>, never from
         /// <c>sender</c>.</b> This is wired to <c>PreviewMouseRightButtonDown</c>, which
         /// *tunnels* - it runs from the root of the tree downwards, so an operation's
@@ -112,19 +254,56 @@ namespace GCam.UI.Views
             {
                 TreeViewItem item = RowUnder(e.OriginalSource as DependencyObject);
 
-                if (item != null)
+                if (item == null || _model == null)
                 {
-                    item.IsSelected = true;
-                    item.Focus();
-
-                    // The row is chosen; nothing above it needs to see this.
-                    e.Handled = true;
+                    return;
                 }
+
+                if (item.DataContext is JobTreeNode node && !_model.IsSelected(node))
+                {
+                    Apply(() => _model.SelectOnly(node));
+                }
+
+                // Focusing a TreeViewItem selects it as far as WPF is concerned, which
+                // would otherwise collapse a multiple selection through
+                // OnTreeSelectionChanged. The move is ours and means nothing about what is
+                // selected.
+                Apply(() => item.Focus());
+
+                // The row is chosen; nothing above it needs to see this.
+                e.Handled = true;
             }
             catch (Exception ex)
             {
                 Handle(ex, nameof(OnNodeRightClick));
             }
+        }
+
+        /// <summary>
+        /// The node behind a clicked element, or null when the click was not on a row.
+        /// </summary>
+        /// <remarks>
+        /// The expander arrow is inside the row but is not part of it: clicking one opens a
+        /// job, and opening a job is not selecting it. A click in the rename box is left
+        /// alone for the same kind of reason - it is aimed at the text, not at the tree.
+        /// </remarks>
+        private static JobTreeNode NodeUnder(DependencyObject clicked)
+        {
+            DependencyObject walk = clicked;
+
+            while (walk != null && !(walk is TreeViewItem))
+            {
+                if (walk is ToggleButton || walk is TextBox)
+                {
+                    return null;
+                }
+
+                walk = walk is Visual || walk is Visual3D
+                    ? VisualTreeHelper.GetParent(walk)
+                    : LogicalTreeHelper.GetParent(walk);
+            }
+
+            return (walk as TreeViewItem)?.DataContext as JobTreeNode;
         }
 
         /// <summary>
@@ -213,12 +392,21 @@ namespace GCam.UI.Views
         }
 
         /// <summary>
-        /// Builds and shows the menu for whichever kind of node is selected.
+        /// Builds and shows the menu for what is selected.
         /// </summary>
         /// <remarks>
-        /// Two menus rather than one that hides rows, because the two nodes share almost
-        /// nothing: Make Default and New Operation mean nothing on an operation, and
+        /// A menu per kind rather than one that hides rows, because the two nodes share
+        /// almost nothing: Make Default and New Operation mean nothing on an operation, and
         /// Suppress means nothing on a job.
+        ///
+        /// <b>What is selected decides the menu, not what was clicked</b> - the click that
+        /// opened it has already made sure the row under the cursor is part of the
+        /// selection. A selection holding both kinds gets the third menu: only the two
+        /// commands that mean the same thing for either.
+        ///
+        /// Commands that can only act on one thing - Edit, Rename, Make Default, New
+        /// Operation - are left out when several rows are selected rather than shown
+        /// greyed. Half a menu of dead rows reads as something being broken.
         /// </remarks>
         private void ShowNodeMenu()
         {
@@ -227,41 +415,61 @@ namespace GCam.UI.Views
             _nodeMenu?.Dispose();
             _nodeMenu = new WinForms.ContextMenuStrip();
 
-            OperationNode operation = _model?.SelectedOperationNode;
-
-            if (operation != null)
+            if (_model == null)
             {
-                BuildOperationMenu(operation);
+                return;
+            }
+
+            IReadOnlyList<JobNode> jobs = _model.SelectedJobNodes;
+            IReadOnlyList<OperationNode> operations = _model.SelectedOperationNodes;
+
+            if (jobs.Count == 0 && operations.Count == 0)
+            {
+                return;
+            }
+
+            if (jobs.Count == 0)
+            {
+                BuildOperationMenu(operations);
+            }
+            else if (operations.Count == 0)
+            {
+                BuildJobMenu(jobs);
             }
             else
             {
-                JobNode job = _model?.SelectedJobNode;
-                if (job == null)
-                {
-                    return;
-                }
-
-                BuildJobMenu(job);
+                BuildMixedMenu(jobs, operations);
             }
 
             _nodeMenu.Show(WinForms.Control.MousePosition);
         }
 
-        private void BuildJobMenu(JobNode job)
+        private void BuildJobMenu(IReadOnlyList<JobNode> jobs)
         {
-            AddMenuItem("Edit…", () => _model.EditJob(job));
-            AddMenuItem("Rename", BeginRename, shortcut: "F2");
-            _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
-            AddMenuItem("New Operation…", () => _model.NewOperation(job));
+            bool one = jobs.Count == 1;
+
+            if (one)
+            {
+                AddMenuItem("Edit…", () => _model.EditJob(jobs[0]));
+                AddMenuItem("Rename", BeginRename, shortcut: "F2");
+                _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
+                AddMenuItem("New Operation…", () => _model.NewOperation(jobs[0]));
+            }
+
             AddMenuItem(
                 "Generate",
-                () => _model.GenerateJob(job),
-                enabled: job.Job != null && job.Job.Operations.Count > 0);
+                () => _model.GenerateJobs(jobs),
+                enabled: jobs.Any(j => j.Job != null && j.Job.Operations.Count > 0));
             _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
-            AddMenuItem("Duplicate", () => _model.Duplicate(job));
+            AddMenuItem("Duplicate", () => _model.DuplicateJobs(jobs));
 
-            // Nothing to do for a job that is already the default.
-            AddMenuItem("Make Default", () => _model.MakeDefault(job), enabled: !job.IsDefault);
+            // Nothing to do for a job that is already the default, and no answer at all for
+            // several of them.
+            if (one)
+            {
+                AddMenuItem("Make Default", () => _model.MakeDefault(jobs[0]), enabled: !jobs[0].IsDefault);
+            }
+
             AddMenuItem("Delete", DeleteSelected, shortcut: "Del");
         }
 
@@ -269,25 +477,49 @@ namespace GCam.UI.Views
         /// The operation menu, in the same order as the job one so the two read alike.
         /// </summary>
         /// <remarks>
-        /// Generate is greyed out on a suppressed operation because
-        /// <see cref="GCam.Core.Generation.GenerationQueue"/> skips one - offering a
+        /// Generate is greyed out when every selected operation is suppressed, because
+        /// <see cref="GCam.Core.Generation.GenerationQueue"/> skips those - offering a
         /// command that is guaranteed to do nothing is worse than not offering it.
+        ///
+        /// Suppress is one command over the whole selection rather than a toggle each:
+        /// anything still running gets suppressed, and only when none of them is does it
+        /// turn into Restore. A per-row toggle would leave a mixed selection in a state
+        /// nobody asked for.
         /// </remarks>
-        private void BuildOperationMenu(OperationNode operation)
+        private void BuildOperationMenu(IReadOnlyList<OperationNode> operations)
         {
-            bool enabled = operation.Operation?.Enabled ?? true;
+            bool one = operations.Count == 1;
+            bool anyEnabled = operations.Any(o => o.Operation?.Enabled ?? true);
 
-            AddMenuItem("Edit…", () => _model.EditSelected());
-            AddMenuItem("Rename", BeginRename, shortcut: "F2");
-            _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
-            AddMenuItem(
-                "Generate", () => _model.GenerateOperation(operation), enabled: enabled);
+            if (one)
+            {
+                AddMenuItem("Edit…", () => _model.EditSelected());
+                AddMenuItem("Rename", BeginRename, shortcut: "F2");
+                _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
+            }
+
+            AddMenuItem("Generate", () => _model.GenerateOperations(operations), enabled: anyEnabled);
             AddMenuItem(
                 "Suppress",
-                () => _model.SetOperationEnabled(operation, !operation.Operation.Enabled),
-                isChecked: !enabled);
+                () => _model.SetOperationsEnabled(operations, !anyEnabled),
+                isChecked: !anyEnabled);
             _nodeMenu.Items.Add(new WinForms.ToolStripSeparator());
-            AddMenuItem("Duplicate", () => _model.DuplicateOperation(operation));
+            AddMenuItem("Duplicate", () => _model.DuplicateOperations(operations));
+            AddMenuItem("Delete", DeleteSelected, shortcut: "Del");
+        }
+
+        /// <summary>
+        /// Jobs and operations selected together: the two commands that mean the same thing
+        /// for both.
+        /// </summary>
+        private void BuildMixedMenu(IReadOnlyList<JobNode> jobs, IReadOnlyList<OperationNode> operations)
+        {
+            AddMenuItem("Generate", () =>
+            {
+                _model.GenerateJobs(jobs);
+                _model.GenerateOperations(operations);
+            });
+
             AddMenuItem("Delete", DeleteSelected, shortcut: "Del");
         }
 
@@ -322,47 +554,75 @@ namespace GCam.UI.Views
         }
 
         /// <summary>
-        /// Deletes the node the user is on, after asking.
+        /// Deletes everything selected, after asking once.
         /// </summary>
         /// <remarks>
-        /// <b>An operation deletes the operation, not its job.</b> Everywhere else an
-        /// operation node stands in for its parent - New Operation, the 3D preview - and
-        /// this is the one place that would be destructive, because Delete on an operation
-        /// used to take the whole job with it.
+        /// <b>An operation deletes the operation, not its job.</b> An operation node stands
+        /// in for its parent elsewhere - New Operation - and this is the one place that
+        /// would be destructive, because Delete on an operation used to take the whole job
+        /// with it.
         ///
-        /// Both kinds ask first. There is no undo in G-CAM yet - <c>Core/Commands</c> is
-        /// unbuilt - so a delete is final, and it takes a generated toolpath with it.
+        /// One question for the whole selection, naming what is about to go. There is no
+        /// undo in G-CAM yet - <c>Core/Commands</c> is unbuilt - so a delete is final, and
+        /// it takes generated toolpaths with it.
         /// </remarks>
         private void DeleteSelected()
         {
-            OperationNode operation = _model?.SelectedOperationNode;
-
-            if (operation != null)
-            {
-                if (Ask($"Delete {operation.Name}?"))
-                {
-                    _model.DeleteOperation(operation);
-                }
-
-                return;
-            }
-
-            JobNode job = _model?.SelectedJobNode;
-            if (job == null)
+            if (_model == null)
             {
                 return;
             }
 
-            int operations = _model.OperationCount(job);
-            string question = operations == 0
-                ? $"Delete {job.Name}?"
-                : $"Delete {job.Name} and its {operations} operation{(operations == 1 ? string.Empty : "s")}?";
+            IReadOnlyList<JobNode> jobs = _model.SelectedJobNodes;
+            IReadOnlyList<OperationNode> operations = _model.SelectedOperationNodes;
 
-            if (Ask(question))
+            if (jobs.Count == 0 && operations.Count == 0)
             {
-                _model.Delete(job);
+                return;
+            }
+
+            if (Ask(DeleteQuestion(jobs, operations)))
+            {
+                _model.Delete(_model.SelectedNodes.ToList());
             }
         }
+
+        /// <summary>
+        /// What the delete prompt says, which has to be true of every shape a selection can
+        /// take.
+        /// </summary>
+        /// <remarks>
+        /// One job and one operation are named, because a name is what someone checks before
+        /// answering. Past that, counts: reading eight names back is not a check, it is a
+        /// wall. The mixed wording says "selected" rather than claiming the two counts are
+        /// separate things, because an operation inside one of the selected jobs is in both.
+        /// </remarks>
+        private string DeleteQuestion(
+            IReadOnlyList<JobNode> jobs, IReadOnlyList<OperationNode> operations)
+        {
+            if (jobs.Count == 0)
+            {
+                return operations.Count == 1
+                    ? $"Delete {operations[0].Name}?"
+                    : $"Delete these {operations.Count} operations?";
+            }
+
+            int inside = jobs.Sum(j => _model.OperationCount(j));
+
+            if (operations.Count > 0)
+            {
+                return $"Delete the {Count(jobs.Count, "job")} and "
+                    + $"{Count(operations.Count, "operation")} selected?";
+            }
+
+            string what = jobs.Count == 1 ? jobs[0].Name : $"these {jobs.Count} jobs";
+
+            return inside == 0
+                ? $"Delete {what}?"
+                : $"Delete {what} and {(jobs.Count == 1 ? "its" : "their")} {Count(inside, "operation")}?";
+        }
+
+        private static string Count(int n, string noun) => n + " " + noun + (n == 1 ? string.Empty : "s");
 
         private static bool Ask(string question)
         {

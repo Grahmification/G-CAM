@@ -47,23 +47,89 @@ is WPF in `GCam.UI`, which never references SOLIDWORKS. The property pages are i
 creating the tab and calls `Bind` on the view inside it. One `JobDocument` and one
 viewmodel per open part, held together in `JobTreeTabs`.
 
+## Selecting in the tree
+
+**Several rows can be selected at once**, with the gestures every tree in Windows uses:
+click, Ctrl-click to add or remove one, Shift-click for a range measured down the rows the
+user can see. The rules themselves are `MultiSelection<T>` in `Core/Selection`, which knows
+nothing about trees or nodes — headless tests reach it, and the mistakes it is there to
+prevent (a range that runs the wrong way, an anchor left pointing at something no longer
+selected) are exactly the ones a click-through misses.
+
+**The anchor is deliberately two things at once**: where a Shift-click measures from, and
+what a command that can only act on one thing acts on — Edit, Rename, Make Default, New
+Operation. Those four are left out of the context menu entirely when several rows are
+selected, rather than shown greyed; half a menu of dead rows reads as something being
+broken. Generate, Suppress, Duplicate and Delete act on everything selected, and a
+selection holding both kinds of row gets a third menu offering only Generate and Delete.
+
+**A WPF `TreeView` selects exactly one row and cannot be talked out of it**, so G-CAM's
+selection is the node's own `IsSelected`, drawn by the row template, and the built-in
+highlight is turned off by overriding `SystemColors.HighlightBrushKey` and its three
+relatives inside the item style. WPF's own selection is still bound, as `IsCurrent` — it is
+what carries focus, arrow keys and scroll-into-view, and what a programmatic selection
+moves. The two are not the same thing: Ctrl-click a selected row and it stays current while
+ceasing to be selected.
+
+The one trap in wiring that up: **the view drives WPF's selection itself in two places** —
+restoring a selection after a rebuild, and focusing a right-clicked row — and each of them
+makes `TreeView` raise `SelectedItemChanged` as though the user had clicked. Both would
+collapse a multiple selection to one row. `OnTreeSelectionChanged` therefore ignores the
+event while a modifier is held (the mouse handler owns those), while the view is driving
+it, and when the row is already the anchor and already selected.
+
+**Re-entering that event kills SOLIDWORKS**, so every selection change goes through
+`JobTreeView.Apply`, which ignores the tree while one is being made. Changing the selection
+writes `IsCurrent` — `TreeViewItem.IsSelected` — back onto the rows, so the `TreeView`
+raises `SelectedItemChanged` inside the handler already running it, and from there into the
+preview's COM calls. What exposed it: `MultiSelection.ExtendTo` reported a change it had
+not made on *upward* Shift-clicks only, because it took its answer from `SelectAll`, which
+settles the anchor on the first row of the range — the anchor itself only when the range
+runs down. A selection rule that answers "changed" wrongly is not a wasted redraw here.
+
 ## The 3D preview
 
-**Selecting a job in the tree is what shows it.** Selection is the one signal that means
-"this is the job I am looking at" — it covers clicking, arrowing through the tree, and the
-reselection after a refresh, without any of them knowing a preview exists. An operation
-node stands in for its job here as it does for the context menu, so drilling into a job
-does not make its stock disappear.
+**What is selected is what is drawn, one row at a time.** Selecting a job shows its stock
+and its origin; selecting an operation shows that operation's toolpath and its job's
+origin, and no stock box to hide what it is cutting. Nothing appears for a row that is not
+selected — a job no longer drags every toolpath it holds onto the screen, and an operation
+no longer drags its job's stock.
 
-What appears is the stock as a translucent yellow box and the job's coordinate system as a
-red/green/blue triad at its origin — **two scene layers, not one**, so a stock box that
-cannot be computed still leaves the origin on screen. That is the half a user is more
-likely to be checking when the stock is wrong.
+Selection is the trigger because it is the one signal that means "this is what I am looking
+at" — it covers clicking, arrowing through the tree, and the reselection after a refresh,
+without any of them knowing a preview exists. It is stated in full each time rather than
+patched, so a deselection, a cancelled page and a deleted job all amount to the same empty
+call.
+
+**That rule lives in Core**, as `PreviewSelection` in `Core/Rendering`: a builder takes the
+jobs and operations a selection holds and groups them by job, saying for each whether its
+stock is wanted and which of its operations are. Grouping is not tidiness — resolving a
+job's coordinate system and measuring the model along its axes is the expensive half of
+drawing anything, and everything drawn for that job needs exactly it.
+
+`PreviewSelection` says what is **selected**, not what can be drawn. A suppressed operation
+still belongs to it; `JobPreview` is what decides that a suppressed one draws nothing (it
+will not be cut, and the greyed row says so) and that a stale one draws faded (it is still
+the only picture of what the machine last did).
+
+**A layer each, not one between them** — `stock:{job}`, `job-origin:{job}`,
+`toolpath:{operation}`. A stock box that cannot be computed still leaves the origin on
+screen, which is the half a user is more likely to be checking when the stock is wrong; two
+selected operations draw without either knowing about the other; and one job failing to
+measure costs only its own layers. `JobPreview` tracks the layers it has put up, because an
+operation that has just been deleted still has one on screen and nothing left in the
+document can name it.
 
 The Job property page previews its *clone* as it is edited, so both follow what is being
-typed and Cancel leaves nothing behind. The page is built once for the session and finds
-the preview for whichever part is in front, which is why it takes a `Func<IJobPreview>`
-rather than one instance.
+typed and Cancel leaves nothing behind — `PreviewSelection.ForJob`, the same one job with
+stock and origin that selecting it in the tree gives. The page is built once for the session
+and finds the preview for whichever part is in front, which is why it takes a
+`Func<IJobPreview>` rather than one instance.
+
+The Operation page has no preview call of its own. It does not need one: it is opened from
+the tree with its operation selected, so the toolpath on screen is already that operation's
+and only that one. A live preview of the path being edited is a different feature, and is
+listed as such in [operations.md](operations.md).
 
 Three parts again, none of which can see the other two: `Core/Abstractions/IJobPreview`
 is what the tree and the page both state intent through, and `JobPreview` in

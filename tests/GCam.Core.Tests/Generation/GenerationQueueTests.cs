@@ -141,6 +141,33 @@ namespace GCam.Core.Tests.Generation
             Assert.Equal(new[] { "First", "Second", "Third" }, order);
         }
 
+        /// <summary>
+        /// What a multiple selection in the job tree asks for: these operations and not the
+        /// rest of the job around them.
+        /// </summary>
+        [Fact]
+        public void A_chosen_few_operations_run_and_the_rest_are_left_alone()
+        {
+            var f = new Fixture();
+            Job job = f.Document.AddNew();
+            Operation first = f.AddOperation(job, "First");
+            Operation second = f.AddOperation(job, "Second");
+            Operation third = f.AddOperation(job, "Third");
+
+            var order = new List<string>();
+            f.Strategy.OnGenerate = context =>
+            {
+                order.Add(context.Operation.Name);
+                return TwoMovePath();
+            };
+
+            GenerationResult result = f.Queue().Generate(job, new[] { first, third });
+
+            Assert.Equal(new[] { "First", "Third" }, order);
+            Assert.Equal(2, result.Generated);
+            Assert.Null(second.Toolpath);
+        }
+
         [Fact]
         public void Every_job_in_the_part_can_be_generated_at_once()
         {

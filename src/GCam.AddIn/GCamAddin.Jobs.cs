@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
@@ -147,7 +148,13 @@ namespace GCam.AddIn
 
                 _jobTreeTabs.MarkDirty(model);
                 _jobTreeTabs.RefreshJobs(model);
-                _jobTreeTabs.SelectJob(model, _operationJob);
+
+                // Land the selection on the operation that was just accepted, not on its
+                // job. The tree is what decides what the 3D view shows, and it shows the
+                // selected operation's toolpath - so selecting the job would take the path
+                // that was being worked on off the screen at the moment of saying yes to
+                // it. A new operation has none yet, and lands on screen when it generates.
+                _jobTreeTabs.SelectOperation(model, operation);
             }
             catch (Exception ex)
             {
@@ -186,31 +193,32 @@ namespace GCam.AddIn
         }
 
         /// <summary>
-        /// Entry point 11. Computes the toolpath for one operation.
+        /// Entry point 11. Computes the toolpaths for the operations the tree has selected.
         /// </summary>
         /// <remarks>
-        /// The same queue as a whole job, holding one item - so an operation generated on
-        /// its own goes through exactly the path it would as part of a job, including how
-        /// a failure is recorded. Everything the remarks on <see cref="GenerateJob"/> say
-        /// about the STA thread applies here too.
+        /// The same queue as a whole job, holding only the chosen items - so operations
+        /// generated on their own go through exactly the path they would as part of a job,
+        /// including how a failure is recorded. Everything the remarks on
+        /// <see cref="GenerateJob"/> say about the STA thread applies here too.
         /// </remarks>
-        public void GenerateOperation(Job job, Operation operation)
+        public void GenerateOperations(Job job, IReadOnlyList<Operation> operations)
         {
             try
             {
-                if (operation == null)
+                if (operations == null || operations.Count == 0)
                 {
                     return;
                 }
 
-                Generate(
-                    job,
-                    (queue, target) => queue.Generate(target, operation),
-                    "operation '" + operation.Name + "'");
+                string what = operations.Count == 1
+                    ? "operation '" + operations[0].Name + "'"
+                    : operations.Count + " operations in job '" + job?.Name + "'";
+
+                Generate(job, (queue, target) => queue.Generate(target, operations), what);
             }
             catch (Exception ex)
             {
-                _errors.Handle(ex, nameof(GenerateOperation));
+                _errors.Handle(ex, nameof(GenerateOperations));
             }
         }
 

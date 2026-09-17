@@ -668,8 +668,10 @@ into one — Core says what to draw, `GCam.SolidWorks` says how.
 - **A stale toolpath draws dimmed** rather than disappearing. Hiding it would lose the
   only picture of what the machine last did; drawing it at full strength would claim it
   matches the current parameters.
-- Selecting an operation in the tree shows it, exactly as selecting a job shows its stock
-  — the same signal, extended. Selecting a job shows all its generated operations.
+- Selecting an operation in the tree is what shows it, exactly as selecting a job is what
+  shows that job's stock — the same signal, applied a row at a time. **Selecting a job
+  shows no toolpaths**, and selecting an operation shows no stock; select several
+  operations to compare their paths. See "The 3D preview" in [jobs.md](jobs.md).
 
 Everything is `LineStrip`: consecutive moves of one kind become a single strip, and where
 the kind changes the next strip **starts at the vertex the last one ended on**, so there is

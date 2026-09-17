@@ -30,19 +30,28 @@ project can see the other; the add-in is the only one that sees both. See
 
 **The toolbar buttons act on the default job**; the job tree's context menu is where a specific job or operation is reached, and it is the richer route. Post Process and Simulate do nothing at all yet.
 
-**There are two menus, one per kind of node**, built fresh on each right-click so
-enablement cannot go stale:
+**There are three menus, chosen by what is selected** rather than by what was clicked, and
+built fresh on each right-click so enablement cannot go stale:
 
-| | Items |
+| Selection | Items |
 | --- | --- |
-| Job | Edit…, Rename, New Operation…, Generate, Duplicate, Make Default, Delete |
-| Operation | Edit…, Rename, Generate, Suppress, Duplicate, Delete |
+| One job | Edit…, Rename, New Operation…, Generate, Duplicate, Make Default, Delete |
+| Several jobs | Generate, Duplicate, Delete |
+| One operation | Edit…, Rename, Generate, Suppress, Duplicate, Delete |
+| Several operations | Generate, Suppress, Duplicate, Delete |
+| Both kinds at once | Generate, Delete |
 
-Two menus rather than one that hides rows, because the two share almost nothing beyond
-the verbs: Make Default and New Operation mean nothing on an operation, and Suppress
-means nothing on a job. Generate is greyed out on a suppressed operation, since
-`GenerationQueue` skips one — offering a command guaranteed to do nothing is worse than
-not offering it.
+A menu per kind rather than one that hides rows, because the two share almost nothing
+beyond the verbs: Make Default and New Operation mean nothing on an operation, and Suppress
+means nothing on a job.
+
+**The commands that can only act on one thing are left out when several rows are
+selected**, not shown greyed — half a menu of dead rows reads as something being broken.
+Generate is greyed out when every selected operation is suppressed, since `GenerationQueue`
+skips those; offering a command guaranteed to do nothing is worse than not offering it.
+Suppress is one command over the whole selection rather than a toggle each: anything still
+running gets suppressed, and only when none of them is does it turn into Restore, because a
+per-row toggle would leave a mixed selection in a state nobody asked for.
 
 **The row that was right-clicked comes from `OriginalSource`, never from `sender`.**
 Right-click selects the row before the menu opens, and that handler is on
@@ -55,14 +64,18 @@ routed, so the innermost `TreeViewItem` above it is always the right row. Worth 
 because the obvious reading — that handling the event stops it reaching the parent — is
 true of bubbling events and exactly backwards here.
 
-**Delete acts on the node under the cursor, and nothing else does.** Everywhere else an
-operation node stands in for its job — New Operation, the 3D preview, the job menu — and
-Delete is the one place where that would be destructive. It was: <kbd>Del</kbd> on an
-operation deleted its entire job, silently, because `DeleteSelected` read
-`SelectedJobNode` like everything around it.
+**Delete acts on what is selected, and never on the job above it.** An operation node
+still stands in for its job in New Operation, and used to in the 3D preview as well; Delete
+is the one place where that would be destructive. It was: <kbd>Del</kbd> on an operation
+deleted its entire job, silently, because `DeleteSelected` read `SelectedJobNode` like
+everything around it.
 
-Both kinds ask before deleting. There is no undo — `Core/Commands` is unbuilt — and a
-delete takes a generated toolpath with it.
+**A right-click inside the selection leaves it alone**, which is what makes "select three
+operations, right-click, Delete" mean the three. Only a click on a row that is not selected
+replaces the selection with it. One question covers the whole selection, naming what is
+about to go — a name for a single job or operation, counts past that, because reading eight
+names back is not a check. There is no undo — `Core/Commands` is unbuilt — and a delete
+takes generated toolpaths with it.
 
 **Every tree edit ends in `IJobEditor.DocumentChanged()`.** The tree mutates Core objects
 directly, with no property page involved, so nothing on those paths would otherwise reach

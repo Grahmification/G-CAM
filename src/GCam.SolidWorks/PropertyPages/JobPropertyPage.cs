@@ -4,6 +4,7 @@ using GCam.Core;
 using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
 using GCam.Core.Model;
+using GCam.Core.Rendering;
 using GCam.SolidWorks.Selection;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -357,7 +358,7 @@ namespace GCam.SolidWorks.PropertyPages
             // back from the real one; on Cancel there is nothing to come back to, which
             // is exactly right - a cancelled new job never existed.
             _closing = true;
-            _preview?.Invoke()?.ShowJob(null);
+            _preview?.Invoke()?.Show(PreviewSelection.Empty);
 
             if (reason == swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Okay)
             {
@@ -538,7 +539,9 @@ namespace GCam.SolidWorks.PropertyPages
                 return;
             }
 
-            _preview?.Invoke()?.ShowJob(_working);
+            // Stock and origin, never the job's toolpaths: this is the job being set up,
+            // and the operations under it are not what the user is looking at.
+            _preview?.Invoke()?.Show(PreviewSelection.ForJob(_working));
         }
 
         // ---- Stock mode ------------------------------------------------------

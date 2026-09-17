@@ -1,4 +1,4 @@
-<UserControl x:Class="GCam.UI.Views.JobTreeView"
+﻿<UserControl x:Class="GCam.UI.Views.JobTreeView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:GCam.UI.ViewModels"
@@ -17,13 +17,29 @@
         <views:BoolToVisibilityConverter x:Key="NotToVisibility" Invert="True" />
 
         <!--
-            Selection and expansion are round-tripped through the node so the viewmodel
-            can drive them - selecting a freshly duplicated job, for instance. Same
-            arrangement as the tool library browser's folder tree.
+            Expansion is round-tripped through the node so the viewmodel can drive it, and
+            so is WPF's own single selection - as IsCurrent, which is where the keyboard is
+            rather than what is selected. Selecting a freshly duplicated job still works
+            through it; the same arrangement as the tool library browser's folder tree.
+
+            The several-rows selection that G-CAM actually shows is the node's IsSelected,
+            drawn by the row template below. The built-in highlight is turned off here
+            rather than left to fight with it: a TreeView highlights exactly one row, and
+            two blues disagreeing about what is selected is worse than one.
         -->
         <Style x:Key="TreeItemStyle" TargetType="TreeViewItem">
+            <Style.Resources>
+                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}"
+                                 Color="Transparent" />
+                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}"
+                                 Color="{x:Static SystemColors.ControlTextColor}" />
+                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}"
+                                 Color="Transparent" />
+                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}"
+                                 Color="{x:Static SystemColors.ControlTextColor}" />
+            </Style.Resources>
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
-            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+            <Setter Property="IsSelected" Value="{Binding IsCurrent, Mode=TwoWay}" />
             <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnNodeRightClick" />
             <EventSetter Event="PreviewMouseRightButtonUp" Handler="OnNodeRightButtonUp" />
             <EventSetter Event="MouseDoubleClick" Handler="OnNodeDoubleClick" />
@@ -78,70 +94,91 @@
             </Style.Triggers>
         </Style>
 
+        <!--
+            The selection highlight, drawn by the row rather than by the TreeView because
+            several rows can carry it at once. Explorer's colours, so a G-CAM selection
+            looks like a selection and not like a state badge.
+        -->
+        <Style x:Key="RowHighlight" TargetType="Border">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="2" />
+            <Setter Property="Padding" Value="3,1" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Background" Value="#CCE8FF" />
+                    <Setter Property="BorderBrush" Value="#99D1FF" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- The label, which becomes a text box while the node is being renamed. -->
         <DataTemplate x:Key="NodeLabel">
-            <Grid Margin="0,1" ToolTip="{Binding StatusText}">
-                <StackPanel Orientation="Horizontal"
-                            Visibility="{Binding IsEditing, Converter={StaticResource NotToVisibility}}">
-                    <!--
-                        The glyph and its badge share one cell, so the badge sits over the
-                        gear's bottom-right corner and the row's layout is unchanged.
-                    -->
-                    <Grid Margin="0,0,5,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Glyph}" />
-                        <Grid Width="9" Height="9" Margin="0,0,-2,-1"
-                              HorizontalAlignment="Right" VerticalAlignment="Bottom">
-                            <Ellipse Style="{StaticResource BadgeDisc}" />
-                            <Path Style="{StaticResource BadgeMark}" />
+            <Border Style="{StaticResource RowHighlight}">
+                <Grid Margin="0,1" ToolTip="{Binding StatusText}">
+                    <StackPanel Orientation="Horizontal"
+                                Visibility="{Binding IsEditing, Converter={StaticResource NotToVisibility}}">
+                        <!--
+                            The glyph and its badge share one cell, so the badge sits over the
+                            gear's bottom-right corner and the row's layout is unchanged.
+                        -->
+                        <Grid Margin="0,0,5,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Glyph}" />
+                            <Grid Width="9" Height="9" Margin="0,0,-2,-1"
+                                  HorizontalAlignment="Right" VerticalAlignment="Bottom">
+                                <Ellipse Style="{StaticResource BadgeDisc}" />
+                                <Path Style="{StaticResource BadgeMark}" />
+                            </Grid>
                         </Grid>
-                    </Grid>
-                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsDefault}" Value="True">
-                                        <Setter Property="FontWeight" Value="SemiBold" />
-                                    </DataTrigger>
+                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDefault}" Value="True">
+                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                        </DataTrigger>
 
-                                    <!--
-                                        A suppressed operation is skipped by generation,
-                                        not drawn and never posted. Without something to
-                                        see here, suppressing one looks like its toolpath
-                                        vanishing for no reason.
-                                    -->
-                                    <DataTrigger Binding="{Binding IsSuppressed}" Value="True">
-                                        <Setter Property="Foreground" Value="#9AA4AE" />
-                                        <Setter Property="FontStyle" Value="Italic" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <Border Background="#E4E8EC" CornerRadius="2" Margin="6,0,0,0" Padding="4,0"
-                            VerticalAlignment="Center">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsDefault}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <TextBlock Text="default" FontSize="10" Foreground="#5A6570" />
-                    </Border>
-                </StackPanel>
+                                        <!--
+                                            A suppressed operation is skipped by generation,
+                                            not drawn and never posted. Without something to
+                                            see here, suppressing one looks like its toolpath
+                                            vanishing for no reason.
+                                        -->
+                                        <DataTrigger Binding="{Binding IsSuppressed}" Value="True">
+                                            <Setter Property="Foreground" Value="#9AA4AE" />
+                                            <Setter Property="FontStyle" Value="Italic" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <Border Background="#E4E8EC" CornerRadius="2" Margin="6,0,0,0" Padding="4,0"
+                                VerticalAlignment="Center">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDefault}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="default" FontSize="10" Foreground="#5A6570" />
+                        </Border>
+                    </StackPanel>
 
-                <TextBox x:Name="RenameBox"
-                         Text="{Binding Name, Mode=OneWay}"
-                         Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}"
-                         MinWidth="90"
-                         Padding="1,0"
-                         KeyDown="OnRenameKeyDown"
-                         LostKeyboardFocus="OnRenameLostFocus"
-                         IsVisibleChanged="OnRenameBoxVisibleChanged" />
-            </Grid>
+                    <TextBox x:Name="RenameBox"
+                             Text="{Binding Name, Mode=OneWay}"
+                             Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}"
+                             MinWidth="90"
+                             Padding="1,0"
+                             KeyDown="OnRenameKeyDown"
+                             LostKeyboardFocus="OnRenameLostFocus"
+                             IsVisibleChanged="OnRenameBoxVisibleChanged" />
+                </Grid>
+            </Border>
         </DataTemplate>
 
         <HierarchicalDataTemplate DataType="{x:Type vm:JobNode}"
@@ -181,6 +218,7 @@
                   BorderThickness="0"
                   Background="Transparent"
                   Visibility="{Binding HasJobs, Converter={StaticResource BoolToVisibility}}"
+                  PreviewMouseLeftButtonDown="OnNodeLeftClick"
                   SelectedItemChanged="OnTreeSelectionChanged"
                   KeyDown="OnTreeKeyDown" />
     </Grid>

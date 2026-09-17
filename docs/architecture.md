@@ -21,11 +21,12 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Model` — Job, Stock, JobDocument, the part's tool list | Done, and persisted | [Jobs](design/jobs.md) |
 | `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4, Polyline | Started — what stock, rendering and contouring need | |
 | `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done. Closed contours by orientation; one side of an open path by extracting it from Clipper's ribbon | [Operations](design/operations.md) |
-| `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh | Done for what exists to draw | [Jobs](design/jobs.md) |
-| `UI` — job tree: rename in place, a context menu per node kind, double-click and Enter to edit. Operations delete, duplicate, rename, suppress and generate from it, and show their state as a badge on the icon | Done | [Jobs](design/jobs.md), [UI shells](design/ui-shells.md) |
+| `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh, PreviewSelection | Done for what exists to draw | [Jobs](design/jobs.md) |
+| `Core/Selection` — `MultiSelection<T>`, the click / Ctrl-click / Shift-click rules | Done | [Jobs](design/jobs.md) |
+| `UI` — job tree: rename in place, a context menu per node kind, double-click and Enter to edit. Operations delete, duplicate, rename, suppress and generate from it, and show their state as a badge on the icon. Several rows select at once, and what is selected is what the 3D view draws | Done; the multiple selection is **not yet verified on 2025 SP3** | [Jobs](design/jobs.md), [UI shells](design/ui-shells.md) |
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job and Operation pages | Done (2025 SP3). The Operation page is five tabs and rebuilds itself to show a change; its real gaps are tabulated under "the property page" in the design note | [Operations](design/operations.md) |
 | `SolidWorks/Selection` — selection boxes to bodies, coordinate systems and contour edges, stored and restored | Done (2025 SP3) | |
-| `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box + origin triad) | Done | [Jobs](design/jobs.md) |
+| `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box, origin triad, toolpaths) | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Done; a contour generates from selected edges on a real part (2025 SP3). Open chains are cut, not discarded | [Operations](design/operations.md) |
 | `Core/Model` — Operation, heights, geometry references, Toolpath | Done | [Operations](design/operations.md) |
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates; face, adaptive and drill are designed only | [Operations](design/operations.md) |
@@ -89,8 +90,12 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │   └── Import/                native XML + HSMWorks (.hsmlib) readers
 │   │   ├── Rendering/                 RenderScene (named layers), RenderLayer,
 │   │   │                              RenderBatch, PrimitiveKind, RenderColour,
-│   │   │                              BoxMesh, ConeMesh, AxisTriad, ToolpathMesh
+│   │   │                              BoxMesh, ConeMesh, AxisTriad, ToolpathMesh,
+│   │   │                              PreviewSelection (which of stock, origin and
+│   │   │                              toolpath a selection asks for)
 │   │   │                              — what to draw, never how
+│   │   ├── Selection/                 MultiSelection<T> — click, Ctrl-click and
+│   │   │                              Shift-click over an ordered list
 │   │   ├── Geometry/
 │   │   │   ├── Chaining.cs            loose curve pieces → contours, open or closed,
 │   │   │   │                          each knowing which pieces it was built from
@@ -138,8 +143,9 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   │   ├── SceneRenderer.cs       RenderScene → GL, mm → m, cached per version
 │   │   │   ├── ViewportRenderer.cs    implements Core's IViewportRenderer;
 │   │   │   │                          BufferSwapNotify subscription per window
-│   │   │   └── JobPreview.cs          implements Core's IJobPreview — stock box
-│   │   │                              and coordinate system triad
+│   │   │   └── JobPreview.cs          implements Core's IJobPreview — a stock box,
+│   │   │                              a coordinate system triad and a toolpath
+│   │   │                              per selected row, a layer each
 │   │   ├── PropertyPages/             PmpHandlerBase (all 37 callbacks, wrapped),
 │   │   │                              GCamPropertyPage (build/show/tab restore),
 │   │   │                              JobPropertyPage, OperationPropertyPage

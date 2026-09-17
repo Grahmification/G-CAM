@@ -11,6 +11,7 @@ namespace GCam.UI.ViewModels
     {
         private string _name;
         private bool _isSelected;
+        private bool _isCurrent;
         private bool _isExpanded = true;
         private bool _isEditing;
         private bool _isSuppressed;
@@ -35,10 +36,35 @@ namespace GCam.UI.ViewModels
             set => Set(ref _name, value);
         }
 
+        /// <summary>
+        /// True when this row is one of the selected ones, which is what draws it
+        /// highlighted and what puts it in the 3D view.
+        /// </summary>
+        /// <remarks>
+        /// G-CAM's own selection, not WPF's. A <see cref="System.Windows.Controls.TreeView"/>
+        /// selects one row and only one, so the highlight is drawn by the row template from
+        /// this flag and the built-in one is turned off - see JobTreeView.xaml.
+        /// </remarks>
         public bool IsSelected
         {
             get => _isSelected;
             set => Set(ref _isSelected, value);
+        }
+
+        /// <summary>
+        /// True for the one row WPF itself considers selected: where the keyboard is, and
+        /// where a Shift-click measures from.
+        /// </summary>
+        /// <remarks>
+        /// Bound two-way to <c>TreeViewItem.IsSelected</c>, which is what keeps arrow keys,
+        /// focus and scroll-into-view working while the visible selection is ours. It draws
+        /// nothing by itself, and it is not the same as <see cref="IsSelected"/>: Ctrl-click
+        /// a selected row and it stays current while ceasing to be selected.
+        /// </remarks>
+        public bool IsCurrent
+        {
+            get => _isCurrent;
+            set => Set(ref _isCurrent, value);
         }
 
         public bool IsExpanded

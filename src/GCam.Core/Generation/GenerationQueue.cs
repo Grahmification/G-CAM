@@ -52,6 +52,25 @@ namespace GCam.Core.Generation
             return Run(new[] { new Item(job, operation) }, progress, cancellation);
         }
 
+        /// <summary>Generates a chosen few of one job's operations, in the order given.</summary>
+        /// <remarks>
+        /// What a multiple selection in the job tree asks for. The caller passes them in
+        /// tree order, because an operation generated before the one that machines away
+        /// what it left behind is the order the result has to be read in - the same reason
+        /// <see cref="Generate(Job, IProgress{GenerationProgress}, CancellationToken)"/>
+        /// runs a job in tree order rather than in any order it likes.
+        /// </remarks>
+        public GenerationResult Generate(
+            Job job,
+            IEnumerable<Operation> operations,
+            IProgress<GenerationProgress> progress = null,
+            CancellationToken cancellation = default)
+        {
+            IEnumerable<Operation> chosen = operations ?? new List<Operation>();
+
+            return Run(chosen.Select(o => new Item(job, o)).ToList(), progress, cancellation);
+        }
+
         /// <summary>Generates a whole job, in tree order.</summary>
         public GenerationResult Generate(
             Job job,

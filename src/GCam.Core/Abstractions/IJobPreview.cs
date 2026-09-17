@@ -1,14 +1,15 @@
-using GCam.Core.Model;
+using GCam.Core.Rendering;
 
 namespace GCam.Core.Abstractions
 {
     /// <summary>
-    /// Shows a job in the 3D view - today its stock box, later its toolpaths.
+    /// Draws what the user is looking at in the 3D view - a job's stock and origin, an
+    /// operation's toolpath.
     /// </summary>
     /// <remarks>
     /// Declared in Core for the same reason as <see cref="IJobEditor"/>: the job tree is
     /// WPF in GCam.UI and the property page is COM in GCam.SolidWorks, and neither can
-    /// see the other. Both state the same intent - "this is the job the user is looking
+    /// see the other. Both state the same intent - "this is what the user is looking
     /// at" - and GCam.SolidWorks answers it by building a scene.
     ///
     /// Implementations are called from WPF event handlers and PropertyManager page
@@ -20,9 +21,13 @@ namespace GCam.Core.Abstractions
     public interface IJobPreview
     {
         /// <summary>
-        /// Shows this job. Null clears the preview, which is what a deselection, a
-        /// cancelled page or a deleted job all amount to.
+        /// Shows exactly this selection and nothing else.
         /// </summary>
-        void ShowJob(Job job);
+        /// <remarks>
+        /// Each call states the whole picture rather than adding to it, so
+        /// <see cref="PreviewSelection.Empty"/> is what a deselection, a cancelled page and
+        /// a deleted job all amount to. Null means the same.
+        /// </remarks>
+        void Show(PreviewSelection selection);
     }
 }

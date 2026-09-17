@@ -166,6 +166,24 @@ namespace GCam.SolidWorks.Hosting
         }
 
         /// <summary>
+        /// Selects an operation in a document's tree, which is also what puts its toolpath
+        /// on screen.
+        /// </summary>
+        public void SelectOperation(ModelDoc2 model, Operation operation)
+        {
+            if (model == null || operation == null)
+            {
+                return;
+            }
+
+            DocumentTab tab;
+            if (_tabs.TryGetValue(model, out tab))
+            {
+                tab.Model.SelectOperation(operation);
+            }
+        }
+
+        /// <summary>
         /// What draws a job in a document's 3D view, or null if that document has no
         /// G-CAM tab.
         /// </summary>

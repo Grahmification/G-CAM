@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using GCam.Core.Model;
 
 namespace GCam.Core.Abstractions
@@ -36,14 +37,19 @@ namespace GCam.Core.Abstractions
         /// </remarks>
         void GenerateJob(Job job);
 
-        /// <summary>Computes the toolpath for one operation.</summary>
+        /// <summary>Computes the toolpaths for the operations the user picked out.</summary>
         /// <remarks>
         /// Separate from <see cref="GenerateJob"/> rather than a flag on it, because the
         /// two are different requests: a job generate runs everything in tree order and is
         /// what you ask for before posting, while this is what you ask for while setting
-        /// one operation up. <see cref="Generation.GenerationQueue"/> already offers both.
+        /// operations up. <see cref="Generation.GenerationQueue"/> already offers both.
+        ///
+        /// A list rather than one operation because the tree selects several, and running
+        /// them through one queue is what keeps them in tree order and gives one result to
+        /// report - generating them one call at a time would rebuild the queue, mark the
+        /// document dirty and rebuild the tree once per operation.
         /// </remarks>
-        void GenerateOperation(Job job, Operation operation);
+        void GenerateOperations(Job job, IReadOnlyList<Operation> operations);
 
         /// <summary>
         /// The tree changed the model itself, so the part has unsaved CAM changes.
