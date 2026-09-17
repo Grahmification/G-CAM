@@ -54,6 +54,19 @@ Suppress is one command over the whole selection rather than a toggle each: anyt
 running gets suppressed, and only when none of them is does it turn into Restore, because a
 per-row toggle would leave a mixed selection in a state nobody asked for.
 
+**Two clicks mean two different things, and the wait is what tells them apart.** Quickly:
+open the job or operation's property page. Slowly — a click on a row that was already the
+whole selection, with no second click for Windows' own double-click interval — rename in
+place, as the FeatureManager and Explorer both do. <kbd>F2</kbd> and the menu's Rename are
+the same thing without the wait.
+
+Everything that could mean the gesture was something else cancels the wait: the next
+mouse-down, the double-click itself, a drag starting, a key, a right-click. And the
+conditions are re-asked when it elapses, because half a second is long enough for the tree
+to have been rebuilt, reselected or deleted out from under it. The arming condition is read
+*before* the click is applied — a row that is already the whole selection — since that is
+the only moment the distinction between the first and second click exists.
+
 **The row that was right-clicked comes from `OriginalSource`, never from `sender`.**
 Right-click selects the row before the menu opens, and that handler is on
 `PreviewMouseRightButtonDown` — a **tunnelling** event, which runs root-first. An

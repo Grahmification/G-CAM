@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
@@ -7,6 +7,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
+using System.Windows.Threading;
 using GCam.Core.Diagnostics;
 using GCam.UI.ViewModels;
 using WinForms = System.Windows.Forms;
@@ -45,6 +46,14 @@ namespace GCam.UI.Views
         /// not read back as the user asking for something.
         /// </summary>
         private bool _drivingSelection;
+
+        /// <summary>
+        /// The row a slow double-click would rename, and the wait that decides whether it
+        /// was a slow double-click at all. Null between clicks.
+        /// </summary>
+        private JobTreeNode _renameRow;
+
+        private DispatcherTimer _renameTimer;
 
         /// <summary>
         /// Changes the selection, ignoring whatever the tree says about it while the change
@@ -143,6 +152,9 @@ namespace GCam.UI.Views
             {
                 JobTreeNode node = NodeUnder(e.OriginalSource as DependencyObject);
 
+                // Whatever this click turns out to be, it is not the tail of the last one.
+                CancelPendingRename();
+
                 // Where a drag would start from, if the pointer goes on to move far enough
                 // to mean one. A click that lands anywhere else cancels the last candidate.
                 _dragRow = node;
@@ -152,6 +164,11 @@ namespace GCam.UI.Views
                 {
                     return;
                 }
+
+                // A click on a row that was already the whole selection is the second half
+                // of a slow double-click - read *before* this click changes anything, which
+                // is the only moment the distinction exists.
+                _renameRow = WouldRename(node) ? node : null;
 
                 if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
                 {
@@ -170,6 +187,113 @@ namespace GCam.UI.Views
             {
                 Handle(ex, nameof(OnNodeLeftClick));
             }
+        }
+
+        /// <summary>
+        /// Starts the wait that turns a second click on an already-selected row into a
+        /// rename.
+        /// </summary>
+        /// <remarks>
+        /// On the button coming *up*, not going down, so that a click which turned into a
+        /// drag never leaves a rename armed behind it.
+        /// </remarks>
+        private void OnTreeMouseUp(object sender, MouseButtonEventArgs e)
+        {
+            try
+            {
+                if (_renameRow == null || _dragging)
+                {
+                    return;
+                }
+
+                // Released somewhere else - over another row, or off the tree entirely.
+                if (!ReferenceEquals(NodeUnder(e.OriginalSource as DependencyObject), _renameRow))
+                {
+                    _renameRow = null;
+                    return;
+                }
+
+                StartRenameWait();
+            }
+            catch (Exception ex)
+            {
+                Handle(ex, nameof(OnTreeMouseUp));
+            }
+        }
+
+        /// <summary>
+        /// Whether clicking this row again would mean "rename it", read before the click is
+        /// applied.
+        /// </summary>
+        /// <remarks>
+        /// It has to be the whole selection already: the first click of a selection must
+        /// not arm a rename, or every click on the tree would end in an edit box. A
+        /// modifier means the click is about the selection rather than about the row, the
+        /// part row has no name of its own, and a row already being edited is one the user
+        /// is renaming right now.
+        /// </remarks>
+        private bool WouldRename(JobTreeNode node)
+        {
+            return node.CanRename
+                   && !node.IsEditing
+                   && Keyboard.Modifiers == ModifierKeys.None
+                   && _model.SelectedNodes.Count == 1
+                   && _model.IsSelected(node);
+        }
+
+        /// <summary>
+        /// Waits out the double-click interval, then renames.
+        /// </summary>
+        /// <remarks>
+        /// <b>The wait is what separates this from the gesture that opens the page.</b>
+        /// Windows' own double-click time is the definition of "too quick to be two
+        /// clicks", so anything faster is a double-click and is already on its way to the
+        /// property page - <see cref="OnNodeDoubleClick"/> cancels this, as does the next
+        /// mouse-down, whichever arrives first.
+        ///
+        /// Background priority on purpose: the tick sets a node into edit mode, which swaps
+        /// the row's template and takes the keyboard. That is input-shaped work and has no
+        /// business pre-empting a render or an input event that is already queued.
+        /// </remarks>
+        private void StartRenameWait()
+        {
+            if (_renameTimer == null)
+            {
+                _renameTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher);
+                _renameTimer.Tick += OnRenameWaitElapsed;
+            }
+
+            _renameTimer.Interval =
+                TimeSpan.FromMilliseconds(WinForms.SystemInformation.DoubleClickTime);
+            _renameTimer.Start();
+        }
+
+        private void OnRenameWaitElapsed(object sender, EventArgs e)
+        {
+            try
+            {
+                JobTreeNode row = _renameRow;
+
+                CancelPendingRename();
+
+                // Re-asked rather than trusted: the wait is half a second of someone else's
+                // time, and the tree can have been rebuilt, reselected or deleted out from
+                // under this in it.
+                if (row != null && _model != null && WouldRename(row))
+                {
+                    row.IsEditing = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Handle(ex, nameof(OnRenameWaitElapsed));
+            }
+        }
+
+        private void CancelPendingRename()
+        {
+            _renameTimer?.Stop();
+            _renameRow = null;
         }
 
         /// <summary>
@@ -257,6 +381,8 @@ namespace GCam.UI.Views
         {
             try
             {
+                CancelPendingRename();
+
                 TreeViewItem item = RowUnder(e.OriginalSource as DependencyObject);
 
                 if (item == null || _model == null)
@@ -426,6 +552,10 @@ namespace GCam.UI.Views
         {
             try
             {
+                // Two quick clicks mean the page, not a rename. This is the other half of
+                // the slow double-click: whichever gesture completes first wins.
+                CancelPendingRename();
+
                 if (_model?.SelectedNode is PartNode)
                 {
                     return;
@@ -444,6 +574,9 @@ namespace GCam.UI.Views
         {
             try
             {
+                // Whatever the key does, it is not the second half of a mouse gesture.
+                CancelPendingRename();
+
                 if (e.Key == Key.F2)
                 {
                     BeginRename();
@@ -530,6 +663,10 @@ namespace GCam.UI.Views
                 }
 
                 JobTreeNode row = _dragRow;
+
+                // The click is a drag, not the first half of anything.
+                CancelPendingRename();
+
                 _dragging = true;
 
                 try

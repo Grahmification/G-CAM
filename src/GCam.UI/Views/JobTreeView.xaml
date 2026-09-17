@@ -283,6 +283,7 @@
                   Margin="4,6,4,4"
                   AllowDrop="True"
                   PreviewMouseLeftButtonDown="OnNodeLeftClick"
+                  PreviewMouseLeftButtonUp="OnTreeMouseUp"
                   PreviewMouseMove="OnTreeMouseMove"
                   DragOver="OnTreeDragOver"
                   DragLeave="OnTreeDragLeave"
