@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using GCam.Core.Abstractions;
@@ -351,7 +352,7 @@ namespace GCam.SolidWorks.Hosting
             {
                 View = view,
                 Jobs = jobs,
-                Model = new JobTreeViewModel(jobs, _jobEditor, _log, preview),
+                Model = new JobTreeViewModel(jobs, _jobEditor, _log, preview, () => PartName(model)),
                 Renderer = renderer,
                 Preview = preview,
             };
@@ -618,6 +619,34 @@ namespace GCam.SolidWorks.Hosting
 
             _missingControlReported = true;
             _errors.Handle(new GCamUserException(message), nameof(AddTab));
+        }
+
+        /// <summary>
+        /// What to call the part at the top of its tree - its file name, without the
+        /// extension.
+        /// </summary>
+        /// <remarks>
+        /// From the path where there is one, because <c>GetTitle</c> carries the extension
+        /// or not depending on a Windows setting nobody should have to think about. An
+        /// unsaved part has no path and falls back to the title, which is what SOLIDWORKS
+        /// is calling it in the window - "Part1".
+        ///
+        /// Asked for on every tree rebuild rather than held, so a Save As follows without
+        /// anything having to subscribe to a rename. It is two string operations and a COM
+        /// call on a rebuild that is already rebuilding every row.
+        /// </remarks>
+        private static string PartName(ModelDoc2 model)
+        {
+            if (model == null)
+            {
+                return string.Empty;
+            }
+
+            string path = model.GetPathName();
+
+            return string.IsNullOrEmpty(path)
+                ? Path.GetFileNameWithoutExtension(model.GetTitle() ?? string.Empty)
+                : Path.GetFileNameWithoutExtension(path);
         }
 
         private static string Describe(ModelDoc2 model)

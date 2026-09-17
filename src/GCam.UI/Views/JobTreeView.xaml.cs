@@ -285,6 +285,85 @@ namespace GCam.UI.Views
         }
 
         /// <summary>
+        /// Takes the expander arrow off a row that cannot be collapsed.
+        /// </summary>
+        /// <remarks>
+        /// The model already refuses to fold such a row - see
+        /// <see cref="JobTreeNode.CanCollapse"/>, which is what covers the left arrow key as
+        /// well - so this is only about not offering an arrow that would snap back.
+        ///
+        /// <b>Reached through the visual tree rather than by retemplating.</b> The expander
+        /// is a <see cref="ToggleButton"/> inside <c>TreeViewItem</c>'s own template, and a
+        /// style outside that template cannot name it. Replacing the template to get at it
+        /// would mean owning the indentation, the focus visuals and the selection
+        /// highlight - three things that currently work - for the sake of one arrow. If a
+        /// future theme names it differently the search finds nothing, and the row keeps an
+        /// arrow that does not do anything, which is the failure worth having.
+        /// </remarks>
+        private void OnRowLoaded(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (!(sender is TreeViewItem item) ||
+                    !(item.DataContext is JobTreeNode node) ||
+                    node.CanCollapse)
+                {
+                    return;
+                }
+
+                ToggleButton expander = ExpanderOf(item);
+
+                if (expander != null)
+                {
+                    // Hidden, not collapsed: the template gives the arrow a column of its
+                    // own, and taking it out of the layout would shuffle the row left of
+                    // where every other row's glyph sits.
+                    expander.Visibility = Visibility.Hidden;
+                }
+            }
+            catch (Exception ex)
+            {
+                Handle(ex, nameof(OnRowLoaded));
+            }
+        }
+
+        /// <summary>
+        /// The expander button belonging to this row, or null.
+        /// </summary>
+        /// <remarks>
+        /// Stops at any nested <see cref="TreeViewItem"/>: a job's rows sit inside the
+        /// part's, and its arrow is the one row's arrow this must not touch.
+        /// </remarks>
+        private static ToggleButton ExpanderOf(DependencyObject row)
+        {
+            int children = VisualTreeHelper.GetChildrenCount(row);
+
+            for (int i = 0; i < children; i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(row, i);
+
+                if (child is ToggleButton button)
+                {
+                    return button;
+                }
+
+                if (child is TreeViewItem)
+                {
+                    continue;
+                }
+
+                ToggleButton found = ExpanderOf(child);
+
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// The node behind a clicked element, or null when the click was not on a row.
         /// </summary>
         /// <remarks>
@@ -336,10 +415,22 @@ namespace GCam.UI.Views
         }
 
         /// <summary>Double-click opens the job's page - the usual CAM gesture.</summary>
+        /// <remarks>
+        /// The part row has no page to open, and cannot be folded away either, so its
+        /// double-click is left unhandled and does nothing. Passing it on is still the right
+        /// thing: what WPF would do with it - fold the row - is refused by the model rather
+        /// than by intercepting the gesture, so there is one rule about that row and not
+        /// two.
+        /// </remarks>
         private void OnNodeDoubleClick(object sender, MouseButtonEventArgs e)
         {
             try
             {
+                if (_model?.SelectedNode is PartNode)
+                {
+                    return;
+                }
+
                 _model?.EditSelected();
                 e.Handled = true;
             }
@@ -423,7 +514,9 @@ namespace GCam.UI.Views
         {
             try
             {
-                if (_dragging || _dragRow == null || e.LeftButton != MouseButtonState.Pressed)
+                // The part row is the tree itself; there is nowhere it could go.
+                if (_dragging || _dragRow == null || _dragRow is PartNode ||
+                    e.LeftButton != MouseButtonState.Pressed)
                 {
                     return;
                 }
@@ -590,7 +683,17 @@ namespace GCam.UI.Views
                     {
                         Row = target,
                         Edge = below ? DropIndicator.Below : DropIndicator.Above,
-                        Before = below ? After(_model.Nodes, target) : target,
+                        Before = below ? After(_model.Part?.Children, target) : target,
+                    };
+
+                // Dropping a job on the part row means first in the part, which reads the
+                // same way as dropping an operation on a job's row.
+                case JobNode _ when row is PartNode part:
+                    return new Placement
+                    {
+                        Row = part,
+                        Edge = DropIndicator.Below,
+                        Before = part.Children.FirstOrDefault(),
                     };
 
                 default:
@@ -601,6 +704,11 @@ namespace GCam.UI.Views
         /// <summary>The row after this one among its siblings, or null when it is the last.</summary>
         private static JobTreeNode After(IList<JobTreeNode> rows, JobTreeNode row)
         {
+            if (rows == null)
+            {
+                return null;
+            }
+
             int index = rows.IndexOf(row);
 
             return index >= 0 && index + 1 < rows.Count ? rows[index + 1] : null;
@@ -676,10 +784,17 @@ namespace GCam.UI.Views
 
             if (jobs.Count == 0 && operations.Count == 0)
             {
-                return;
-            }
+                // The part row, which is the only other thing there is to click. It offers
+                // the two commands that mean something for a whole part - and for a part
+                // with no jobs it is the only row there is to ask.
+                if (!(_model.SelectedNode is PartNode))
+                {
+                    return;
+                }
 
-            if (jobs.Count == 0)
+                BuildPartMenu();
+            }
+            else if (jobs.Count == 0)
             {
                 BuildOperationMenu(operations);
             }
@@ -693,6 +808,19 @@ namespace GCam.UI.Views
             }
 
             _nodeMenu.Show(WinForms.Control.MousePosition);
+        }
+
+        /// <summary>
+        /// The part row: make a job, or generate everything in the part.
+        /// </summary>
+        /// <remarks>
+        /// Generate All is greyed out on a part with no jobs, which is also the state the
+        /// row exists to give somewhere to click in.
+        /// </remarks>
+        private void BuildPartMenu()
+        {
+            AddMenuItem("New Job…", () => _model.NewJob());
+            AddMenuItem("Generate All", () => _model.GenerateAll(), enabled: _model.HasJobs);
         }
 
         private void BuildJobMenu(IReadOnlyList<JobNode> jobs)

@@ -47,6 +47,33 @@ is WPF in `GCam.UI`, which never references SOLIDWORKS. The property pages are i
 creating the tab and calls `Bind` on the view inside it. One `JobDocument` and one
 viewmodel per open part, held together in `JobTreeTabs`.
 
+## The shape of the tree
+
+```
+📄 Bracket Operations        PartNode    — one, always there
+  📁 Job1                    JobNode
+    ⚙ 2D Contour1            OperationNode
+```
+
+**The part row is the tree's root and has no model behind it.** `JobDocument` is the part's
+CAM data; the row is the viewmodel's own, named from SOLIDWORKS through a `Func<string>`
+passed in by `JobTreeTabs` — GCam.UI cannot reach SOLIDWORKS, and asking again on every
+rebuild is what makes a Save As follow with nothing subscribed to a rename. It offers New
+Job and Generate All, draws nothing in the 3D view, and cannot be renamed, dragged or
+deleted.
+
+It is there for a part with no jobs too, which is why there is no "no jobs" message and no
+heading above the tree any more: an empty part shows its own row, and that row can be
+right-clicked to make the first job. A message could not.
+
+**It does not fold away.** Collapsing it would hide every job in the part and leave one row
+saying nothing. The refusal is `JobTreeNode.CanCollapse`, in the model, because there are
+three ways to collapse a row — the arrow, <kbd>←</kbd>, double-click — and one rule beats
+intercepting each of them. The arrow is then hidden as well, so nothing is offered that
+would only snap back; that part is a visual-tree walk in `JobTreeView.OnRowLoaded` rather
+than a replacement `TreeViewItem` template, which would mean owning the indentation, the
+focus visuals and the selection highlight for the sake of one arrow.
+
 ## Selecting in the tree
 
 **Several rows can be selected at once**, with the gestures every tree in Windows uses:
@@ -90,9 +117,10 @@ runs down. A selection rule that answers "changed" wrongly is not a wasted redra
 ## Reordering
 
 **Rows are dragged to reorder them** — an operation within its job or into another one, a
-job among the jobs. An operation dropped on a job's own row goes first in that job; a job
-dropped on an operation is refused, because the rows around an operation belong to a job
-that is not the one being moved.
+job among the jobs. A row dropped on its parent's own row goes first inside it: an
+operation on a job, a job on the part. A job dropped on an operation is refused, because
+the rows around an operation belong to a job that is not the one being moved, and the part
+row does not move at all.
 
 **The destination is "before this row", never an index.** `JobDocument.MoveOperation` and
 `MoveJob` take the row the dragged one lands in front of, or null for last. Taking a row

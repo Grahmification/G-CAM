@@ -40,9 +40,26 @@
             </Style.Resources>
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
             <Setter Property="IsSelected" Value="{Binding IsCurrent, Mode=TwoWay}" />
+            <EventSetter Event="Loaded" Handler="OnRowLoaded" />
             <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnNodeRightClick" />
             <EventSetter Event="PreviewMouseRightButtonUp" Handler="OnNodeRightButtonUp" />
             <EventSetter Event="MouseDoubleClick" Handler="OnNodeDoubleClick" />
+            <Style.Triggers>
+                <!--
+                    A row with no arrow takes back the column the arrow would have sat in:
+                    19px, which is the MinWidth TreeViewItem's own template gives that
+                    column. Everything below the row moves with it, because a child row is
+                    laid out inside its parent, so this is one level of indentation off the
+                    whole tree rather than a nudge to one row.
+
+                    The hidden expander is what ends up in the negative space, which is why
+                    this is tied to there being no arrow: doing it to a row that has one
+                    would push that arrow out of sight.
+                -->
+                <DataTrigger Binding="{Binding CanCollapse}" Value="False">
+                    <Setter Property="Margin" Value="-19,0,0,0" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
         <!--
@@ -221,6 +238,15 @@
             </Border>
         </DataTemplate>
 
+        <!--
+            The part, and every job in it. One template each rather than one for all three,
+            because an operation has no children to hand an ItemsSource.
+        -->
+        <HierarchicalDataTemplate DataType="{x:Type vm:PartNode}"
+                                  ItemsSource="{Binding Children}">
+            <ContentPresenter ContentTemplate="{StaticResource NodeLabel}" Content="{Binding}" />
+        </HierarchicalDataTemplate>
+
         <HierarchicalDataTemplate DataType="{x:Type vm:JobNode}"
                                   ItemsSource="{Binding Children}">
             <ContentPresenter ContentTemplate="{StaticResource NodeLabel}" Content="{Binding}" />
@@ -231,33 +257,19 @@
         </DataTemplate>
     </UserControl.Resources>
 
+    <!--
+        No heading above the tree: the part row at the top of it says which part these
+        belong to, and says it for a part with no jobs as well - which is what the old
+        "No job in this document." message was for, except that this one can be
+        right-clicked to make the first one.
+    -->
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <TextBlock Grid.Row="0"
-                   Text="G-CAM jobs"
-                   Margin="12,10,12,6"
-                   FontWeight="SemiBold"
-                   Foreground="#37475A" />
-
-        <TextBlock Grid.Row="1"
-                   Text="{Binding EmptyMessage}"
-                   Margin="12,0,12,12"
-                   VerticalAlignment="Top"
-                   TextWrapping="Wrap"
-                   Foreground="#888888"
-                   Visibility="{Binding HasJobs, Converter={StaticResource NotToVisibility}}" />
-
-        <TreeView Grid.Row="1"
-                  x:Name="JobTree"
+        <TreeView x:Name="JobTree"
                   ItemsSource="{Binding Nodes}"
                   ItemContainerStyle="{StaticResource TreeItemStyle}"
                   BorderThickness="0"
                   Background="Transparent"
-                  Visibility="{Binding HasJobs, Converter={StaticResource BoolToVisibility}}"
+                  Margin="4,6,4,4"
                   AllowDrop="True"
                   PreviewMouseLeftButtonDown="OnNodeLeftClick"
                   PreviewMouseMove="OnTreeMouseMove"

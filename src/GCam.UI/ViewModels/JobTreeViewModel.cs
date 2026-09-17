@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -12,8 +12,8 @@ using GCam.Core.Selection;
 namespace GCam.UI.ViewModels
 {
     /// <summary>
-    /// The G-CAM tab's tree: the jobs in one document, what is selected in it, and what
-    /// the context menu does to them.
+    /// The G-CAM tab's tree: the part, the jobs in it, what is selected, and what the
+    /// context menu does to them.
     /// </summary>
     /// <remarks>
     /// Presentation state only. Every rule - unique names, which job is the default,
@@ -35,6 +35,16 @@ namespace GCam.UI.ViewModels
         private readonly IJobPreview _preview;
         private readonly IGCamLog _log;
 
+        /// <summary>
+        /// What the part is called, asked for again on every rebuild.
+        /// </summary>
+        /// <remarks>
+        /// A callback rather than a string, because the name belongs to SOLIDWORKS and this
+        /// project cannot reach it. Asking again each time is what makes a Save As follow
+        /// without anything having to subscribe to a rename.
+        /// </remarks>
+        private readonly Func<string> _partName;
+
         private readonly MultiSelection<JobTreeNode> _selection = new MultiSelection<JobTreeNode>();
 
         /// <summary>
@@ -47,17 +57,33 @@ namespace GCam.UI.ViewModels
             JobDocument document,
             IJobEditor editor = null,
             IGCamLog log = null,
-            IJobPreview preview = null)
+            IJobPreview preview = null,
+            Func<string> partName = null)
         {
             _document = document ?? throw new ArgumentNullException(nameof(document));
             _editor = editor;
             _preview = preview;
             _log = log ?? NullLog.Instance;
+            _partName = partName;
 
             Refresh();
         }
 
+        /// <summary>
+        /// What the tree shows, which is one <see cref="PartNode"/> and everything under it.
+        /// </summary>
+        /// <remarks>
+        /// A collection of one rather than the part node on its own, because that is what a
+        /// <c>TreeView</c> binds its <c>ItemsSource</c> to.
+        /// </remarks>
         public ObservableCollection<JobTreeNode> Nodes { get; } = new ObservableCollection<JobTreeNode>();
+
+        /// <summary>The row standing for the part. Always there, jobs or no jobs.</summary>
+        public PartNode Part => Nodes.OfType<PartNode>().FirstOrDefault();
+
+        /// <summary>The job rows, which are the part row's children.</summary>
+        private IEnumerable<JobNode> JobNodes =>
+            Part?.Children.OfType<JobNode>() ?? Enumerable.Empty<JobNode>();
 
         /// <summary>
         /// Everything the user has picked in the tree. Changing it is what decides what the
@@ -87,11 +113,6 @@ namespace GCam.UI.ViewModels
         /// <summary>The selected jobs, in tree order. A selected operation is not one.</summary>
         public IReadOnlyList<JobNode> SelectedJobNodes =>
             InTreeOrder(_selection.Items.OfType<JobNode>());
-
-        public bool HasJobs => _document.Jobs.Count > 0;
-
-        /// <summary>Shown instead of the tree when the document has no jobs.</summary>
-        public string EmptyMessage => "No job in this document.";
 
         /// <summary>
         /// The job the anchor belongs to, or null.
@@ -133,17 +154,22 @@ namespace GCam.UI.ViewModels
         {
             var rows = new List<JobTreeNode>();
 
-            foreach (JobTreeNode node in Nodes)
-            {
-                rows.Add(node);
-
-                if (node.IsExpanded)
-                {
-                    rows.AddRange(node.Children);
-                }
-            }
+            AddVisible(Nodes, rows);
 
             return rows;
+        }
+
+        private static void AddVisible(IEnumerable<JobTreeNode> rows, List<JobTreeNode> into)
+        {
+            foreach (JobTreeNode row in rows)
+            {
+                into.Add(row);
+
+                if (row.IsExpanded)
+                {
+                    AddVisible(row.Children, into);
+                }
+            }
         }
 
         /// <summary>
@@ -232,6 +258,11 @@ namespace GCam.UI.ViewModels
             List<string> selectedOperations = _selection.Items.OfType<OperationNode>()
                 .Select(n => n.Operation.Id).ToList();
 
+            // The part row is one of a kind, so it is remembered as a flag rather than by
+            // an id. There is nothing else it could be restored onto.
+            bool partSelected = _selection.Items.OfType<PartNode>().Any();
+            bool partAnchored = SelectedNode is PartNode;
+
             string anchorJob = (SelectedNode as JobNode)?.Job.Id;
             string anchorOperation = SelectedOperationNode?.Operation.Id;
             string anchorFallbackJob = SelectedJobNode?.Job.Id;
@@ -248,6 +279,8 @@ namespace GCam.UI.ViewModels
                 // there.
                 _selection.Clear();
 
+                var part = new PartNode(_partName?.Invoke());
+
                 foreach (Job job in _document.Jobs)
                 {
                     var node = new JobNode(job) { IsDefault = _document.IsDefault(job) };
@@ -257,11 +290,19 @@ namespace GCam.UI.ViewModels
                         node.Children.Add(new OperationNode(operation));
                     }
 
-                    Nodes.Add(node);
+                    part.Children.Add(node);
                 }
 
+                Nodes.Add(part);
+
                 RestoreSelection(
-                    selectedJobs, selectedOperations, anchorJob, anchorOperation, anchorFallbackJob);
+                    selectedJobs,
+                    selectedOperations,
+                    partSelected,
+                    partAnchored,
+                    anchorJob,
+                    anchorOperation,
+                    anchorFallbackJob);
             }
             finally
             {
@@ -269,7 +310,6 @@ namespace GCam.UI.ViewModels
             }
 
             AfterSelectionChanged(true);
-            Raise(nameof(HasJobs));
         }
 
         /// <summary>
@@ -284,17 +324,17 @@ namespace GCam.UI.ViewModels
         private void RestoreSelection(
             IReadOnlyCollection<string> jobIds,
             IReadOnlyCollection<string> operationIds,
+            bool partSelected,
+            bool partAnchored,
             string anchorJob,
             string anchorOperation,
             string anchorFallbackJob)
         {
             List<JobTreeNode> survivors = AllRows()
-                .Where(n => n is JobNode job
-                    ? jobIds.Contains(job.Job.Id, StringComparer.Ordinal)
-                    : operationIds.Contains(((OperationNode)n).Operation.Id, StringComparer.Ordinal))
+                .Where(Survives)
                 .ToList();
 
-            JobTreeNode anchor = Find(anchorJob, anchorOperation);
+            JobTreeNode anchor = partAnchored ? Part : Find(anchorJob, anchorOperation);
 
             if (anchor == null && survivors.Count == 0)
             {
@@ -311,6 +351,24 @@ namespace GCam.UI.ViewModels
             // With the anchor gone but other rows still selected, SelectAll settles it on
             // the first of them rather than on nothing.
             _selection.SelectAll(survivors, anchor);
+
+            bool Survives(JobTreeNode row)
+            {
+                switch (row)
+                {
+                    case PartNode _:
+                        return partSelected;
+
+                    case JobNode job:
+                        return jobIds.Contains(job.Job.Id, StringComparer.Ordinal);
+
+                    case OperationNode operation:
+                        return operationIds.Contains(operation.Operation.Id, StringComparer.Ordinal);
+
+                    default:
+                        return false;
+                }
+            }
         }
 
         private JobTreeNode Find(string jobId, string operationId)
@@ -326,9 +384,20 @@ namespace GCam.UI.ViewModels
                 return null;
             }
 
-            return Nodes.OfType<JobNode>().FirstOrDefault(
+            return JobNodes.FirstOrDefault(
                 n => string.Equals(n.Job.Id, jobId, StringComparison.Ordinal));
         }
+
+        // ---- The part --------------------------------------------------------
+
+        /// <summary>Creates a job for this part.</summary>
+        public void NewJob() => _editor?.NewJob();
+
+        /// <summary>Computes the toolpaths for every job in the part.</summary>
+        public void GenerateAll() => _editor?.GenerateAll();
+
+        /// <summary>True when the part has a job to generate.</summary>
+        public bool HasJobs => _document.Jobs.Count > 0;
 
         // ---- Jobs ------------------------------------------------------------
 
@@ -406,7 +475,7 @@ namespace GCam.UI.ViewModels
 
             _document.MakeDefault(node.Job);
 
-            foreach (JobNode job in Nodes.OfType<JobNode>())
+            foreach (JobNode job in JobNodes)
             {
                 job.IsDefault = _document.IsDefault(job.Job);
             }
@@ -717,7 +786,7 @@ namespace GCam.UI.ViewModels
         {
             List<Job> wanted = (jobs ?? Enumerable.Empty<Job>()).Where(j => j != null).ToList();
 
-            Select(Nodes.OfType<JobNode>().Where(n => wanted.Any(j => ReferenceEquals(n.Job, j))));
+            Select(JobNodes.Where(n => wanted.Any(j => ReferenceEquals(n.Job, j))));
         }
 
         /// <summary>Puts the selection on an operation, if the tree is showing it.</summary>
@@ -760,7 +829,7 @@ namespace GCam.UI.ViewModels
                 return job;
             }
 
-            return Nodes.OfType<JobNode>().FirstOrDefault(j => j.Children.Contains(node));
+            return JobNodes.FirstOrDefault(j => j.Children.Contains(node));
         }
 
         /// <summary>
@@ -799,13 +868,15 @@ namespace GCam.UI.ViewModels
         /// <summary>Every row, collapsed or not, top to bottom.</summary>
         private List<JobTreeNode> AllRows() => AllNodes().ToList();
 
-        private IEnumerable<JobTreeNode> AllNodes()
-        {
-            foreach (JobTreeNode node in Nodes)
-            {
-                yield return node;
+        private IEnumerable<JobTreeNode> AllNodes() => Walk(Nodes);
 
-                foreach (JobTreeNode child in node.Children)
+        private static IEnumerable<JobTreeNode> Walk(IEnumerable<JobTreeNode> rows)
+        {
+            foreach (JobTreeNode row in rows)
+            {
+                yield return row;
+
+                foreach (JobTreeNode child in Walk(row.Children))
                 {
                     yield return child;
                 }

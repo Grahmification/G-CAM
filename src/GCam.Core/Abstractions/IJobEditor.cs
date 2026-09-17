@@ -18,6 +18,14 @@ namespace GCam.Core.Abstractions
     /// </remarks>
     public interface IJobEditor
     {
+        /// <summary>Creates a job for this part, through its property page.</summary>
+        /// <remarks>
+        /// The same command the toolbar's New Job button runs. Stated here so the part row
+        /// at the top of the tree can offer it, which is the only thing an empty part has
+        /// to offer.
+        /// </remarks>
+        void NewJob();
+
         /// <summary>Opens the job's property page.</summary>
         void EditJob(Job job);
 
@@ -36,6 +44,14 @@ namespace GCam.Core.Abstractions
         /// see SOLIDWORKS. The same arrangement as the rest of this interface.
         /// </remarks>
         void GenerateJob(Job job);
+
+        /// <summary>Computes the toolpaths for every job in the part, in order.</summary>
+        /// <remarks>
+        /// What the part row asks for, and what you ask for before posting. One run of
+        /// <see cref="Generation.GenerationQueue"/> over the whole document rather than a
+        /// call per job, so the result is one answer about the part.
+        /// </remarks>
+        void GenerateAll();
 
         /// <summary>Computes the toolpaths for the operations the user picked out.</summary>
         /// <remarks>

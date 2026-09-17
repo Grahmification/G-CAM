@@ -35,6 +35,7 @@ built fresh on each right-click so enablement cannot go stale:
 
 | Selection | Items |
 | --- | --- |
+| The part | New Job…, Generate All |
 | One job | Edit…, Rename, New Operation…, Generate, Duplicate, Make Default, Delete |
 | Several jobs | Generate, Duplicate, Delete |
 | One operation | Edit…, Rename, Generate, Suppress, Duplicate, Delete |
@@ -94,7 +95,9 @@ was lost unless something else happened to dirty the part.
 
 **The Manager Pane tab is where jobs live** — the icon strip beside the
 FeatureManager design tree and the PropertyManager, the same place HSMWorks puts its CAM
-tree. A tab belongs to a *document*, not to the application, so `JobTreeTabs` subscribes
+tree. The tab has no heading of its own: a part row at the root of the tree, named
+"<i>part</i> Operations", says which part these belong to, the way the FeatureManager's own
+root does. A tab belongs to a *document*, not to the application, so `JobTreeTabs` subscribes
 to `ActiveModelDocChangeNotify` and `FileCloseNotify` and re-syncs the set of tabs
 against the set of open parts on every notification; `EnumDocuments2` catches up with
 documents that were already open when the add-in connected. One call at connect time is

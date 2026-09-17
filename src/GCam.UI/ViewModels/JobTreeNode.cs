@@ -84,11 +84,24 @@ namespace GCam.UI.ViewModels
             set => Set(ref _isCurrent, value);
         }
 
+        /// <summary>
+        /// Whether this row's children are showing. Refused for a row that
+        /// <see cref="CanCollapse"/> says cannot be folded away.
+        /// </summary>
+        /// <remarks>
+        /// Refused here rather than in the view because there are several ways to collapse
+        /// a row - the arrow, the left arrow key, double-click - and only one of them is
+        /// worth hiding. The binding writes false, this hands back true, and the binding
+        /// puts it straight back.
+        /// </remarks>
         public bool IsExpanded
         {
             get => _isExpanded;
-            set => Set(ref _isExpanded, value);
+            set => Set(ref _isExpanded, value || !CanCollapse);
         }
+
+        /// <summary>Whether this kind of row can be folded away at all.</summary>
+        public virtual bool CanCollapse => true;
 
         /// <summary>
         /// True while the label is an editable text box rather than static text.
@@ -150,6 +163,53 @@ namespace GCam.UI.ViewModels
         {
             get => _statusText;
             set => Set(ref _statusText, value);
+        }
+    }
+
+    /// <summary>The part itself, with every job in it underneath.</summary>
+    /// <remarks>
+    /// One row, always there, whether or not the part has any jobs - which is what gives
+    /// an empty part somewhere to right-click to make its first one. It draws nothing in
+    /// the 3D view: a job shows its stock and an operation its toolpath, and a container
+    /// shows neither.
+    ///
+    /// <b>The name comes from SOLIDWORKS and is read fresh on every rebuild</b>, so a Save
+    /// As follows it without anything having to subscribe to a rename. GCam.UI cannot reach
+    /// SOLIDWORKS, so what arrives here is a string somebody else asked for.
+    /// </remarks>
+    public sealed class PartNode : JobTreeNode
+    {
+        public PartNode(string partName)
+            : base(Label(partName))
+        {
+        }
+
+        public override string Glyph => "📄";
+
+        /// <summary>
+        /// The part row never folds away.
+        /// </summary>
+        /// <remarks>
+        /// It is the top of the tree rather than a container anyone needs to get out of the
+        /// way: collapsing it would hide every job in the part and leave one row saying
+        /// nothing. Its arrow is hidden too, so there is nothing to click that would be
+        /// refused - see JobTreeView.OnRowLoaded.
+        /// </remarks>
+        public override bool CanCollapse => false;
+
+        /// <summary>
+        /// "<c>Bracket Operations</c>" - the part's name without its file extension, and
+        /// what the rows under it are.
+        /// </summary>
+        /// <remarks>
+        /// Falls back to the bare word when there is no name to be had, which is what an
+        /// unsaved part with no title would give.
+        /// </remarks>
+        public static string Label(string partName)
+        {
+            partName = (partName ?? string.Empty).Trim();
+
+            return partName.Length == 0 ? "Operations" : partName + " Operations";
         }
     }
 

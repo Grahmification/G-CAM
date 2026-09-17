@@ -181,14 +181,37 @@ namespace GCam.AddIn
         {
             try
             {
-                Generate(
-                    job,
-                    (queue, target) => queue.Generate(target),
-                    "job '" + job?.Name + "'");
+                if (job == null)
+                {
+                    return;
+                }
+
+                Generate((queue, jobs) => queue.Generate(job), "job '" + job.Name + "'");
             }
             catch (Exception ex)
             {
                 _errors.Handle(ex, nameof(GenerateJob));
+            }
+        }
+
+        /// <summary>
+        /// Entry point 11. Computes the toolpaths for every job in the part.
+        /// </summary>
+        /// <remarks>
+        /// One run of the queue over the whole document rather than a call per job, so the
+        /// result is one answer about the part and the tree is rebuilt once. Everything the
+        /// remarks on <see cref="GenerateJob"/> say about the STA thread applies here, and
+        /// more so: this is the one that will be slow first.
+        /// </remarks>
+        public void GenerateAll()
+        {
+            try
+            {
+                Generate((queue, jobs) => queue.GenerateAll(jobs), "every job");
+            }
+            catch (Exception ex)
+            {
+                _errors.Handle(ex, nameof(GenerateAll));
             }
         }
 
@@ -214,7 +237,12 @@ namespace GCam.AddIn
                     ? "operation '" + operations[0].Name + "'"
                     : operations.Count + " operations in job '" + job?.Name + "'";
 
-                Generate(job, (queue, target) => queue.Generate(target, operations), what);
+                if (job == null)
+                {
+                    return;
+                }
+
+                Generate((queue, jobs) => queue.Generate(job, operations), what);
             }
             catch (Exception ex)
             {
@@ -227,17 +255,19 @@ namespace GCam.AddIn
         /// asked for, then puts the results on screen.
         /// </summary>
         /// <remarks>
-        /// Shared so that one operation and a whole job cannot drift apart in how they
-        /// mark the part dirty or refresh the tree - the parts that are easy to forget in
-        /// a second copy.
+        /// Shared so that one operation, a whole job and the whole part cannot drift apart
+        /// in how they mark the part dirty or refresh the tree - the parts that are easy to
+        /// forget in a second copy. The caller says what to run and what to call it; the
+        /// document comes from whichever part is in front, because that is the one the tree
+        /// being clicked belongs to.
         /// </remarks>
         private void Generate(
-            Job job, Func<GenerationQueue, Job, GenerationResult> run, string what)
+            Func<GenerationQueue, JobDocument, GenerationResult> run, string what)
         {
             var model = _swApp.ActiveDoc as ModelDoc2;
             JobDocument jobs = _jobTreeTabs?.JobsFor(model);
 
-            if (job == null || model == null || jobs == null)
+            if (model == null || jobs == null)
             {
                 return;
             }
@@ -247,7 +277,7 @@ namespace GCam.AddIn
                 new GenerationContextFactory(_swApp, model, jobs, _log),
                 _log);
 
-            GenerationResult result = run(queue, job);
+            GenerationResult result = run(queue, jobs);
 
             _log.Info("Generated {0}: {1}", what, result);
 
@@ -279,6 +309,21 @@ namespace GCam.AddIn
             catch (Exception ex)
             {
                 _errors.Handle(ex, nameof(DocumentChanged));
+            }
+        }
+
+        /// <summary>
+        /// Entry point 10. The part row asked for a job, which is the toolbar's command.
+        /// </summary>
+        public void NewJob()
+        {
+            try
+            {
+                CreateJob();
+            }
+            catch (Exception ex)
+            {
+                _errors.Handle(ex, nameof(NewJob));
             }
         }
 
