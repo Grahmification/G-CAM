@@ -5,7 +5,7 @@ them. Read this before adding a surface or moving one between technologies.
 
 | Surface | Built by | Notes |
 | --- | --- | --- |
-| CommandManager tab, toolbar and menu | `GCamAddin.CommandManager.cs` | Five buttons: New Job, New Operation, Tool Library, Post Process, Simulate |
+| CommandManager tab, toolbar and menu | `GCamAddin.CommandManager.cs` | Six buttons: Generate All, New Job, New Operation, Tool Library, Post Process, Simulate |
 | Manager Pane tab | `JobTreeTabs` → `JobTreeTabHost` → `JobTreeView` | ActiveX → WinForms → ElementHost → WPF; selecting it brings the G-CAM ribbon tab forward |
 | Job and Operation PropertyManager pages | `GCamPropertyPage` → `JobPropertyPage` / `OperationPropertyPage` | SOLIDWORKS-native, built by the API rather than WPF. Both are real and both work. The Operation page is five tabs — see [Operations](operations.md) |
 | Tool library window | `ToolLibraryDialog.ShowBrowser` / `PickTool` → `ToolLibraryWindow` | Modal, parented to the SW frame. One window, two modes — browse, or choose a tool for an operation |
@@ -28,7 +28,17 @@ because the page is in `GCam.SolidWorks` and the browser is WPF in `GCam.UI`. Ne
 project can see the other; the add-in is the only one that sees both. See
 [Operations](operations.md) for what happens to the tool once it arrives.
 
-**The toolbar buttons act on the default job**; the job tree's context menu is where a specific job or operation is reached, and it is the richer route. Post Process and Simulate do nothing at all yet.
+**The toolbar buttons act on the default job**, except Generate All, which acts on the
+whole part and is the same command the tree's part row offers; the job tree's context menu
+is where a specific job or operation is reached, and it is the richer route. Post Process
+and Simulate do nothing at all yet.
+
+**A button's enum value is its image index and its position.** `GCamCommand`'s values index
+into the icon strips, and `AddCommandTab` lays the ribbon out in numeric order, so putting
+Generate All leftmost meant renumbering every button after it and shifting the strip to
+match — `tools/make-placeholder-icons.py` generates them, and its `BUTTONS` list is the
+other half that has to move. `CommandGroupId` is bumped when the set changes, or SOLIDWORKS
+serves a toolbar cached from the previous layout.
 
 **There are three menus, chosen by what is selected** rather than by what was clicked, and
 built fresh on each right-click so enablement cannot go stale:

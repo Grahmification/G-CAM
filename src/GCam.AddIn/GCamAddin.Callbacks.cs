@@ -21,6 +21,13 @@ namespace GCam.AddIn
             {
                 switch ((GCamCommand)commandId)
                 {
+                    case GCamCommand.GenerateAll:
+                        // The same command the part row at the top of the job tree offers.
+                        // Quietly does nothing on a part with no jobs, which is what the
+                        // queue does with an empty document anyway.
+                        GenerateAll();
+                        break;
+
                     case GCamCommand.NewJob:
                         CreateJob();
                         break;
