@@ -143,6 +143,11 @@ namespace GCam.UI.Views
             {
                 JobTreeNode node = NodeUnder(e.OriginalSource as DependencyObject);
 
+                // Where a drag would start from, if the pointer goes on to move far enough
+                // to mean one. A click that lands anywhere else cancels the last candidate.
+                _dragRow = node;
+                _dragOrigin = e.GetPosition(JobTree);
+
                 if (node == null || _model == null)
                 {
                     return;
@@ -370,6 +375,252 @@ namespace GCam.UI.Views
             {
                 Handle(ex, nameof(OnTreeKeyDown));
             }
+        }
+
+        // ---- Drag and drop ---------------------------------------------------
+
+        /// <summary>
+        /// Where a dragged row would land: the row the line is drawn on, and what that
+        /// means to the model.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Before"/> is the row the dragged one ends up in front of, null for
+        /// last, which is what <c>JobDocument</c> takes. Nothing here works out an index -
+        /// see the remarks there for why that arithmetic lives in Core.
+        /// </remarks>
+        private sealed class Placement
+        {
+            public JobTreeNode Row { get; set; }
+
+            public DropIndicator Edge { get; set; }
+
+            /// <summary>The job an operation is being dropped into. Null for a job drag.</summary>
+            public JobNode Job { get; set; }
+
+            public JobTreeNode Before { get; set; }
+        }
+
+        /// <summary>The dragged row travels as itself; nothing leaves this control.</summary>
+        private const string RowFormat = "GCam.JobTreeRow";
+
+        private Point _dragOrigin;
+        private JobTreeNode _dragRow;
+        private bool _dragging;
+
+        /// <summary>
+        /// Starts a drag once the pointer has moved far enough to mean one.
+        /// </summary>
+        /// <remarks>
+        /// The threshold is Windows' own, so a click with a shaky hand stays a click. A row
+        /// being renamed is never dragged - the pointer is there to put a caret in the text
+        /// box, and <see cref="NodeUnder"/> has already refused to make one the candidate.
+        ///
+        /// <b><c>DoDragDrop</c> does not return until the drop.</b> It runs its own message
+        /// loop, so everything below it - the drag feedback, the drop, the model change -
+        /// happens inside this call.
+        /// </remarks>
+        private void OnTreeMouseMove(object sender, MouseEventArgs e)
+        {
+            try
+            {
+                if (_dragging || _dragRow == null || e.LeftButton != MouseButtonState.Pressed)
+                {
+                    return;
+                }
+
+                Vector moved = e.GetPosition(JobTree) - _dragOrigin;
+
+                if (Math.Abs(moved.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                    Math.Abs(moved.Y) < SystemParameters.MinimumVerticalDragDistance)
+                {
+                    return;
+                }
+
+                JobTreeNode row = _dragRow;
+                _dragging = true;
+
+                try
+                {
+                    DragDrop.DoDragDrop(
+                        JobTree, new DataObject(RowFormat, row), DragDropEffects.Move);
+                }
+                finally
+                {
+                    _dragging = false;
+                    _dragRow = null;
+                    _model?.ShowDropAt(null, DropIndicator.None);
+                }
+            }
+            catch (Exception ex)
+            {
+                Handle(ex, nameof(OnTreeMouseMove));
+            }
+        }
+
+        private void OnTreeDragOver(object sender, DragEventArgs e)
+        {
+            try
+            {
+                Placement drop = Resolve(e);
+
+                e.Effects = drop == null ? DragDropEffects.None : DragDropEffects.Move;
+                e.Handled = true;
+
+                _model?.ShowDropAt(drop?.Row, drop?.Edge ?? DropIndicator.None);
+            }
+            catch (Exception ex)
+            {
+                Handle(ex, nameof(OnTreeDragOver));
+            }
+        }
+
+        private void OnTreeDragLeave(object sender, DragEventArgs e)
+        {
+            try
+            {
+                _model?.ShowDropAt(null, DropIndicator.None);
+            }
+            catch (Exception ex)
+            {
+                Handle(ex, nameof(OnTreeDragLeave));
+            }
+        }
+
+        /// <summary>
+        /// Carries out the move the line was promising.
+        /// </summary>
+        /// <remarks>
+        /// A drop that would change nothing is not refused here - the model answers that,
+        /// and answering it in two places is how the two come to disagree.
+        /// </remarks>
+        private void OnTreeDrop(object sender, DragEventArgs e)
+        {
+            try
+            {
+                Placement drop = Resolve(e);
+
+                _model?.ShowDropAt(null, DropIndicator.None);
+                e.Handled = true;
+
+                if (drop == null || _model == null)
+                {
+                    return;
+                }
+
+                switch (Dragged(e))
+                {
+                    case OperationNode operation:
+                        _model.MoveOperation(operation, drop.Job, drop.Before as OperationNode);
+                        break;
+
+                    case JobNode job:
+                        _model.MoveJob(job, drop.Before as JobNode);
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Handle(ex, nameof(OnTreeDrop));
+            }
+        }
+
+        private static JobTreeNode Dragged(DragEventArgs e) =>
+            e.Data?.GetDataPresent(RowFormat) == true
+                ? e.Data.GetData(RowFormat) as JobTreeNode
+                : null;
+
+        /// <summary>
+        /// Works out where the row under the cursor would put the one being dragged, or
+        /// null when it would not take it.
+        /// </summary>
+        /// <remarks>
+        /// <b>An operation goes between operations, and a job between jobs.</b> Dropping an
+        /// operation on a job's own row is the one crossing: it means first in that job,
+        /// drawn as the line directly under the row, which is where it would appear. A job
+        /// dropped on an operation is refused outright rather than guessed at - the rows
+        /// around an operation belong to a job that is not the one being moved, so any
+        /// answer would be an invention.
+        ///
+        /// Which half of the row the cursor is in decides which side of it the line goes,
+        /// measured against the header rather than the row: a job's row contains all of its
+        /// operations, so its own height is the whole block.
+        /// </remarks>
+        private Placement Resolve(DragEventArgs e)
+        {
+            JobTreeNode dragged = Dragged(e);
+
+            if (dragged == null || _model == null)
+            {
+                return null;
+            }
+
+            TreeViewItem item = RowUnder(e.OriginalSource as DependencyObject);
+
+            if (!(item?.DataContext is JobTreeNode row))
+            {
+                return null;
+            }
+
+            bool below = InLowerHalf(item, e);
+
+            switch (dragged)
+            {
+                case OperationNode _ when row is OperationNode target:
+                    JobNode owner = _model.JobNodeOf(target);
+
+                    return owner == null ? null : new Placement
+                    {
+                        Row = target,
+                        Edge = below ? DropIndicator.Below : DropIndicator.Above,
+                        Job = owner,
+                        Before = below ? After(owner.Children, target) : target,
+                    };
+
+                case OperationNode _ when row is JobNode target:
+                    return new Placement
+                    {
+                        Row = target,
+                        Edge = DropIndicator.Below,
+                        Job = target,
+                        Before = target.Children.FirstOrDefault(),
+                    };
+
+                case JobNode _ when row is JobNode target:
+                    return new Placement
+                    {
+                        Row = target,
+                        Edge = below ? DropIndicator.Below : DropIndicator.Above,
+                        Before = below ? After(_model.Nodes, target) : target,
+                    };
+
+                default:
+                    return null;
+            }
+        }
+
+        /// <summary>The row after this one among its siblings, or null when it is the last.</summary>
+        private static JobTreeNode After(IList<JobTreeNode> rows, JobTreeNode row)
+        {
+            int index = rows.IndexOf(row);
+
+            return index >= 0 && index + 1 < rows.Count ? rows[index + 1] : null;
+        }
+
+        /// <summary>
+        /// Whether the cursor is in the bottom half of a row's own label.
+        /// </summary>
+        /// <remarks>
+        /// Measured against the header part rather than the <see cref="TreeViewItem"/>,
+        /// because an expanded job's item is as tall as the job and everything in it -
+        /// halfway down that is somewhere in the middle of its operations. Falls back to
+        /// the item if a theme ever stops naming its header, which costs the accuracy of
+        /// the halves and nothing else.
+        /// </remarks>
+        private static bool InLowerHalf(TreeViewItem item, DragEventArgs e)
+        {
+            var header = item.Template?.FindName("PART_Header", item) as FrameworkElement ?? item;
+
+            return e.GetPosition(header).Y > header.ActualHeight / 2;
         }
 
         // ---- Context menu ----------------------------------------------------

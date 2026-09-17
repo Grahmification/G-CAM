@@ -113,6 +113,38 @@
             </Style.Triggers>
         </Style>
 
+        <!--
+            The insertion line a drag follows. Two styles rather than one plus a converter,
+            matching the badge above: what is drawn is decided by the node's own state.
+        -->
+        <!--
+            The base carries no trigger of its own on purpose: BasedOn *adds* triggers to
+            the ones it inherits, so a shared trigger here would light both lines at once.
+        -->
+        <Style x:Key="DropLine" TargetType="Rectangle">
+            <Setter Property="Height" Value="2" />
+            <Setter Property="Fill" Value="#2A6FB0" />
+            <Setter Property="Visibility" Value="Collapsed" />
+        </Style>
+
+        <Style x:Key="DropLineAbove" TargetType="Rectangle" BasedOn="{StaticResource DropLine}">
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Drop}" Value="Above">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="DropLineBelow" TargetType="Rectangle" BasedOn="{StaticResource DropLine}">
+            <Setter Property="VerticalAlignment" Value="Bottom" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding Drop}" Value="Below">
+                    <Setter Property="Visibility" Value="Visible" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- The label, which becomes a text box while the node is being renamed. -->
         <DataTemplate x:Key="NodeLabel">
             <Border Style="{StaticResource RowHighlight}">
@@ -169,6 +201,14 @@
                         </Border>
                     </StackPanel>
 
+                    <!--
+                        Where a dragged row would land. Overlaid on the label rather than
+                        laid out above or below it, so the rows do not shift by two pixels
+                        as the line follows the cursor.
+                    -->
+                    <Rectangle Style="{StaticResource DropLineAbove}" />
+                    <Rectangle Style="{StaticResource DropLineBelow}" />
+
                     <TextBox x:Name="RenameBox"
                              Text="{Binding Name, Mode=OneWay}"
                              Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}"
@@ -218,7 +258,12 @@
                   BorderThickness="0"
                   Background="Transparent"
                   Visibility="{Binding HasJobs, Converter={StaticResource BoolToVisibility}}"
+                  AllowDrop="True"
                   PreviewMouseLeftButtonDown="OnNodeLeftClick"
+                  PreviewMouseMove="OnTreeMouseMove"
+                  DragOver="OnTreeDragOver"
+                  DragLeave="OnTreeDragLeave"
+                  Drop="OnTreeDrop"
                   SelectedItemChanged="OnTreeSelectionChanged"
                   KeyDown="OnTreeKeyDown" />
     </Grid>

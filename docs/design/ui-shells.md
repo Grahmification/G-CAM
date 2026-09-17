@@ -64,6 +64,13 @@ routed, so the innermost `TreeViewItem` above it is always the right row. Worth 
 because the obvious reading — that handling the event stops it reaching the parent — is
 true of bubbling events and exactly backwards here.
 
+**Rows drag to reorder**, and a drag moves the row under the cursor rather than the
+selection — a drag says which row it is about, unlike a menu command. It starts only once
+the pointer passes Windows' own drag threshold, so a shaky click stays a click, and the
+insertion line is drawn by the row itself (`JobTreeNode.Drop`) rather than by an adorner.
+The left-button handler that starts it is on the `TreeView` and not on the rows, for the
+tunnelling reason below: on the rows it fires once per row in the chain.
+
 **Delete acts on what is selected, and never on the job above it.** An operation node
 still stands in for its job in New Operation, and used to in the 3D preview as well; Delete
 is the one place where that would be destructive. It was: <kbd>Del</kbd> on an operation

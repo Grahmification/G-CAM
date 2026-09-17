@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -229,6 +229,131 @@ namespace GCam.Core.Model
             {
                 DefaultJob = _jobs.FirstOrDefault();
             }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Moves an operation to a position in a job - its own, or another one.
+        /// </summary>
+        /// <remarks>
+        /// <b>Both kinds of move are one rule, because the caller cannot tell them apart.</b>
+        /// A drag in the tree ends over a row; whether that row belongs to the operation's
+        /// own job is not a question the caller should have to ask, and the answer changes
+        /// only which list the operation is taken out of.
+        ///
+        /// <b>The destination is stated as "before this operation", not as an index.</b> A
+        /// drag ends on a row, and that is what a row means; an index would have to be
+        /// worked out from one, and the arithmetic has a step in it that is wrong in one
+        /// direction only - taking the operation out of its own list shifts every position
+        /// after it. Stating it this way puts that step here, where a test can reach it,
+        /// instead of in a mouse handler where none can. <c>null</c> means last.
+        ///
+        /// False when nothing moved - an operation this document does not hold, a job it
+        /// does not hold, or a move to where it already is. The caller marks staleness and
+        /// the document dirty on the strength of that answer, and doing either for a move
+        /// that did not happen is worse than not offering the move.
+        ///
+        /// What it deliberately does not do is decide whether the operation's toolpath
+        /// survives. Order decides what stock an operation meets, and a move between jobs
+        /// changes the coordinate system it was computed in - both of which are
+        /// <see cref="Generation.Staleness"/>'s business, and Model cannot reference
+        /// Generation.
+        /// </remarks>
+        public bool MoveOperation(Operation operation, Job target, Operation before)
+        {
+            if (operation == null || target == null || !_jobs.Contains(target))
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(operation, before))
+            {
+                return false;
+            }
+
+            Job source = _jobs.FirstOrDefault(j => j.Operations.Contains(operation));
+
+            if (source == null)
+            {
+                return false;
+            }
+
+            int at = before == null ? -1 : target.Operations.IndexOf(before);
+
+            // A destination that is not in the target job says nothing about where to put
+            // this one, so it goes last - the same as asking for last outright.
+            if (at < 0)
+            {
+                at = target.Operations.Count;
+            }
+
+            if (ReferenceEquals(source, target))
+            {
+                int from = source.Operations.IndexOf(operation);
+
+                // Already immediately before the row it is being dropped in front of, or
+                // being dropped in front of the row it already follows.
+                if (at == from || at == from + 1)
+                {
+                    return false;
+                }
+
+                // Taking it out shifts everything after it up by one.
+                if (at > from)
+                {
+                    at--;
+                }
+            }
+
+            source.RemoveOperation(operation);
+            target.InsertOperation(operation, at);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Moves a job to a position in the part's job order.
+        /// </summary>
+        /// <remarks>
+        /// The destination is stated the same way as in <see cref="MoveOperation"/>, and
+        /// for the same reason: before a job, or last when <c>null</c>. Which job is the
+        /// default is untouched - that is a statement about which job you are working on,
+        /// and where it sits in the list is not.
+        /// </remarks>
+        public bool MoveJob(Job job, Job before)
+        {
+            if (job == null || ReferenceEquals(job, before))
+            {
+                return false;
+            }
+
+            int from = _jobs.IndexOf(job);
+
+            if (from < 0)
+            {
+                return false;
+            }
+
+            int at = before == null ? -1 : _jobs.IndexOf(before);
+
+            if (at < 0)
+            {
+                at = _jobs.Count;
+            }
+
+            if (at == from || at == from + 1)
+            {
+                return false;
+            }
+
+            if (at > from)
+            {
+                at--;
+            }
+
+            _jobs.RemoveAt(from);
+            _jobs.Insert(at, job);
 
             return true;
         }

@@ -87,6 +87,28 @@ not made on *upward* Shift-clicks only, because it took its answer from `SelectA
 settles the anchor on the first row of the range — the anchor itself only when the range
 runs down. A selection rule that answers "changed" wrongly is not a wasted redraw here.
 
+## Reordering
+
+**Rows are dragged to reorder them** — an operation within its job or into another one, a
+job among the jobs. An operation dropped on a job's own row goes first in that job; a job
+dropped on an operation is refused, because the rows around an operation belong to a job
+that is not the one being moved.
+
+**The destination is "before this row", never an index.** `JobDocument.MoveOperation` and
+`MoveJob` take the row the dragged one lands in front of, or null for last. Taking a row
+out of its own list shifts every position after it, so an index would need a correction
+that is wrong in one direction only — and it would live in a mouse handler, where no test
+can reach it. Stated this way the correction is in Core, pinned by
+`OperationReorderingTests`.
+
+What a move invalidates: within a job, `Staleness.OperationOrderChanged`, because order
+decides what stock an operation meets. Between jobs, that for the job it left, plus
+`OperationEdited` in the one it joined — its toolpath was computed in the coordinate system
+of the job it came from. It keeps that toolpath, which is the model's position throughout:
+a path is the last thing the machine cut, and only `Staleness` says whether it can still be
+trusted. An operation arriving under a name the destination job already uses is renamed on
+arrival, because names are unique within a job and not across the part.
+
 ## The 3D preview
 
 **What is selected is what is drawn, one row at a time.** Selecting a job shows its stock

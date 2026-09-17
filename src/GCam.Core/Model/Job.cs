@@ -104,6 +104,36 @@ namespace GCam.Core.Model
         }
 
         /// <summary>
+        /// Takes an operation into this job at a position, renaming it if this job already
+        /// has one by that name.
+        /// </summary>
+        /// <remarks>
+        /// The renaming is the whole reason this is not a bare <c>Operations.Insert</c>.
+        /// Names are unique within a job and not across the part, so an operation arriving
+        /// from another job can perfectly well collide with one already here - and two rows
+        /// reading "2D Contour1" in one job is a tree nobody can work in.
+        ///
+        /// The index is where it ends up, clamped to the list, so a caller that has worked
+        /// one out from a cursor position cannot land out of range.
+        ///
+        /// It keeps its toolpath, which is the caller's problem rather than this one's: a
+        /// path computed in another job's coordinate system is still the last thing the
+        /// machine cut, and <see cref="Generation.Staleness"/> is what says it can no
+        /// longer be trusted. Model cannot reference Generation.
+        /// </remarks>
+        public void InsertOperation(Operation operation, int index)
+        {
+            if (operation == null)
+            {
+                throw new ArgumentNullException(nameof(operation));
+            }
+
+            operation.Name = MakeOperationNameUnique(operation.Name, operation);
+
+            Operations.Insert(Math.Max(0, Math.Min(index, Operations.Count)), operation);
+        }
+
+        /// <summary>
         /// Copies an operation, placing the copy directly after the original.
         /// </summary>
         /// <remarks>

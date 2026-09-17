@@ -605,6 +605,101 @@ namespace GCam.UI.ViewModels
             Changed();
         }
 
+        // ---- Reordering ------------------------------------------------------
+
+        /// <summary>
+        /// Moves an operation to a position in a job - its own, or another one.
+        /// </summary>
+        /// <remarks>
+        /// The destination is the row it lands in front of, or null for last - see
+        /// <see cref="JobDocument.MoveOperation"/>, which is where that is worked out.
+        ///
+        /// <b>Which toolpaths this invalidates is the whole reason it is not a list
+        /// shuffle.</b> Order decides what stock an operation meets, so everything in the
+        /// job that rest-machines is suspect; and an operation that has changed jobs was
+        /// computed in the coordinate system of the job it left, so its own path is worth
+        /// nothing until it runs again. Both jobs are told, because the one it left has a
+        /// gap in it now.
+        /// </remarks>
+        public bool MoveOperation(OperationNode node, JobNode target, OperationNode before)
+        {
+            Job source = JobOf(node);
+
+            if (source == null || target?.Job == null)
+            {
+                return false;
+            }
+
+            if (!_document.MoveOperation(node.Operation, target.Job, before?.Operation))
+            {
+                return false;
+            }
+
+            if (ReferenceEquals(source, target.Job))
+            {
+                _log.Info("Moved operation '{0}' within job '{1}'.", node.Operation.Name, source.Name);
+                Staleness.OperationOrderChanged(source);
+            }
+            else
+            {
+                _log.Info(
+                    "Moved operation '{0}' from job '{1}' to '{2}'.",
+                    node.Operation.Name, source.Name, target.Job.Name);
+
+                // Its own path was computed in the frame of the job it has left.
+                Staleness.OperationEdited(target.Job, node.Operation);
+                Staleness.OperationOrderChanged(source);
+            }
+
+            Changed();
+            Refresh();
+            SelectOperation(node.Operation);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Moves a job to a position in the part's job order.
+        /// </summary>
+        /// <remarks>
+        /// Nothing goes stale. A job is a self-contained setup - its own stock, its own
+        /// coordinate system - and no rule in <see cref="Staleness"/> reaches across one,
+        /// because rest machining between jobs is not modelled. If it ever is, this is
+        /// where the call goes.
+        /// </remarks>
+        public bool MoveJob(JobNode node, JobNode before)
+        {
+            if (node?.Job == null || !_document.MoveJob(node.Job, before?.Job))
+            {
+                return false;
+            }
+
+            _log.Info("Moved job '{0}'.", node.Job.Name);
+
+            Changed();
+            Refresh();
+            SelectJob(node.Job);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Marks where a drop would land, clearing every other row's mark.
+        /// </summary>
+        /// <remarks>
+        /// One call rather than a set and a clear, because a drag moves between rows
+        /// continuously and two marks on screen at once is the bug that would produce.
+        /// Passing null clears them all, which is what leaving the tree or finishing the
+        /// drag amounts to.
+        /// </remarks>
+        public void ShowDropAt(JobTreeNode node, DropIndicator where)
+        {
+            foreach (JobTreeNode row in AllNodes())
+            {
+                row.Drop = ReferenceEquals(row, node) ? where : DropIndicator.None;
+            }
+        }
+
         // ---- Selecting model objects -----------------------------------------
 
         /// <summary>
@@ -653,7 +748,7 @@ namespace GCam.UI.ViewModels
         private Job JobOf(OperationNode node) => JobNodeOf(node)?.Job;
 
         /// <summary>The job node a node belongs to - itself, when it is a job.</summary>
-        private JobNode JobNodeOf(JobTreeNode node)
+        public JobNode JobNodeOf(JobTreeNode node)
         {
             if (node == null)
             {

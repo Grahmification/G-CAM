@@ -4,6 +4,22 @@ using GCam.Core.Model;
 namespace GCam.UI.ViewModels
 {
     /// <summary>
+    /// Where a dragged row would land, relative to the row drawing the mark.
+    /// </summary>
+    /// <remarks>
+    /// A line between rows rather than a highlight on one, because what a drop changes is a
+    /// position in a list and not the row underneath the cursor. The one exception reads
+    /// the same way: dropping an operation on a job's own row means "first in this job",
+    /// which is the line directly under that row.
+    /// </remarks>
+    public enum DropIndicator
+    {
+        None = 0,
+        Above,
+        Below,
+    }
+
+    /// <summary>
     /// A node in the G-CAM tree. Presentation state only - the job and operation data
     /// live in Core.
     /// </summary>
@@ -17,6 +33,7 @@ namespace GCam.UI.ViewModels
         private bool _isSuppressed;
         private OperationBadge _badge;
         private string _statusText;
+        private DropIndicator _drop;
 
         protected JobTreeNode(string name)
         {
@@ -106,6 +123,20 @@ namespace GCam.UI.ViewModels
         {
             get => _badge;
             set => Set(ref _badge, value);
+        }
+
+        /// <summary>
+        /// Where a row being dragged would land, drawn as a line along this row's edge.
+        /// </summary>
+        /// <remarks>
+        /// On the base because either kind of row can be dropped next to, and because one
+        /// row template draws them all. Only ever set while a drag is in progress, and
+        /// cleared whichever way the drag ends.
+        /// </remarks>
+        public DropIndicator Drop
+        {
+            get => _drop;
+            set => Set(ref _drop, value);
         }
 
         /// <summary>
