@@ -8,6 +8,7 @@ using GCam.Core.Diagnostics;
 using GCam.Core.Model;
 using GCam.SolidWorks.Events;
 using GCam.SolidWorks.Persistence;
+using GCam.SolidWorks.PropertyPages;
 using GCam.SolidWorks.Rendering;
 using GCam.UI.ViewModels;
 using SolidWorks.Interop.sldworks;
@@ -487,10 +488,14 @@ namespace GCam.SolidWorks.Hosting
         {
             try
             {
-                if (IsOurTab(commandTabName))
+                bool ours = IsOurTab(commandTabName);
+
+                if (ours)
                 {
                     _onTabActivated?.Invoke();
                 }
+
+                ShowTreeSelection(ours);
             }
             catch (Exception ex)
             {
@@ -500,6 +505,51 @@ namespace GCam.SolidWorks.Hosting
             }
 
             return 0;
+        }
+
+        /// <summary>
+        /// Puts the tree's selection away when the pane moves off the G-CAM tab, and back
+        /// when it returns.
+        /// </summary>
+        /// <remarks>
+        /// <b>The selection is what draws the 3D preview</b>, and the preview is drawn over
+        /// the part whether or not the tree is in front - so a tab nobody is looking at
+        /// would otherwise leave a stock box standing over somebody else's work. Put away
+        /// rather than discarded: coming back to the tab restores exactly what was there.
+        ///
+        /// <b>A G-CAM property page is not the user leaving.</b> Showing one moves the pane
+        /// onto the PropertyManager's own tab, so this fires - and clearing then would take
+        /// the toolpath off the screen at the moment the operation is being edited, which is
+        /// when it is most wanted. <see cref="GCamPropertyPage.AnyOpen"/> is the exception;
+        /// somebody else's page is not, because then the tree really is not in front.
+        ///
+        /// The pane belongs to whichever document is in front, which is why this asks for
+        /// the active one rather than taking a document: the notification carries none.
+        /// </remarks>
+        private void ShowTreeSelection(bool ours)
+        {
+            JobTreeViewModel model = ModelFor(_swApp.ActiveDoc as ModelDoc2);
+
+            if (model == null)
+            {
+                return;
+            }
+
+            if (ours)
+            {
+                model.TabShown();
+            }
+            else if (!GCamPropertyPage.AnyOpen)
+            {
+                model.TabHidden();
+            }
+        }
+
+        private JobTreeViewModel ModelFor(ModelDoc2 model)
+        {
+            DocumentTab tab;
+
+            return model != null && _tabs.TryGetValue(model, out tab) ? tab.Model : null;
         }
 
         private static bool IsOurTab(string tabName)

@@ -140,6 +140,19 @@ so the toolbar matches what the pane is showing. Two API pieces:
   is subscribed per part, alongside the tab itself.
 - `ICommandTab::Active` is read/write. Setting it true selects that ribbon tab.
 
+**The same notification is what tells G-CAM it has lost the pane** — the name simply does
+not match. The job tree puts its selection away then, which takes the 3D preview with it;
+see [jobs.md](../design/jobs.md). The one exception is a G-CAM property page, which moves
+the pane onto the PropertyManager's tab itself: `GCamPropertyPage.AnyOpen` says so, and it
+is raised before `Show2` rather than from `AfterActivation`, because the order SOLIDWORKS
+raises those two in is not documented. **Assumed**, not measured.
+
+Two things about the `IFeatMgrView` route, which looks like the obvious one and is not:
+`ActivateNotify` and `DeactivateNotify` are documented as firing only for views made with
+`CreateFeatureMgrView2`, and G-CAM's tab comes from `CreateFeatureMgrControl4`. Untested
+here — the document notification was already subscribed and already proven, so there was no
+reason to find out.
+
 ### `CommandTabName` is the tooltip you passed
 
 The help's parameter descriptions for this delegate are copied and wrong — both
@@ -235,6 +248,8 @@ Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
 | --- | --- |
 | Tab appears on an open part | **Confirmed** — `G-CAM tab added to …Test CAM Part.SLDPRT` |
 | `FeatureManagerTabActivatedNotify` fires, name matches the tooltip | **Confirmed** |
+| The same notification firing when the pane moves *off* the G-CAM tab | **Not verified** — what the tree's selection clearing rests on |
+| Whether it fires before or after `AfterActivation` when a page opens | **Not verified** — sidestepped by counting the page before `Show2` |
 | `ICommandTab.Active` mirrors `Visible`, not selection | **Confirmed** — logged in both states |
 | Setting `Active` on a *hidden* tab | **Confirmed harmful** — jumps the ribbon to Features |
 | Setting `Active` on a *visible* tab selects it | **Confirmed working** — with the idle deferral still in place |

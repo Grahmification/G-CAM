@@ -151,6 +151,22 @@ without any of them knowing a preview exists. It is stated in full each time rat
 patched, so a deselection, a cancelled page and a deleted job all amount to the same empty
 call.
 
+**Leaving the G-CAM tab puts the selection away, and returning brings it back.** G-CAM
+draws over the part whether or not its tree is in front, so a stock box left standing from
+a tab nobody is looking at is clutter over somebody else's work. `JobTreeTabs` already
+watches `FeatureManagerTabActivatedNotify` to raise its ribbon tab; the same handler now
+tells the viewmodel, which captures the selection as ids (`SelectionSnapshot`, the same one
+a rebuild uses) and clears it — so an operation deleted while the tree was away is simply
+dropped on the way back.
+
+**A G-CAM property page is not the user leaving.** Showing one moves the pane onto the
+PropertyManager's own tab, so the notification fires — and clearing then would take the
+toolpath off the screen at the moment the operation is being edited.
+`GCamPropertyPage.AnyOpen` is the exception; somebody else's page is not, because then the
+tree really is not in front. The count goes up *before* `Show2` rather than from
+`AfterActivation`, because whether SOLIDWORKS raises the tab notification before or after
+that callback is its business, not ours.
+
 **That rule lives in Core**, as `PreviewSelection` in `Core/Rendering`: a builder takes the
 jobs and operations a selection holds and groups them by job, saying for each whether its
 stock is wanted and which of its operations are. Grouping is not tidiness — resolving a

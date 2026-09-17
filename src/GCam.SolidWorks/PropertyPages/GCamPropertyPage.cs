@@ -143,22 +143,47 @@ namespace GCam.SolidWorks.PropertyPages
 
             RememberManagerPaneTab();
 
-            // 0 rather than a named value: swPropertyManagerPageShowOptions_e defines
-            // only StackPage, and these pages do not stack.
-            int status = _page.Show2(0);
+            // Counted *before* Show2 rather than from AfterActivation. Showing a page moves
+            // the Manager Pane onto the PropertyManager's tab, and whether that arrives
+            // before or after AfterActivation is SOLIDWORKS' business - the job tree reads
+            // this from that notification, so it has to be true for the whole of Show2.
+            bool counted = !_rebuilding;
 
-            switch ((swPropertyManagerPageStatus_e)status)
+            if (counted)
             {
-                case swPropertyManagerPageStatus_e.swPropertyManagerPage_Okay:
-                    _isOpen = true;
-                    break;
+                _openPages++;
+            }
 
-                case swPropertyManagerPageStatus_e.swPropertyManagerPage_NoDocument:
-                    throw new GCamUserException("Open a part first.");
+            try
+            {
+                // 0 rather than a named value: swPropertyManagerPageShowOptions_e defines
+                // only StackPage, and these pages do not stack.
+                int status = _page.Show2(0);
 
-                default:
-                    throw new GCamUserException(
-                        "The " + Title + " panel could not be opened (status " + status + ").");
+                switch ((swPropertyManagerPageStatus_e)status)
+                {
+                    case swPropertyManagerPageStatus_e.swPropertyManagerPage_Okay:
+                        _isOpen = true;
+                        break;
+
+                    case swPropertyManagerPageStatus_e.swPropertyManagerPage_NoDocument:
+                        throw new GCamUserException("Open a part first.");
+
+                    default:
+                        throw new GCamUserException(
+                            "The " + Title + " panel could not be opened (status " + status + ").");
+                }
+            }
+            catch
+            {
+                // A page that never opened will never close, so nothing else would put the
+                // count back down.
+                if (counted)
+                {
+                    _openPages--;
+                }
+
+                throw;
             }
         }
 
@@ -341,6 +366,27 @@ namespace GCam.SolidWorks.PropertyPages
 
         // ---- Lifecycle ------------------------------------------------------
 
+        /// <summary>
+        /// True while any G-CAM page is on screen.
+        /// </summary>
+        /// <remarks>
+        /// Static because it describes something there is only one of: SOLIDWORKS has one
+        /// Manager Pane, so "a G-CAM page has it" is a fact about the application rather
+        /// than about any page.
+        ///
+        /// It exists for <c>JobTreeTabs</c>, which clears the job tree's selection when the
+        /// pane moves off the G-CAM tab. Showing a page moves the pane onto the
+        /// PropertyManager's own tab - that is why <see cref="RememberManagerPaneTab"/>
+        /// exists - so without this, opening an operation for editing would take that
+        /// operation's toolpath off the screen at exactly the wrong moment.
+        ///
+        /// A rebuild closes and re-shows a page, and <see cref="_rebuilding"/> keeps the
+        /// count from dipping through zero on the way.
+        /// </remarks>
+        public static bool AnyOpen => _openPages > 0;
+
+        private static int _openPages;
+
         protected sealed override void AfterActivation()
         {
             _isOpen = true;
@@ -352,6 +398,15 @@ namespace GCam.SolidWorks.PropertyPages
             // SOLIDWORKS permits no real work here - the page and its command are
             // already closing. Record what happened and act on it in AfterClose.
             _isOpen = false;
+
+            // Both ends skip a rebuild, which closes and re-shows inside one call with
+            // _rebuilding held true throughout. Counting one end of it and not the other is
+            // how a counter like this ends up stuck above zero for the session.
+            if (!_rebuilding && _openPages > 0)
+            {
+                _openPages--;
+            }
+
             _closeReason = reason;
         }
 

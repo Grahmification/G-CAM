@@ -241,6 +241,55 @@ namespace GCam.UI.ViewModels
             _preview.Show(builder.Build());
         }
 
+        // ---- Leaving and returning to the tab --------------------------------
+
+        /// <summary>
+        /// What was selected when the tab went away, or null while the tab is in front.
+        /// </summary>
+        private SelectionSnapshot _whileAway;
+
+        /// <summary>
+        /// The Manager Pane moved off the G-CAM tab: put the selection away, which takes
+        /// the preview off the screen with it.
+        /// </summary>
+        /// <remarks>
+        /// <b>The 3D view is not the tab's, but the selection is.</b> G-CAM draws over the
+        /// part whether or not its tree is in front, so a stock box left standing from a
+        /// tab nobody is looking at is just clutter over somebody else's work.
+        ///
+        /// Remembered rather than discarded, by the same ids a rebuild uses, so coming back
+        /// costs nothing. An id that no longer resolves is simply dropped on the way back -
+        /// which covers the operation deleted, or the job generated away, while the tree was
+        /// not being looked at.
+        /// </remarks>
+        public void TabHidden()
+        {
+            if (_whileAway != null || _selection.IsEmpty)
+            {
+                return;
+            }
+
+            _whileAway = Capture();
+
+            AfterSelectionChanged(_selection.Clear());
+        }
+
+        /// <summary>The G-CAM tab is in front again: put the selection back.</summary>
+        public void TabShown()
+        {
+            SelectionSnapshot held = _whileAway;
+
+            if (held == null)
+            {
+                return;
+            }
+
+            _whileAway = null;
+
+            Restore(held);
+            AfterSelectionChanged(true);
+        }
+
         // ---- Refresh ---------------------------------------------------------
 
         /// <summary>
@@ -257,23 +306,7 @@ namespace GCam.UI.ViewModels
         /// </remarks>
         public void Refresh()
         {
-            List<string> selectedJobs = _selection.Items.OfType<JobNode>()
-                .Select(n => n.Job.Id).ToList();
-
-            // Held separately from the jobs' ids because an operation node is not its job
-            // here: restoring the job instead would quietly move the selection up a level
-            // every time an operation was renamed or suppressed.
-            List<string> selectedOperations = _selection.Items.OfType<OperationNode>()
-                .Select(n => n.Operation.Id).ToList();
-
-            // The part row is one of a kind, so it is remembered as a flag rather than by
-            // an id. There is nothing else it could be restored onto.
-            bool partSelected = _selection.Items.OfType<PartNode>().Any();
-            bool partAnchored = SelectedNode is PartNode;
-
-            string anchorJob = (SelectedNode as JobNode)?.Job.Id;
-            string anchorOperation = SelectedOperationNode?.Operation.Id;
-            string anchorFallbackJob = SelectedJobNode?.Job.Id;
+            SelectionSnapshot held = Capture();
 
             _rebuilding = true;
 
@@ -303,14 +336,7 @@ namespace GCam.UI.ViewModels
 
                 Nodes.Add(part);
 
-                RestoreSelection(
-                    selectedJobs,
-                    selectedOperations,
-                    partSelected,
-                    partAnchored,
-                    anchorJob,
-                    anchorOperation,
-                    anchorFallbackJob);
+                Restore(held);
             }
             finally
             {
@@ -321,34 +347,86 @@ namespace GCam.UI.ViewModels
         }
 
         /// <summary>
-        /// Puts the selection back after a rebuild - on the same nodes where they are still
-        /// there, otherwise on the job of whatever the user was on.
+        /// What is selected, said in a way that survives the rows being thrown away and
+        /// built again.
+        /// </summary>
+        /// <remarks>
+        /// Ids, because the nodes themselves do not survive a rebuild - and because they
+        /// then also survive the tree being emptied on purpose, which is how the selection
+        /// comes back when the Manager Pane returns to the G-CAM tab.
+        ///
+        /// The part row is a flag rather than an id: there is one of it, and nothing else
+        /// it could be restored onto.
+        /// </remarks>
+        private sealed class SelectionSnapshot
+        {
+            public List<string> JobIds { get; set; }
+
+            public List<string> OperationIds { get; set; }
+
+            public bool Part { get; set; }
+
+            public bool PartAnchored { get; set; }
+
+            public string AnchorJob { get; set; }
+
+            public string AnchorOperation { get; set; }
+
+            /// <summary>
+            /// The job of whatever the anchor was, for when the anchor itself has gone.
+            /// </summary>
+            public string AnchorFallbackJob { get; set; }
+        }
+
+        private SelectionSnapshot Capture()
+        {
+            return new SelectionSnapshot
+            {
+                JobIds = _selection.Items.OfType<JobNode>().Select(n => n.Job.Id).ToList(),
+
+                // Held separately from the jobs' ids because an operation node is not its
+                // job here: restoring the job instead would quietly move the selection up a
+                // level every time an operation was renamed or suppressed.
+                OperationIds = _selection.Items.OfType<OperationNode>()
+                    .Select(n => n.Operation.Id).ToList(),
+
+                Part = _selection.Items.OfType<PartNode>().Any(),
+                PartAnchored = SelectedNode is PartNode,
+                AnchorJob = (SelectedNode as JobNode)?.Job.Id,
+                AnchorOperation = SelectedOperationNode?.Operation.Id,
+                AnchorFallbackJob = SelectedJobNode?.Job.Id,
+            };
+        }
+
+        /// <summary>
+        /// Puts a captured selection back - on the same rows where they are still there,
+        /// otherwise on the job of whatever the user was on.
         /// </summary>
         /// <remarks>
         /// Falling back to the job is what a delete relies on: the operation the user was
         /// on has just gone, and landing on its job keeps something on screen rather than
         /// clearing the 3D view.
         /// </remarks>
-        private void RestoreSelection(
-            IReadOnlyCollection<string> jobIds,
-            IReadOnlyCollection<string> operationIds,
-            bool partSelected,
-            bool partAnchored,
-            string anchorJob,
-            string anchorOperation,
-            string anchorFallbackJob)
+        private void Restore(SelectionSnapshot held)
         {
+            if (held == null)
+            {
+                return;
+            }
+
             List<JobTreeNode> survivors = AllRows()
                 .Where(Survives)
                 .ToList();
 
-            JobTreeNode anchor = partAnchored ? Part : Find(anchorJob, anchorOperation);
+            JobTreeNode anchor = held.PartAnchored
+                ? Part
+                : Find(held.AnchorJob, held.AnchorOperation);
 
             if (anchor == null && survivors.Count == 0)
             {
                 // Everything the user was on has gone - a deleted operation, most often.
                 // Its job is the nearest thing left to be looking at.
-                anchor = Find(anchorFallbackJob, null);
+                anchor = Find(held.AnchorFallbackJob, null);
 
                 if (anchor != null)
                 {
@@ -365,13 +443,14 @@ namespace GCam.UI.ViewModels
                 switch (row)
                 {
                     case PartNode _:
-                        return partSelected;
+                        return held.Part;
 
                     case JobNode job:
-                        return jobIds.Contains(job.Job.Id, StringComparer.Ordinal);
+                        return held.JobIds.Contains(job.Job.Id, StringComparer.Ordinal);
 
                     case OperationNode operation:
-                        return operationIds.Contains(operation.Operation.Id, StringComparer.Ordinal);
+                        return held.OperationIds.Contains(
+                            operation.Operation.Id, StringComparer.Ordinal);
 
                     default:
                         return false;
