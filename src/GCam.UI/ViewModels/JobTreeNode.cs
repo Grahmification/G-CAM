@@ -34,6 +34,7 @@ namespace GCam.UI.ViewModels
         private OperationBadge _badge;
         private string _statusText;
         private DropIndicator _drop;
+        private string _note;
 
         protected JobTreeNode(string name)
         {
@@ -136,6 +137,23 @@ namespace GCam.UI.ViewModels
         {
             get => _badge;
             set => Set(ref _badge, value);
+        }
+
+        /// <summary>
+        /// A word about what is happening to this row right now, shown after the name.
+        /// Null when there is nothing to say, which is nearly always.
+        /// </summary>
+        /// <remarks>
+        /// For states that pass rather than states that last: "(generating…)" while the
+        /// queue is on this operation, and a percentage beside it once generation runs off
+        /// the SOLIDWORKS thread and there is time to read one. What an operation <i>is</i>
+        /// - stale, failed, suppressed - is the badge and the greyed name, which persist
+        /// and are rebuilt from the model.
+        /// </remarks>
+        public string Note
+        {
+            get => _note;
+            set => Set(ref _note, value);
         }
 
         /// <summary>

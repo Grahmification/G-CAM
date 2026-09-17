@@ -9,6 +9,7 @@ using GCam.Core.Strategies.Contour2d;
 using GCam.Core.Tooling;
 using GCam.SolidWorks.Selection;
 using GCam.SolidWorks.Extraction;
+using GCam.SolidWorks.Hosting;
 using GCam.SolidWorks.PropertyPages;
 using SolidWorks.Interop.sldworks;
 
@@ -186,7 +187,8 @@ namespace GCam.AddIn
                     return;
                 }
 
-                Generate((queue, jobs) => queue.Generate(job), "job '" + job.Name + "'");
+                Generate(
+                    (queue, jobs, notes) => queue.Generate(job, notes), "job '" + job.Name + "'");
             }
             catch (Exception ex)
             {
@@ -207,7 +209,7 @@ namespace GCam.AddIn
         {
             try
             {
-                Generate((queue, jobs) => queue.GenerateAll(jobs), "every job");
+                Generate((queue, jobs, notes) => queue.GenerateAll(jobs, notes), "every job");
             }
             catch (Exception ex)
             {
@@ -242,7 +244,7 @@ namespace GCam.AddIn
                     return;
                 }
 
-                Generate((queue, jobs) => queue.Generate(job, operations), what);
+                Generate((queue, jobs, notes) => queue.Generate(job, operations, notes), what);
             }
             catch (Exception ex)
             {
@@ -262,7 +264,8 @@ namespace GCam.AddIn
         /// being clicked belongs to.
         /// </remarks>
         private void Generate(
-            Func<GenerationQueue, JobDocument, GenerationResult> run, string what)
+            Func<GenerationQueue, JobDocument, IProgress<GenerationProgress>, GenerationResult> run,
+            string what)
         {
             var model = _swApp.ActiveDoc as ModelDoc2;
             JobDocument jobs = _jobTreeTabs?.JobsFor(model);
@@ -277,7 +280,12 @@ namespace GCam.AddIn
                 new GenerationContextFactory(_swApp, model, jobs, _log),
                 _log);
 
-            GenerationResult result = run(queue, jobs);
+            GenerationResult result;
+
+            using (var notes = new GeneratingNotes(_jobTreeTabs, model))
+            {
+                result = run(queue, jobs, notes);
+            }
 
             _log.Info("Generated {0}: {1}", what, result);
 
@@ -310,6 +318,53 @@ namespace GCam.AddIn
             {
                 _errors.Handle(ex, nameof(DocumentChanged));
             }
+        }
+
+        /// <summary>
+        /// Puts "(generating…)" against whichever operation the queue has reached.
+        /// </summary>
+        /// <remarks>
+        /// <b>Only when the operation changes.</b> A strategy reports its own progress as
+        /// well - once per contour, for a 2D contour - and every one of those repaints the
+        /// tree. Repainting it for a note that has not changed would cost more than the note
+        /// is worth.
+        ///
+        /// Deliberately not an <see cref="System.Progress{T}"/>, for the reason
+        /// <see cref="GenerationQueue"/> gives: that one posts to whatever context captured
+        /// it, and this has to run on the thread reporting to it, now, because the tree is
+        /// being drawn by the same thread that is doing the generating.
+        ///
+        /// Disposing clears the note. The queue's last report does that too - it reports a
+        /// null operation when the run ends - but a run that throws never gets there, and a
+        /// row left claiming to be generating forever is worse than no note at all.
+        /// </remarks>
+        private sealed class GeneratingNotes : IProgress<GenerationProgress>, IDisposable
+        {
+            private readonly JobTreeTabs _tabs;
+            private readonly ModelDoc2 _model;
+
+            private Operation _current;
+
+            public GeneratingNotes(JobTreeTabs tabs, ModelDoc2 model)
+            {
+                _tabs = tabs;
+                _model = model;
+            }
+
+            public void Report(GenerationProgress value)
+            {
+                Operation operation = value?.Operation;
+
+                if (ReferenceEquals(operation, _current))
+                {
+                    return;
+                }
+
+                _current = operation;
+                _tabs?.ShowGenerating(_model, operation);
+            }
+
+            public void Dispose() => Report(null);
         }
 
         /// <summary>

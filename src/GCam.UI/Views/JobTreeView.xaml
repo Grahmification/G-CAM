@@ -202,6 +202,17 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
+                        <!--
+                            What is happening to the row right now - "(generating…)".
+                            Empty nearly always, and an empty TextBlock takes no width, so
+                            it needs no converter to get out of the way.
+                        -->
+                        <TextBlock Text="{Binding Note}"
+                                   Margin="5,0,0,0"
+                                   VerticalAlignment="Center"
+                                   FontStyle="Italic"
+                                   Foreground="#5A6570" />
+
                         <Border Background="#E4E8EC" CornerRadius="2" Margin="6,0,0,0" Padding="4,0"
                                 VerticalAlignment="Center">
                             <Border.Style>

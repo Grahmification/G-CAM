@@ -847,8 +847,29 @@ be wanted.
 
 **`Generating` keeps the error badge rather than clearing it.** Blanking it for the length
 of a run would read as "done" while the operation still has nothing anyone should believe.
-It is unobservable today — generation runs synchronously on the STA thread, so the tree is
-never repainted mid-run — and will matter the moment that moves off it.
+It is unobservable today, but no longer because nothing repaints mid-run — see the note
+below, which does: the rows are rebuilt from the model only once the run has finished, so
+no badge changes while it is going on whatever gets painted.
+
+### "(generating…)"
+
+**The row the queue is working on says so, after its name** — `JobTreeNode.Note`, set from
+the progress the queue already reports and cleared by the null report that ends a run.
+One row at a time: two rows claiming to be generating would be a lie about what is running.
+
+**Drawing it is the whole difficulty, and the reason there is no percentage.** Generation
+runs on the SOLIDWORKS thread, which is the thread that paints the tree, so the note would
+otherwise be set, never drawn, and cleared again while the window sat frozen.
+`JobTreeViewModel.ShowGenerating` waits for the dispatcher to reach `Render` priority,
+which forces the paint to happen there and then. **Render, never Input**: Input is the
+lower priority, so queued clicks and keystrokes are not dispatched while it waits — pumping
+at Input would let someone delete the operation being generated, which is the re-entrancy
+that has already taken SOLIDWORKS down here once.
+
+`GenerationProgress.OperationPercent` exists and is deliberately unused. A 2D contour runs
+in milliseconds and reports once per contour, so a percentage would flash past unread; it
+becomes worth showing when generation moves off the SOLIDWORKS thread, which is also when
+this repaint trick stops being necessary.
 
 **The words live beside the badge, in `OperationStatus.Label`.** The tooltip is their only
 caller today; the posting warning and the generation report are meant to be the next two.

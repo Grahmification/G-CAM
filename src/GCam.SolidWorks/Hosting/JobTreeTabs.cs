@@ -185,6 +185,23 @@ namespace GCam.SolidWorks.Hosting
         }
 
         /// <summary>
+        /// Notes in a document's tree which operation is being generated. Null clears it.
+        /// </summary>
+        public void ShowGenerating(ModelDoc2 model, Operation operation)
+        {
+            if (model == null)
+            {
+                return;
+            }
+
+            DocumentTab tab;
+            if (_tabs.TryGetValue(model, out tab))
+            {
+                tab.Model?.ShowGenerating(operation);
+            }
+        }
+
+        /// <summary>
         /// What draws a job in a document's 3D view, or null if that document has no
         /// G-CAM tab.
         /// </summary>

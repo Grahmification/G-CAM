@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Windows.Threading;
 using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
 using GCam.Core.Generation;
@@ -46,6 +47,13 @@ namespace GCam.UI.ViewModels
         private readonly Func<string> _partName;
 
         private readonly MultiSelection<JobTreeNode> _selection = new MultiSelection<JobTreeNode>();
+
+        /// <summary>
+        /// The thread that paints this tree, captured where it is certain - this is built
+        /// on it. Used only to force a repaint mid-generation; see
+        /// <see cref="ShowGenerating"/>.
+        /// </summary>
+        private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
 
         /// <summary>
         /// True while the tree is being rebuilt, so the 3D view is redrawn once at the end
@@ -386,6 +394,59 @@ namespace GCam.UI.ViewModels
 
             return JobNodes.FirstOrDefault(
                 n => string.Equals(n.Job.Id, jobId, StringComparison.Ordinal));
+        }
+
+        // ---- Generation ------------------------------------------------------
+
+        /// <summary>What a row says while the queue is working on it.</summary>
+        private const string GeneratingNote = "(generating…)";
+
+        /// <summary>
+        /// Notes the operation the queue is working on, and gets that on screen before it
+        /// starts working.
+        /// </summary>
+        /// <remarks>
+        /// One row at a time, cleared from every other - the same arrangement as
+        /// <see cref="ShowDropAt"/>, and for the same reason: the queue works through
+        /// operations one by one, and two rows claiming to be generating at once would be a
+        /// lie about what is running. Null clears them all, which is what the end of a run
+        /// reports.
+        ///
+        /// <b>Drawing it is the whole difficulty.</b> Generation runs on the SOLIDWORKS
+        /// thread, which is also the thread that paints this tree, so the note would
+        /// otherwise be set, never drawn, and cleared again - all while the window sat
+        /// frozen. The empty <c>Invoke</c> below waits for the dispatcher to reach
+        /// <see cref="DispatcherPriority.Render"/>, which is what forces the layout and
+        /// paint to happen now rather than whenever generation finally lets go.
+        ///
+        /// <b>Render, never Input.</b> Input is a lower priority, so queued clicks and
+        /// keystrokes are <i>not</i> dispatched while this waits - they stay in the queue
+        /// until generation ends. Pumping at Input priority instead would let the user
+        /// delete the very operation being generated, which is the re-entrancy this
+        /// codebase has already been bitten by once.
+        ///
+        /// All of this goes away when generation moves off the SOLIDWORKS thread, which is
+        /// also when a percentage becomes worth showing - see docs/design/operations.md.
+        /// </remarks>
+        public void ShowGenerating(Operation operation)
+        {
+            bool changed = false;
+
+            foreach (OperationNode row in AllNodes().OfType<OperationNode>())
+            {
+                string note = ReferenceEquals(row.Operation, operation) ? GeneratingNote : null;
+
+                if (!string.Equals(row.Note, note, StringComparison.Ordinal))
+                {
+                    row.Note = note;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                _dispatcher.Invoke(new Action(() => { }), DispatcherPriority.Render);
+            }
         }
 
         // ---- The part --------------------------------------------------------
