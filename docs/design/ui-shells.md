@@ -1,11 +1,11 @@
-# UI shells
+﻿# UI shells
 
 The four custom UI surfaces, what hosts each one, and the hosting constraints that shaped
 them. Read this before adding a surface or moving one between technologies.
 
 | Surface | Built by | Notes |
 | --- | --- | --- |
-| CommandManager tab, toolbar and menu | `GCamAddin.CommandManager.cs` | Six buttons: Generate All, New Job, New Operation, Tool Library, Post Process, Simulate |
+| CommandManager tab, toolbar and menu | `GCamAddin.CommandManager.cs` | Six buttons: Generate, New Job, New Operation, Tool Library, Post Process, Simulate |
 | Manager Pane tab | `JobTreeTabs` → `JobTreeTabHost` → `JobTreeView` | ActiveX → WinForms → ElementHost → WPF; selecting it brings the G-CAM ribbon tab forward |
 | Job and Operation PropertyManager pages | `GCamPropertyPage` → `JobPropertyPage` / `OperationPropertyPage` | SOLIDWORKS-native, built by the API rather than WPF. Both are real and both work. The Operation page is five tabs — see [Operations](operations.md) |
 | Tool library window | `ToolLibraryDialog.ShowBrowser` / `PickTool` → `ToolLibraryWindow` | Modal, parented to the SW frame. One window, two modes — browse, or choose a tool for an operation |
@@ -28,14 +28,22 @@ because the page is in `GCam.SolidWorks` and the browser is WPF in `GCam.UI`. Ne
 project can see the other; the add-in is the only one that sees both. See
 [Operations](operations.md) for what happens to the tool once it arrives.
 
-**The toolbar buttons act on the default job**, except Generate All, which acts on the
-whole part and is the same command the tree's part row offers; the job tree's context menu
-is where a specific job or operation is reached, and it is the richer route. Post Process
-and Simulate do nothing at all yet.
+**The toolbar buttons act on the default job**, except Generate, which acts on whatever the
+job tree has selected — jobs whole, operations on their own, and the whole part when the
+part row is selected, since that is what the part row means. The job tree's context menu is
+where a specific job or operation is reached, and it is the richer route. Post Process and
+Simulate do nothing at all yet.
+
+**Generate reads the selection the tree remembers, not the live one.** The ribbon does not
+go away when the Manager Pane moves off the G-CAM tab, but the selection does — it is put
+away so the 3D view clears — so a button reading only the live selection would do nothing
+whenever someone was looking at the FeatureManager, which is most of the time while
+modelling. `JobTreeViewModel.EffectiveSelection` resolves the put-away snapshot back to rows
+by id, so a job deleted meanwhile is simply not among them.
 
 **A button's enum value is its image index and its position.** `GCamCommand`'s values index
 into the icon strips, and `AddCommandTab` lays the ribbon out in numeric order, so putting
-Generate All leftmost meant renumbering every button after it and shifting the strip to
+Generate leftmost meant renumbering every button after it and shifting the strip to
 match — `tools/make-placeholder-icons.py` generates them, and its `BUTTONS` list is the
 other half that has to move. `CommandGroupId` is bumped when the set changes, or SOLIDWORKS
 serves a toolbar cached from the previous layout.

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Regenerate the placeholder CommandManager icons.
 
 SOLIDWORKS wants two sets of images, one file per size (20/32/40/64/96/128):
@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Keep in step with GCamCommands.cs - order defines the image index of each button.
 BUTTONS = [
-    ("G", (0xB0, 0x2E, 0x34)),  # Generate All
+    ("G", (0xB0, 0x2E, 0x34)),  # Generate
     ("J", (0x2D, 0x7D, 0xD2)),  # New Job
     ("O", (0x1F, 0x8A, 0x9B)),  # New Operation
     ("T", (0x3F, 0x9E, 0x5C)),  # Tool Library

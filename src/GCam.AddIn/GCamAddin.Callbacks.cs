@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using GCam.AddIn.Commands;
 using GCam.UI.Views;
 using SolidWorks.Interop.sldworks;
@@ -21,11 +21,11 @@ namespace GCam.AddIn
             {
                 switch ((GCamCommand)commandId)
                 {
-                    case GCamCommand.GenerateAll:
-                        // The same command the part row at the top of the job tree offers.
-                        // Quietly does nothing on a part with no jobs, which is what the
-                        // queue does with an empty document anyway.
-                        GenerateAll();
+                    case GCamCommand.GenerateSelected:
+                        // Whatever the job tree has selected - jobs whole, operations on
+                        // their own, or the part, which means all of it. Quietly does
+                        // nothing when nothing is selected.
+                        _jobTreeTabs?.GenerateSelection(_swApp.ActiveDoc as ModelDoc2);
                         break;
 
                     case GCamCommand.NewJob:

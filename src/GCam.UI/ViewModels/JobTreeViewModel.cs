@@ -414,9 +414,7 @@ namespace GCam.UI.ViewModels
                 return;
             }
 
-            List<JobTreeNode> survivors = AllRows()
-                .Where(Survives)
-                .ToList();
+            List<JobTreeNode> survivors = RowsOf(held);
 
             JobTreeNode anchor = held.PartAnchored
                 ? Part
@@ -437,6 +435,20 @@ namespace GCam.UI.ViewModels
             // With the anchor gone but other rows still selected, SelectAll settles it on
             // the first of them rather than on nothing.
             _selection.SelectAll(survivors, anchor);
+        }
+
+        /// <summary>
+        /// The rows a snapshot still points at, in tree order. Rows that have gone are
+        /// simply not in it.
+        /// </summary>
+        /// <remarks>
+        /// Separate from <see cref="Restore"/> because a caller may want to know what was
+        /// selected without selecting it - generating from the toolbar while the Manager
+        /// Pane is showing something else is exactly that.
+        /// </remarks>
+        private List<JobTreeNode> RowsOf(SelectionSnapshot held)
+        {
+            return AllRows().Where(Survives).ToList();
 
             bool Survives(JobTreeNode row)
             {
@@ -535,6 +547,65 @@ namespace GCam.UI.ViewModels
 
         /// <summary>Computes the toolpaths for every job in the part.</summary>
         public void GenerateAll() => _editor?.GenerateAll();
+
+        /// <summary>
+        /// Computes the toolpaths for whatever is selected - whole jobs, single operations,
+        /// or the part.
+        /// </summary>
+        /// <remarks>
+        /// What the toolbar's Generate button asks for. It uses
+        /// <see cref="EffectiveSelection"/> rather than the live one, because the toolbar is
+        /// on the ribbon and the ribbon does not go away when the Manager Pane moves off the
+        /// G-CAM tab - while the selection does. Acting on nothing whenever someone is
+        /// looking at the FeatureManager would make the button useless most of the time.
+        ///
+        /// <b>The part row swallows the rest.</b> It stands for the whole part, so a
+        /// selection holding it means everything, and there is nothing a job beside it could
+        /// add.
+        ///
+        /// An operation inside a job that is also selected is left out: the job is about to
+        /// generate it. Without that it would run twice, and the second run would be
+        /// reported as a separate generate of the same operation.
+        /// </remarks>
+        public void GenerateSelection()
+        {
+            IReadOnlyList<JobTreeNode> rows = EffectiveSelection();
+
+            if (rows.OfType<PartNode>().Any())
+            {
+                GenerateAll();
+                return;
+            }
+
+            List<JobNode> jobs = InTreeOrder(rows.OfType<JobNode>());
+
+            List<OperationNode> operations = InTreeOrder(rows.OfType<OperationNode>())
+                .Where(n => !jobs.Any(j => ReferenceEquals(j.Job, JobOf(n))))
+                .ToList();
+
+            GenerateJobs(jobs);
+            GenerateOperations(operations);
+        }
+
+        /// <summary>
+        /// What is selected, or what was selected when the tab was left.
+        /// </summary>
+        /// <remarks>
+        /// The put-away selection is resolved fresh rather than remembered as rows, so a job
+        /// deleted while the tree was not being looked at is not generated on the strength
+        /// of a row that no longer exists.
+        /// </remarks>
+        private IReadOnlyList<JobTreeNode> EffectiveSelection()
+        {
+            if (!_selection.IsEmpty)
+            {
+                return _selection.Items;
+            }
+
+            return _whileAway == null
+                ? new JobTreeNode[0]
+                : (IReadOnlyList<JobTreeNode>)RowsOf(_whileAway);
+        }
 
         /// <summary>True when the part has a job to generate.</summary>
         public bool HasJobs => _document.Jobs.Count > 0;

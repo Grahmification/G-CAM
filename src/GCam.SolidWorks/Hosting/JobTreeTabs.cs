@@ -186,6 +186,15 @@ namespace GCam.SolidWorks.Hosting
         }
 
         /// <summary>
+        /// Generates whatever is selected in a document's tree.
+        /// </summary>
+        /// <remarks>
+        /// For the toolbar's Generate button. The tree is where the selection lives, so the
+        /// button states its intent here rather than working out what is selected itself.
+        /// </remarks>
+        public void GenerateSelection(ModelDoc2 model) => ModelFor(model)?.GenerateSelection();
+
+        /// <summary>
         /// Notes in a document's tree which operation is being generated. Null clears it.
         /// </summary>
         public void ShowGenerating(ModelDoc2 model, Operation operation)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,7 +18,7 @@ namespace GCam.AddIn
         // Must be unique among all add-ins and stable across releases. Per the API
         // docs, changing a CommandGroup's contents without changing this ID leaves
         // users with a stale cached toolbar, so bump it if the buttons change.
-        private const int CommandGroupId = 4622;
+        private const int CommandGroupId = 4623;
 
         private const string TabName = "G-CAM";
 
@@ -48,9 +48,9 @@ namespace GCam.AddIn
             _cmdGroup.MainIconList = IconPaths("main");
 
             AddButton(
-                GCamCommand.GenerateAll,
-                "Generate All",
-                "Compute the toolpaths for every job in this part");
+                GCamCommand.GenerateSelected,
+                "Generate",
+                "Compute the toolpaths for what is selected in the G-CAM tree");
             AddButton(GCamCommand.NewJob, "New Job", "Create a CAM job for this part");
             AddButton(GCamCommand.NewOperation, "New Operation", "Add a machining operation");
             AddButton(GCamCommand.ToolLibrary, "Tool Library", "Open the tool library");

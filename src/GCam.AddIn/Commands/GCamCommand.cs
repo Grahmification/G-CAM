@@ -1,4 +1,4 @@
-namespace GCam.AddIn.Commands
+﻿namespace GCam.AddIn.Commands
 {
     /// <summary>
     /// Command IDs for the G-CAM CommandGroup.
@@ -11,12 +11,12 @@ namespace GCam.AddIn.Commands
     ///
     /// It is also the order the buttons appear in, on the toolbar and on the ribbon tab -
     /// <c>AddCommandTab</c> reads the values in numeric order. So inserting one at the
-    /// front, as Generate All is, renumbers every button after it and shifts the whole
+    /// front, as Generate is, renumbers every button after it and shifts the whole
     /// strip along with them. Bump <c>CommandGroupId</c> when that happens.
     /// </remarks>
     public enum GCamCommand
     {
-        GenerateAll = 0,
+        GenerateSelected = 0,
         NewJob = 1,
         NewOperation = 2,
         ToolLibrary = 3,
