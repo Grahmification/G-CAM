@@ -52,17 +52,18 @@ namespace GCam.Core.Rendering
         /// What each kind of move is drawn in.
         /// </summary>
         /// <remarks>
-        /// Chosen to be told apart rather than to match another product exactly: yellow
-        /// rapids because that is universal, red plunges because a plunge in the wrong
-        /// place is what breaks cutters, and blue leads so an entry mark can be traced to
-        /// the move that made it.
+        /// Told apart first, and where there is a choice, HSMWorks' way round: yellow
+        /// rapids because that is universal, red plunges because a plunge in the wrong place
+        /// is what breaks cutters, <b>blue cutting and green leads</b> because that is what
+        /// anyone coming from HSMWorks already reads without thinking. The two were the
+        /// other way round until someone who uses both said so.
         /// </remarks>
         public static RenderColour ColourFor(MoveKind kind)
         {
             switch (kind)
             {
                 case MoveKind.Rapid: return new RenderColour(1.0, 0.85, 0.1);
-                case MoveKind.Lead: return new RenderColour(0.2, 0.5, 1.0);
+                case MoveKind.Lead: return new RenderColour(0.15, 0.75, 0.25);
                 case MoveKind.Link: return new RenderColour(0.2, 0.75, 0.8);
                 case MoveKind.Plunge: return new RenderColour(0.9, 0.25, 0.2);
                 case MoveKind.Retract: return new RenderColour(0.65, 0.4, 0.9);
@@ -71,7 +72,7 @@ namespace GCam.Core.Rendering
                 case MoveKind.Cutting:
                 case MoveKind.Cycle:
                 default:
-                    return new RenderColour(0.15, 0.75, 0.25);
+                    return new RenderColour(0.2, 0.5, 1.0);
             }
         }
 
