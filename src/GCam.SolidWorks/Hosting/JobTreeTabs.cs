@@ -252,6 +252,18 @@ namespace GCam.SolidWorks.Hosting
         }
 
         /// <summary>
+        /// What draws height planes in whichever document is in front, or null if that
+        /// document has no G-CAM tab. For the Operation page's Heights tab.
+        /// </summary>
+        public IHeightsPreview HeightsForActiveDocument()
+        {
+            var model = _swApp.ActiveDoc as ModelDoc2;
+
+            DocumentTab tab;
+            return model != null && _tabs.TryGetValue(model, out tab) ? tab.Heights : null;
+        }
+
+        /// <summary>
         /// One part's tab: the SOLIDWORKS view, the jobs it shows, the viewmodel tying
         /// them together, and what G-CAM draws in that part's 3D windows. All of it lives
         /// and dies with the document.
@@ -277,6 +289,9 @@ namespace GCam.SolidWorks.Hosting
 
             /// <summary>Draws which side of its contours the open operation will cut.</summary>
             public CutDirectionPreview CutDirection { get; set; }
+
+            /// <summary>Draws the open operation's machining heights as planes.</summary>
+            public HeightsPreview Heights { get; set; }
 
             /// <summary>Saves this document's jobs into it. Null for a part that has none.</summary>
             public JobStorageHook Storage { get; set; }
@@ -403,6 +418,7 @@ namespace GCam.SolidWorks.Hosting
                 Renderer = renderer,
                 Preview = preview,
                 CutDirection = new CutDirectionPreview(_swApp, model, renderer, _errors, _log),
+                Heights = new HeightsPreview(_swApp, model, renderer, _errors, _log),
             };
 
             _tabs[model] = tab;

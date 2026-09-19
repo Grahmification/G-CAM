@@ -162,6 +162,13 @@ namespace GCam.SolidWorks.PropertyPages
         private readonly Func<JobDocument> _jobsForActiveDocument;
         private readonly Func<Tool> _pickToolIntoPart;
         private readonly Func<ICutDirectionPreview> _cutDirection;
+        private readonly Func<IHeightsPreview> _heightsPreview;
+
+        /// <summary>
+        /// The height whose offset box has the focus, and so is drawn filled. Null when
+        /// the focus is anywhere else.
+        /// </summary>
+        private HeightKind? _focusedHeight;
 
         private IPropertyManagerPageLabel _toolName;
         private IPropertyManagerPageButton _toolBrowse;
@@ -224,6 +231,10 @@ namespace GCam.SolidWorks.PropertyPages
         /// document and this page is built once for the session. Null simply means no
         /// arrows.
         /// </param>
+        /// <param name="heightsPreview">
+        /// Draws the machining heights as planes while the Heights tab is open. A function
+        /// for the same reason as <paramref name="cutDirection"/>; null means no planes.
+        /// </param>
         public OperationPropertyPage(
             SldWorks swApp,
             ErrorHandler errors,
@@ -231,7 +242,8 @@ namespace GCam.SolidWorks.PropertyPages
             Func<ModelDoc2> activeDocument,
             Func<JobDocument> jobsForActiveDocument,
             Func<Tool> pickToolIntoPart = null,
-            Func<ICutDirectionPreview> cutDirection = null)
+            Func<ICutDirectionPreview> cutDirection = null,
+            Func<IHeightsPreview> heightsPreview = null)
             : base(swApp, errors, log)
         {
             _activeDocument = activeDocument ?? throw new ArgumentNullException(nameof(activeDocument));
@@ -239,6 +251,7 @@ namespace GCam.SolidWorks.PropertyPages
                                      ?? throw new ArgumentNullException(nameof(jobsForActiveDocument));
             _pickToolIntoPart = pickToolIntoPart;
             _cutDirection = cutDirection;
+            _heightsPreview = heightsPreview;
         }
 
         /// <summary>Raised when the page is accepted, with the operation as edited.</summary>
@@ -269,6 +282,7 @@ namespace GCam.SolidWorks.PropertyPages
             _target = operation ?? throw new ArgumentNullException(nameof(operation));
             _working = operation.Clone();
             _closing = false;
+            _focusedHeight = null;
 
             JobDocument jobs = _jobsForActiveDocument();
             _currentTool = jobs?.FindTool(_working.ToolId);
@@ -585,6 +599,44 @@ namespace GCam.SolidWorks.PropertyPages
         {
             RestoreContourSelection();
             ShowCutDirection();
+            ShowHeights();
+        }
+
+        /// <summary>
+        /// Redraws the height planes, or takes them down when the Heights tab is not the
+        /// one in front.
+        /// </summary>
+        /// <remarks>
+        /// The tab is the whole trigger: these planes are large and span the part, and
+        /// leaving them up behind the Geometry tab would bury the contours that tab is
+        /// about. <see cref="_activeTab"/> is already tracked for the rebuild, so there is
+        /// nothing new to watch.
+        ///
+        /// Called on every show, every tab click, every height edit and every move of the
+        /// focus between the offset boxes - all of which change either what is drawn or
+        /// which plane is filled.
+        /// </remarks>
+        private void ShowHeights()
+        {
+            if (_closing)
+            {
+                return;
+            }
+
+            IHeightsPreview preview = _heightsPreview?.Invoke();
+
+            if (preview == null)
+            {
+                return;
+            }
+
+            if (_activeTab != TabHeights)
+            {
+                preview.Clear();
+                return;
+            }
+
+            preview.Show(_job, _working, _focusedHeight);
         }
 
         /// <summary>
@@ -825,7 +877,63 @@ namespace GCam.SolidWorks.PropertyPages
         protected override bool OnTabClicked(int id)
         {
             _activeTab = id;
+
+            // Leaving the Heights tab with a box focused would otherwise leave that plane
+            // filled the next time the tab came back.
+            _focusedHeight = null;
+
+            ShowHeights();
             return true;
+        }
+
+        /// <summary>
+        /// Fills the plane of whichever height offset box the user is in.
+        /// </summary>
+        /// <remarks>
+        /// The offset box only, not the mode drop-down beside it: a number box is the
+        /// control SOLIDWORKS reports focus for most predictably, and the box is what
+        /// "editing this height" means to someone tabbing down the page.
+        ///
+        /// Moving between two boxes raises both a loss and a gain, and the order is
+        /// SOLIDWORKS' business - which is why the loss only clears the fill if it is
+        /// still the height that lost it. Without that, a gain arriving first would be
+        /// undone by the loss that followed.
+        /// </remarks>
+        protected override void OnGainedFocus(int id)
+        {
+            HeightKind kind;
+
+            if (HeightOffsetBox(id, out kind))
+            {
+                _focusedHeight = kind;
+                ShowHeights();
+            }
+        }
+
+        protected override void OnLostFocus(int id)
+        {
+            HeightKind kind;
+
+            if (HeightOffsetBox(id, out kind) && _focusedHeight == kind)
+            {
+                _focusedHeight = null;
+                ShowHeights();
+            }
+        }
+
+        private static bool HeightOffsetBox(int id, out HeightKind kind)
+        {
+            switch (id)
+            {
+                case IdClearanceOffset: kind = HeightKind.Clearance; return true;
+                case IdRetractOffset: kind = HeightKind.Retract; return true;
+                case IdFeedOffset: kind = HeightKind.Feed; return true;
+                case IdTopOffset: kind = HeightKind.Top; return true;
+                case IdBottomOffset: kind = HeightKind.Bottom; return true;
+            }
+
+            kind = HeightKind.Clearance;
+            return false;
         }
 
         protected override void OnButtonPress(int id)
@@ -906,6 +1014,9 @@ namespace GCam.SolidWorks.PropertyPages
                 case IdTopMode: SetMode(_working.Heights.Top, item); break;
                 case IdBottomMode: SetMode(_working.Heights.Bottom, item); break;
             }
+
+            // A datum change moves a plane as surely as an offset does.
+            ShowHeights();
         }
 
         protected override void OnNumberboxChanged(int id, double value)
@@ -923,11 +1034,30 @@ namespace GCam.SolidWorks.PropertyPages
                 case IdCuttingFeed: _working.Cutting.CuttingFeed = value; break;
                 case IdPlungeFeed: _working.Cutting.PlungeFeed = value; break;
 
-                case IdClearanceOffset: _working.Heights.Clearance.Offset = FromBoxLength(value); break;
-                case IdRetractOffset: _working.Heights.Retract.Offset = FromBoxLength(value); break;
-                case IdFeedOffset: _working.Heights.Feed.Offset = FromBoxLength(value); break;
-                case IdTopOffset: _working.Heights.Top.Offset = FromBoxLength(value); break;
-                case IdBottomOffset: _working.Heights.Bottom.Offset = FromBoxLength(value); break;
+                case IdClearanceOffset:
+                    _working.Heights.Clearance.Offset = FromBoxLength(value);
+                    ShowHeights();
+                    break;
+
+                case IdRetractOffset:
+                    _working.Heights.Retract.Offset = FromBoxLength(value);
+                    ShowHeights();
+                    break;
+
+                case IdFeedOffset:
+                    _working.Heights.Feed.Offset = FromBoxLength(value);
+                    ShowHeights();
+                    break;
+
+                case IdTopOffset:
+                    _working.Heights.Top.Offset = FromBoxLength(value);
+                    ShowHeights();
+                    break;
+
+                case IdBottomOffset:
+                    _working.Heights.Bottom.Offset = FromBoxLength(value);
+                    ShowHeights();
+                    break;
 
                 case IdStockToLeave: settings.StockToLeave = FromBoxLength(value); break;
                 case IdVerticalStockToLeave: settings.VerticalStockToLeave = FromBoxLength(value); break;
@@ -1028,6 +1158,7 @@ namespace GCam.SolidWorks.PropertyPages
             // moment later and its toolpath comes up; on Cancel there is nothing to come
             // back to, which is right - the arrows were about an edit that never happened.
             _cutDirection?.Invoke()?.Clear();
+            _heightsPreview?.Invoke()?.Clear();
 
             if (reason == swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Okay)
             {

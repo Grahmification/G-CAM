@@ -430,7 +430,8 @@ namespace GCam.AddIn
                 () => _swApp.ActiveDoc as ModelDoc2,
                 () => _jobTreeTabs?.JobsForActiveDocument(),
                 PickToolIntoPart,
-                () => _jobTreeTabs?.CutDirectionForActiveDocument());
+                () => _jobTreeTabs?.CutDirectionForActiveDocument(),
+                () => _jobTreeTabs?.HeightsForActiveDocument());
 
             page.Committed += OnOperationCommitted;
             return page;
