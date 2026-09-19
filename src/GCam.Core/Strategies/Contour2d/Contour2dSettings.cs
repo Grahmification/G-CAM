@@ -29,6 +29,7 @@ namespace GCam.Core.Strategies.Contour2d
         private static class Names
         {
             public const string Direction = "direction";
+            public const string StockToLeaveEnabled = "doStockToLeave";
             public const string StockToLeave = "stockToLeave";
             public const string VerticalStockToLeave = "verticalStockToLeave";
             public const string MultipleDepths = "doMultipleDepths";
@@ -58,11 +59,32 @@ namespace GCam.Core.Strategies.Contour2d
 
         public CutDirection Direction { get; set; } = CutDirection.Climb;
 
+        /// <summary>
+        /// Whether stock to leave is applied at all. Off, both amounts are ignored rather
+        /// than zeroed, so turning it back on restores what was typed.
+        /// </summary>
+        /// <remarks>
+        /// Defaults on, and old files that predate the parameter read as on: their stored
+        /// amounts were being applied, and loading a part must not quietly change what it
+        /// cuts. An operation that wants none of it leaves the amounts at zero, which is
+        /// where they start.
+        /// </remarks>
+        public bool StockToLeaveEnabled { get; set; } = true;
+
         /// <summary>Material left on the wall for a later pass, mm.</summary>
         public double StockToLeave { get; set; }
 
         /// <summary>Material left on the floor, mm.</summary>
         public double VerticalStockToLeave { get; set; }
+
+        /// <summary>
+        /// The wall and floor amounts actually cut to, which are zero when stock to leave
+        /// is off. Read these, not the raw properties.
+        /// </summary>
+        public double EffectiveStockToLeave => StockToLeaveEnabled ? StockToLeave : 0;
+
+        public double EffectiveVerticalStockToLeave =>
+            StockToLeaveEnabled ? VerticalStockToLeave : 0;
 
         public MultipleDepthsSettings MultipleDepths { get; set; } = new MultipleDepthsSettings();
 
@@ -92,6 +114,7 @@ namespace GCam.Core.Strategies.Contour2d
             {
                 Contours = Contours.Select(c => c.Clone()).ToList(),
                 Direction = Direction,
+                StockToLeaveEnabled = StockToLeaveEnabled,
                 StockToLeave = StockToLeave,
                 VerticalStockToLeave = VerticalStockToLeave,
                 MultipleDepths = MultipleDepths.Clone(),
@@ -104,6 +127,7 @@ namespace GCam.Core.Strategies.Contour2d
         public override void WriteParameters(ParameterBag bag)
         {
             bag.SetEnum(Names.Direction, Direction);
+            bag.Set(Names.StockToLeaveEnabled, StockToLeaveEnabled);
             bag.Set(Names.StockToLeave, StockToLeave);
             bag.Set(Names.VerticalStockToLeave, VerticalStockToLeave);
 
@@ -119,6 +143,7 @@ namespace GCam.Core.Strategies.Contour2d
         public override void ReadParameters(ParameterBag bag)
         {
             Direction = bag.GetEnum(Names.Direction, Direction);
+            StockToLeaveEnabled = bag.GetBool(Names.StockToLeaveEnabled, StockToLeaveEnabled);
             StockToLeave = bag.GetDouble(Names.StockToLeave, StockToLeave);
             VerticalStockToLeave = bag.GetDouble(Names.VerticalStockToLeave, VerticalStockToLeave);
 

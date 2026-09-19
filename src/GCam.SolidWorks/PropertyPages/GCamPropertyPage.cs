@@ -453,6 +453,34 @@ namespace GCam.SolidWorks.PropertyPages
                 caption);
         }
 
+        /// <summary>
+        /// A group whose header carries a checkbox, for parameters that can be turned off
+        /// without being cleared. Changes arrive at <c>OnGroupCheck</c>.
+        /// </summary>
+        /// <remarks>
+        /// SOLIDWORKS collapses the group when the box is cleared and expands it when it
+        /// is set - its own behaviour, documented under IPropertyManagerPageGroup::Checked
+        /// - so the contents hide themselves and nothing here writes to a shown page. It
+        /// leaves the controls' own states alone, which is exactly what is wanted: the
+        /// numbers keep what was typed into them.
+        ///
+        /// The initial state is an option here rather than an assignment afterwards,
+        /// because it is part of the page's shape like everything else.
+        /// </remarks>
+        protected static IPropertyManagerPageGroup AddCheckedGroup(
+            IPropertyManagerPageTab tab, int id, string caption, bool isChecked)
+        {
+            int options =
+                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible |
+                (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Checkbox |
+                (isChecked
+                    ? (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Checked |
+                      (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded
+                    : 0);
+
+            return Checked(tab.AddGroupBox(id, caption, options) as IPropertyManagerPageGroup, id, caption);
+        }
+
         private const int GroupBoxOptions =
             (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Visible |
             (int)swAddGroupBoxOptions_e.swGroupBoxOptions_Expanded;

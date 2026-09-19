@@ -41,6 +41,7 @@ namespace GCam.SolidWorks.PropertyPages
         private const int GroupPasses = 5;
         private const int GroupLinking = 6;
         private const int GroupFeeds = 7;
+        private const int GroupStockToLeave = 8;
 
         // Tabs, numbered well clear of the groups and controls. Nothing documents whether
         // tab ids share a namespace with control ids, and duplicate control ids are
@@ -79,8 +80,6 @@ namespace GCam.SolidWorks.PropertyPages
         private const int IdBottomOffset = 54;
 
         // Passes.
-        private const int IdStockToLeave = 60;
-        private const int IdVerticalStockToLeave = 61;
         private const int IdMultipleDepths = 62;
         private const int IdMaximumStepdown = 63;
         private const int IdEvenStepdowns = 64;
@@ -104,6 +103,12 @@ namespace GCam.SolidWorks.PropertyPages
         private const int IdPlungeFeed = 85;
         private const int IdCoolantLabel = 86;
         private const int IdCoolant = 87;
+
+        // Stock to leave. On the Passes tab, in a group of its own.
+        private const int IdStockToLeaveLabel = 90;
+        private const int IdStockToLeave = 91;
+        private const int IdVerticalStockToLeaveLabel = 92;
+        private const int IdVerticalStockToLeave = 93;
 
         /// <summary>Tells this page's selection box from every other box on the page.</summary>
         private const int MarkContours = 1;
@@ -446,12 +451,6 @@ namespace GCam.SolidWorks.PropertyPages
                 group, IdDirection, new[] { "Climb", "Conventional" },
                 "Which way round the profile runs.");
 
-            _stockToLeave = AddLengthbox(
-                group, IdStockToLeave, "Stock to leave", "Material left on the wall.");
-            _verticalStockToLeave = AddLengthbox(
-                group, IdVerticalStockToLeave, "Vertical stock to leave",
-                "Material left on the floor.");
-
             _multipleDepths = AddCheckbox(
                 group, IdMultipleDepths, "Multiple depths",
                 "Take the depth in several passes rather than one.");
@@ -464,6 +463,31 @@ namespace GCam.SolidWorks.PropertyPages
             _tolerance = AddLengthbox(
                 group, IdTolerance, "Tolerance",
                 "How far the toolpath may deviate from the model.");
+
+            BuildStockToLeaveGroup(tab);
+        }
+
+        /// <summary>
+        /// Stock to leave, in a group of its own so the header checkbox can turn it off.
+        /// </summary>
+        /// <remarks>
+        /// A group rather than a checkbox above the boxes, because SOLIDWORKS collapses a
+        /// checked group when it is cleared - so the amounts go away with the thing that
+        /// uses them, and come back holding what was typed. The model keeps them either
+        /// way; see <see cref="Contour2dSettings.StockToLeaveEnabled"/>.
+        /// </remarks>
+        private void BuildStockToLeaveGroup(IPropertyManagerPageTab tab)
+        {
+            IPropertyManagerPageGroup group = AddCheckedGroup(
+                tab, GroupStockToLeave, "Stock to leave", Settings().StockToLeaveEnabled);
+
+            AddLabel(group, IdStockToLeaveLabel, "Radial (wall)");
+            _stockToLeave = AddLengthbox(
+                group, IdStockToLeave, "Radial", "Material left on the wall.");
+
+            AddLabel(group, IdVerticalStockToLeaveLabel, "Axial (floor)");
+            _verticalStockToLeave = AddLengthbox(
+                group, IdVerticalStockToLeave, "Axial", "Material left on the floor.");
         }
 
         private void BuildLinkingTab(IPropertyManagerPage2 page)
@@ -782,6 +806,24 @@ namespace GCam.SolidWorks.PropertyPages
             }
         }
 
+        /// <remarks>
+        /// Only the flag is written. The amounts are deliberately left as they are - that
+        /// is what the header checkbox is for - and SOLIDWORKS does the collapsing itself,
+        /// so there is nothing to do to the page.
+        /// </remarks>
+        protected override void OnGroupCheck(int id, bool isChecked)
+        {
+            if (_loading)
+            {
+                return;
+            }
+
+            if (id == GroupStockToLeave)
+            {
+                Settings().StockToLeaveEnabled = isChecked;
+            }
+        }
+
         protected override void OnCheckboxCheck(int id, bool value)
         {
             if (_loading)
@@ -990,6 +1032,7 @@ namespace GCam.SolidWorks.PropertyPages
             to.Contours.AddRange(from.Contours.Select(c => c.Clone()));
 
             to.Direction = from.Direction;
+            to.StockToLeaveEnabled = from.StockToLeaveEnabled;
             to.StockToLeave = from.StockToLeave;
             to.VerticalStockToLeave = from.VerticalStockToLeave;
             to.LeadOutMatchesLeadIn = from.LeadOutMatchesLeadIn;

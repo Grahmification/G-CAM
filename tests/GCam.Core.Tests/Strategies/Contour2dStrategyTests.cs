@@ -111,6 +111,24 @@ namespace GCam.Core.Tests.Strategies
         }
 
         [Fact]
+        public void Stock_to_leave_turned_off_is_ignored_without_being_cleared()
+        {
+            var settings = new Contour2dSettings
+            {
+                StockToLeaveEnabled = false,
+                StockToLeave = 0.5,
+                VerticalStockToLeave = 0.3,
+            };
+
+            Toolpath path = Generate(Context(settings));
+
+            IEnumerable<Move> cutting = path.Moves.Where(m => m.Kind == MoveKind.Cutting);
+
+            Assert.Equal(-5, cutting.Min(m => m.End.X), 2);
+            Assert.All(cutting, m => Assert.Equal(0, m.End.Z, 6));
+        }
+
+        [Fact]
         public void Cutting_happens_at_the_bottom_height()
         {
             Toolpath path = Generate(Context());

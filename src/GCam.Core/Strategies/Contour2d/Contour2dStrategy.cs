@@ -126,7 +126,7 @@ namespace GCam.Core.Strategies.Contour2d
         private static IReadOnlyList<double> PassDepths(
             Contour2dSettings settings, ResolvedHeights heights)
         {
-            double bottom = heights.Bottom + settings.VerticalStockToLeave;
+            double bottom = heights.Bottom + settings.EffectiveVerticalStockToLeave;
             double depth = heights.Top - bottom;
 
             if (depth <= Precision.Epsilon)
@@ -260,7 +260,7 @@ namespace GCam.Core.Strategies.Contour2d
             ResolvedContour profile, double radius, Contour2dSettings settings)
         {
             bool climb = settings.Direction == CutDirection.Climb;
-            double distance = radius + settings.StockToLeave;
+            double distance = radius + settings.EffectiveStockToLeave;
 
             return profile.Path.IsClosed
                 ? OffsetClosed(profile, climb, distance)
