@@ -869,8 +869,16 @@ namespace GCam.SolidWorks.PropertyPages
         /// highlighted. With none, the ask is refused with something actionable rather
         /// than guessing at a contour or silently reversing them all.
         ///
-        /// The page is rebuilt afterwards because a shown page cannot be updated - see
-        /// <see cref="BrowseForTool"/> - and the status line has to change.
+        /// <b>The page stays open, and the status line is written in place.</b> It used to
+        /// rebuild for that one caption, on the rule that a shown page cannot be written
+        /// to at all. Verified false on 2025 SP3: the crash behind that rule was bisected
+        /// inside <see cref="BrowseForTool"/>, which puts a modal WPF window over the page
+        /// first, and a caption written from an ordinary button press is fine. See
+        /// docs/solidworks-api/property-manager-pages.md.
+        ///
+        /// Not rebuilding also keeps the highlighted row highlighted, so the same contour
+        /// can be reversed twice without picking it again - which the rebuild made
+        /// impossible.
         /// </remarks>
         private void ReverseHighlightedContour()
         {
@@ -890,7 +898,9 @@ namespace GCam.SolidWorks.PropertyPages
                 "Contour {0} of '{1}' now cuts {2}.",
                 row + 1, _working.Name, contour.Reversed ? "reversed" : "forwards");
 
-            RebuildAfterHandlerReturns();
+            _contoursStatus.Caption = ContourStatus();
+
+            ShowCutDirection();
         }
 
         // ---- The tool --------------------------------------------------------
