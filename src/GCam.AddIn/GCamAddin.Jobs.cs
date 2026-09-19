@@ -147,14 +147,23 @@ namespace GCam.AddIn
                     _log.Info("Edited operation '{0}'.", operation.Name);
                 }
 
-                _jobTreeTabs.MarkDirty(model);
-                _jobTreeTabs.RefreshJobs(model);
+                // Accepting the page is the ask for a toolpath, so it is generated here
+                // rather than left for the Generate button - a new operation would
+                // otherwise be accepted and show nothing. Only this operation: an edit
+                // marks the ones below it stale, and regenerating those is still the
+                // user's call. Marking dirty and refreshing the tree are
+                // GenerateOperations' own doing.
+                //
+                // It may well fail - no tool, nothing selected - and that is the honest
+                // answer to what was just accepted. The queue records it on the operation
+                // and the tree shows it; nothing is thrown away.
+                GenerateOperations(_operationJob, new[] { operation });
 
                 // Land the selection on the operation that was just accepted, not on its
                 // job. The tree is what decides what the 3D view shows, and it shows the
                 // selected operation's toolpath - so selecting the job would take the path
                 // that was being worked on off the screen at the moment of saying yes to
-                // it. A new operation has none yet, and lands on screen when it generates.
+                // it.
                 _jobTreeTabs.SelectOperation(model, operation);
             }
             catch (Exception ex)
