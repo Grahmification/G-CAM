@@ -53,12 +53,7 @@ namespace GCam.SolidWorks.PropertyPages
 
         // Tool. Ids are spaced so a control can be added to a group without renumbering.
         private const int IdToolName = 21;
-        private const int IdSpindleRpm = 22;
-        private const int IdCuttingFeed = 23;
-        private const int IdPlungeFeed = 24;
-        private const int IdCoolantLabel = 25;
-        private const int IdCoolant = 26;
-        private const int IdToolBrowse = 27;
+        private const int IdToolBrowse = 22;
 
         // Geometry.
         private const int IdContours = 30;
@@ -98,6 +93,17 @@ namespace GCam.SolidWorks.PropertyPages
         private const int IdLeadInRadius = 71;
         private const int IdLeadOutSame = 72;
         private const int IdLeadOutRadius = 73;
+
+        // Feed and speed: a label above each control. On the Tool tab, but numbered last
+        // so the blocks above keep their gaps.
+        private const int IdSpindleRpmLabel = 80;
+        private const int IdSpindleRpm = 81;
+        private const int IdCuttingFeedLabel = 82;
+        private const int IdCuttingFeed = 83;
+        private const int IdPlungeFeedLabel = 84;
+        private const int IdPlungeFeed = 85;
+        private const int IdCoolantLabel = 86;
+        private const int IdCoolant = 87;
 
         /// <summary>Tells this page's selection box from every other box on the page.</summary>
         private const int MarkContours = 1;
@@ -330,15 +336,18 @@ namespace GCam.SolidWorks.PropertyPages
 
             IPropertyManagerPageGroup feeds = AddGroup(tab, GroupFeeds, "Feed and speed");
 
+            AddLabel(feeds, IdSpindleRpmLabel, "Spindle speed (rpm)");
             _spindleRpm = AddNumberbox(
                 feeds, IdSpindleRpm, "Spindle speed (rpm)",
                 "This operation's spindle speed. Seeded from the tool, then its own.",
                 maximum: 100000, increment: 100);
 
+            AddLabel(feeds, IdCuttingFeedLabel, "Cutting feed (mm/min)");
             _cuttingFeed = AddNumberbox(
                 feeds, IdCuttingFeed, "Cutting feed (mm/min)",
                 "Feed for cutting moves.", maximum: 100000, increment: 10);
 
+            AddLabel(feeds, IdPlungeFeedLabel, "Plunge feed (mm/min)");
             _plungeFeed = AddNumberbox(
                 feeds, IdPlungeFeed, "Plunge feed (mm/min)",
                 "Feed straight down. Usually a fraction of the cutting feed.",
