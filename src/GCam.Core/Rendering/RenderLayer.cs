@@ -19,20 +19,38 @@ namespace GCam.Core.Rendering
     /// </remarks>
     public sealed class RenderLayer
     {
-        internal RenderLayer(string name, IEnumerable<RenderBatch> batches)
+        internal RenderLayer(string name, IEnumerable<RenderBatch> batches, IEnumerable<ScreenArrow> arrows)
         {
             Name = name;
-            Batches = Sanitise(batches);
             Visible = true;
+            Replace(batches, arrows);
         }
 
         public string Name { get; }
 
         public IReadOnlyList<RenderBatch> Batches { get; private set; }
 
+        /// <summary>
+        /// Arrows that keep their size on screen, drawn over the batches.
+        /// </summary>
+        /// <remarks>
+        /// Apart from <see cref="Batches"/> because they are not fixed geometry: a
+        /// renderer has to rebuild these every frame, and keeping them in the same list
+        /// would cost the cache that the rest of the scene exists to keep. See
+        /// <see cref="ScreenArrow"/>.
+        /// </remarks>
+        public IReadOnlyList<ScreenArrow> Arrows { get; private set; }
+
         public bool Visible { get; internal set; }
 
-        internal void Replace(IEnumerable<RenderBatch> batches) => Batches = Sanitise(batches);
+        /// <summary>True when this layer has nothing to put on screen.</summary>
+        public bool IsEmpty => Batches.Count == 0 && Arrows.Count == 0;
+
+        internal void Replace(IEnumerable<RenderBatch> batches, IEnumerable<ScreenArrow> arrows)
+        {
+            Batches = Sanitise(batches);
+            Arrows = arrows?.Where(a => a != null).ToArray() ?? new ScreenArrow[0];
+        }
 
         /// <summary>
         /// Empty batches are dropped on the way in rather than skipped on the way out.
@@ -50,6 +68,7 @@ namespace GCam.Core.Rendering
         }
 
         public override string ToString() =>
-            $"{Name}: {Batches.Count} batch(es){(Visible ? string.Empty : ", hidden")}";
+            $"{Name}: {Batches.Count} batch(es), {Arrows.Count} arrow(s)" +
+            (Visible ? string.Empty : ", hidden");
     }
 }

@@ -255,47 +255,20 @@ namespace GCam.Core.Strategies.Contour2d
         /// <see cref="ResolvedContour.Reversed"/> flips whichever of those applies, and is
         /// applied last so it always wins: for a closed profile that swaps inside for
         /// outside, and for an open one it swaps hands.
+        ///
+        /// All of that lives in <see cref="Contour2dOffsetting"/> rather than here,
+        /// because the cut-direction arrows on the Geometry tab have to land on the same
+        /// side as this does. Only the distance is decided here.
         /// </remarks>
         private Polyline OffsetForCutter(
             ResolvedContour profile, double radius, Contour2dSettings settings)
         {
-            bool climb = settings.Direction == CutDirection.Climb;
-            double distance = radius + settings.EffectiveStockToLeave;
-
-            return profile.Path.IsClosed
-                ? OffsetClosed(profile, climb, distance)
-                : OffsetOpen(profile, climb, distance);
-        }
-
-        private Polyline OffsetClosed(ResolvedContour profile, bool climb, double distance)
-        {
-            bool counterClockwise = climb != profile.Reversed;
-            Polyline oriented = profile.Path.WithDirection(counterClockwise);
-
-            IReadOnlyList<Polyline> offset = _offsetter.Offset(oriented, distance, ArcTolerance);
-
-            if (offset.Count == 0)
-            {
-                return null;
-            }
-
-            // A pinched shape can offset into several. The longest is the one that is
-            // recognisably the profile; the rest are slivers left by the pinch.
-            return offset.OrderByDescending(p => p.Length).First().WithDirection(counterClockwise);
-        }
-
-        private Polyline OffsetOpen(ResolvedContour profile, bool climb, double distance)
-        {
-            Polyline walked = profile.Reversed ? profile.Path.Reversed() : profile.Path;
-
-            OffsetSide side = climb ? OffsetSide.Right : OffsetSide.Left;
-
-            IReadOnlyList<Polyline> offset =
-                _offsetter.OffsetOpen(walked, distance, side, ArcTolerance);
-
-            // An offset wider than the path's own features can consume that side entirely.
-            // Nothing to cut is an answer; the queue reports an empty path as a warning.
-            return offset.OrderByDescending(p => p.Length).FirstOrDefault();
+            return Contour2dOffsetting.Offset(
+                profile,
+                settings.Direction == CutDirection.Climb,
+                radius + settings.EffectiveStockToLeave,
+                _offsetter,
+                ArcTolerance);
         }
 
         private static IEnumerable<Move> ProfileMoves(Polyline profile, double feed)

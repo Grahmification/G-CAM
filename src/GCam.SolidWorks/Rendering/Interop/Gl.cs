@@ -82,6 +82,12 @@ namespace GCam.SolidWorks.Rendering.Interop
         public const uint GL_FLOAT = 0x1406;
         public const uint GL_VERTEX_ARRAY = 0x8074;
 
+        // ---- Reading the view ------------------------------------------------
+
+        public const uint GL_VIEWPORT = 0x0BA2;
+        public const uint GL_MODELVIEW_MATRIX = 0x0BA6;
+        public const uint GL_PROJECTION_MATRIX = 0x0BA7;
+
         // ---- Errors ----------------------------------------------------------
 
         public const uint GL_NO_ERROR = 0;
@@ -143,6 +149,21 @@ namespace GCam.SolidWorks.Rendering.Interop
 
         [DllImport(Library, EntryPoint = "glGetError")]
         public static extern uint GetError();
+
+        /// <summary>
+        /// Reads back state SOLIDWORKS set - the two matrices, for working out what a
+        /// pixel is worth in model units.
+        /// </summary>
+        /// <remarks>
+        /// A read, not a write, so it is not part of what <see cref="GlState"/> has to put
+        /// back. Both matrices come out column-major, which is what OpenGL has always
+        /// meant by a matrix and the opposite of how they are written down.
+        /// </remarks>
+        [DllImport(Library, EntryPoint = "glGetDoublev")]
+        public static extern void GetDoublev(uint name, [Out] double[] values);
+
+        [DllImport(Library, EntryPoint = "glGetIntegerv")]
+        public static extern void GetIntegerv(uint name, [Out] int[] values);
 
         /// <summary>
         /// Drains and returns the first queued error, or GL_NO_ERROR.

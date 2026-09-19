@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using GCam.Core;
+using GCam.Core.Abstractions;
 using GCam.Core.Diagnostics;
 using GCam.Core.Model;
 using GCam.Core.Model.Heights;
@@ -160,6 +161,7 @@ namespace GCam.SolidWorks.PropertyPages
         private readonly Func<ModelDoc2> _activeDocument;
         private readonly Func<JobDocument> _jobsForActiveDocument;
         private readonly Func<Tool> _pickToolIntoPart;
+        private readonly Func<ICutDirectionPreview> _cutDirection;
 
         private IPropertyManagerPageLabel _toolName;
         private IPropertyManagerPageButton _toolBrowse;
@@ -216,19 +218,27 @@ namespace GCam.SolidWorks.PropertyPages
         /// the add-in is the only place that sees both halves. Null simply means the page
         /// offers no Browse button.
         /// </param>
+        /// <param name="cutDirection">
+        /// Draws which side of the selected contours the cutter will run on. A function
+        /// for the same reason as the document and its tools: the preview belongs to a
+        /// document and this page is built once for the session. Null simply means no
+        /// arrows.
+        /// </param>
         public OperationPropertyPage(
             SldWorks swApp,
             ErrorHandler errors,
             IGCamLog log,
             Func<ModelDoc2> activeDocument,
             Func<JobDocument> jobsForActiveDocument,
-            Func<Tool> pickToolIntoPart = null)
+            Func<Tool> pickToolIntoPart = null,
+            Func<ICutDirectionPreview> cutDirection = null)
             : base(swApp, errors, log)
         {
             _activeDocument = activeDocument ?? throw new ArgumentNullException(nameof(activeDocument));
             _jobsForActiveDocument = jobsForActiveDocument
                                      ?? throw new ArgumentNullException(nameof(jobsForActiveDocument));
             _pickToolIntoPart = pickToolIntoPart;
+            _cutDirection = cutDirection;
         }
 
         /// <summary>Raised when the page is accepted, with the operation as edited.</summary>
@@ -574,6 +584,30 @@ namespace GCam.SolidWorks.PropertyPages
         protected override void PageShown()
         {
             RestoreContourSelection();
+            ShowCutDirection();
+        }
+
+        /// <summary>
+        /// Redraws the arrows saying which side of each contour will be cut.
+        /// </summary>
+        /// <remarks>
+        /// Driven from the working clone, like everything else on this page: what is on
+        /// screen follows what has been picked, and Cancel leaves nothing behind because
+        /// the operation in the tree was never touched.
+        ///
+        /// Called from <see cref="PageShown"/> rather than from LoadControls because the
+        /// contours are restored there, and from the three callbacks that can change what
+        /// the arrows say - the picks themselves, the cut direction, and Reverse. A
+        /// rebuild comes back through PageShown, so Reverse needs nothing of its own.
+        /// </remarks>
+        private void ShowCutDirection()
+        {
+            if (_closing)
+            {
+                return;
+            }
+
+            _cutDirection?.Invoke()?.Show(_job, _working);
         }
 
         /// <summary>
@@ -863,6 +897,7 @@ namespace GCam.SolidWorks.PropertyPages
 
                 case IdDirection:
                     settings.Direction = item == 0 ? CutDirection.Climb : CutDirection.Conventional;
+                    ShowCutDirection();
                     break;
 
                 case IdClearanceMode: SetMode(_working.Heights.Clearance, item); break;
@@ -963,6 +998,8 @@ namespace GCam.SolidWorks.PropertyPages
 
                 settings.Contours.Add(picked);
             }
+
+            ShowCutDirection();
         }
 
         /// <remarks>
@@ -985,6 +1022,12 @@ namespace GCam.SolidWorks.PropertyPages
             }
 
             _closing = true;
+
+            // Before the commit, like the job page's stock box: the arrows describe the
+            // clone that is about to be dropped. On OK the tree reselects the operation a
+            // moment later and its toolpath comes up; on Cancel there is nothing to come
+            // back to, which is right - the arrows were about an edit that never happened.
+            _cutDirection?.Invoke()?.Clear();
 
             if (reason == swPropertyManagerPageCloseReasons_e.swPropertyManagerPageClose_Okay)
             {

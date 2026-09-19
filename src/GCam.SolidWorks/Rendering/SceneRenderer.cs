@@ -77,9 +77,59 @@ namespace GCam.SolidWorks.Rendering
                 {
                     DrawBatch(batch);
                 }
+
+                DrawArrows(scene);
             }
 
             return _batches.Count;
+        }
+
+        /// <summary>
+        /// Draws the screen-sized arrows, which are built fresh every frame.
+        /// </summary>
+        /// <remarks>
+        /// <b>Outside the cache, deliberately.</b> Everything else in a scene is fixed
+        /// millimetres and is converted once per change; an arrow that holds its size on
+        /// screen is a different shape at every zoom, so caching it against the scene's
+        /// version would show yesterday's size. There are a handful of them and nine
+        /// vertices each, which is what makes rebuilding per frame affordable where it
+        /// would not be for a toolpath.
+        ///
+        /// Last, and always on top, because they are annotations about the model rather
+        /// than things in it - and because the drawing-order rule means anything meant to
+        /// sit above ordinary geometry has to be drawn after it.
+        /// </remarks>
+        private static void DrawArrows(RenderScene scene)
+        {
+            List<ScreenArrow> arrows = scene.Layers
+                .Where(layer => layer.Visible)
+                .SelectMany(layer => layer.Arrows)
+                .ToList();
+
+            if (arrows.Count == 0)
+            {
+                return;
+            }
+
+            ViewScale scale = ViewScale.Current();
+
+            foreach (ScreenArrow arrow in arrows)
+            {
+                double millimetresPerPixel = scale.MillimetresPerPixel(arrow.Anchor);
+
+                if (millimetresPerPixel <= 0)
+                {
+                    // Behind the camera, or a view so far out that a millimetre is not a
+                    // pixel. Nothing useful to draw, and no reason to say so every frame.
+                    continue;
+                }
+
+                DrawBatch(Convert(new RenderBatch(
+                    PrimitiveKind.Triangles,
+                    arrow.Triangles(millimetresPerPixel),
+                    arrow.Colour,
+                    alwaysOnTop: true)));
+            }
         }
 
         /// <summary>

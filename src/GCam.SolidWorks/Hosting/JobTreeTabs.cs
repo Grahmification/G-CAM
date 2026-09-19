@@ -235,6 +235,23 @@ namespace GCam.SolidWorks.Hosting
         public IJobPreview PreviewForActiveDocument() => PreviewFor(_swApp.ActiveDoc as ModelDoc2);
 
         /// <summary>
+        /// What draws cut-direction arrows in whichever document is in front, or null if
+        /// that document has no G-CAM tab.
+        /// </summary>
+        /// <remarks>
+        /// For the Operation page, which is built once for the session and has to draw
+        /// into whichever part it was opened over - the same arrangement, and the same
+        /// reason, as <see cref="PreviewForActiveDocument"/>.
+        /// </remarks>
+        public ICutDirectionPreview CutDirectionForActiveDocument()
+        {
+            var model = _swApp.ActiveDoc as ModelDoc2;
+
+            DocumentTab tab;
+            return model != null && _tabs.TryGetValue(model, out tab) ? tab.CutDirection : null;
+        }
+
+        /// <summary>
         /// One part's tab: the SOLIDWORKS view, the jobs it shows, the viewmodel tying
         /// them together, and what G-CAM draws in that part's 3D windows. All of it lives
         /// and dies with the document.
@@ -257,6 +274,9 @@ namespace GCam.SolidWorks.Hosting
             public ViewportRenderer Renderer { get; set; }
 
             public JobPreview Preview { get; set; }
+
+            /// <summary>Draws which side of its contours the open operation will cut.</summary>
+            public CutDirectionPreview CutDirection { get; set; }
 
             /// <summary>Saves this document's jobs into it. Null for a part that has none.</summary>
             public JobStorageHook Storage { get; set; }
@@ -382,6 +402,7 @@ namespace GCam.SolidWorks.Hosting
                 Model = new JobTreeViewModel(jobs, _jobEditor, _log, preview, () => PartName(model)),
                 Renderer = renderer,
                 Preview = preview,
+                CutDirection = new CutDirectionPreview(_swApp, model, renderer, _errors, _log),
             };
 
             _tabs[model] = tab;

@@ -39,7 +39,7 @@ namespace GCam.Core.Rendering
         public IReadOnlyList<RenderLayer> Layers => _layers;
 
         /// <summary>True when there is nothing visible to draw.</summary>
-        public bool IsEmpty => !_layers.Any(l => l.Visible && l.Batches.Count > 0);
+        public bool IsEmpty => !_layers.Any(l => l.Visible && !l.IsEmpty);
 
         /// <summary>Raised after any change, so a view can ask for a repaint.</summary>
         public event EventHandler Changed;
@@ -55,7 +55,21 @@ namespace GCam.Core.Rendering
         /// An existing layer keeps its position, so a layer being refreshed does not
         /// jump in front of or behind the others.
         /// </remarks>
-        public void Set(string name, IEnumerable<RenderBatch> batches)
+        public void Set(string name, IEnumerable<RenderBatch> batches) =>
+            Set(name, batches, null);
+
+        /// <summary>
+        /// Replaces the named layer with arrows that hold their size on screen.
+        /// </summary>
+        /// <remarks>
+        /// A separate call rather than a third argument everywhere, because the producers
+        /// are separate: nothing so far draws both, and a layer states everything it wants
+        /// drawn in one go either way.
+        /// </remarks>
+        public void SetArrows(string name, IEnumerable<ScreenArrow> arrows) =>
+            Set(name, null, arrows);
+
+        public void Set(string name, IEnumerable<RenderBatch> batches, IEnumerable<ScreenArrow> arrows)
         {
             if (string.IsNullOrWhiteSpace(name))
             {
@@ -66,11 +80,11 @@ namespace GCam.Core.Rendering
 
             if (existing == null)
             {
-                _layers.Add(new RenderLayer(name, batches));
+                _layers.Add(new RenderLayer(name, batches, arrows));
             }
             else
             {
-                existing.Replace(batches);
+                existing.Replace(batches, arrows);
             }
 
             Touch();
