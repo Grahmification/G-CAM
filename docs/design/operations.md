@@ -715,7 +715,7 @@ costs height on every show.
 | --- | --- | --- |
 | Tool | The base page | Two groups: the tool's name as a header with Browse…, then feed and speed — one physical cutter, but numbers that belong to this operation alone |
 | Geometry | The strategy | Selection box, a Reverse button for the highlighted contour, a line saying which are reversed, and in the 3D view each contour highlighted with an arrow beside it — see below |
-| Heights | The base page | Five mode + offset rows |
+| Heights | The base page | Five mode + offset rows, and a plane in the 3D view for each — see below |
 | Passes | The strategy | Stepover, stepdown, tolerance, and stock to leave in a group whose header checkbox turns it off without clearing the amounts |
 | Linking | The strategy | Lead-in/out, ramping, retracts — only for strategies that have them |
 
@@ -798,6 +798,37 @@ as walked. Halfway along lands exactly on a corner of a rectangle, where the off
 parallel to the contour and the side reads diagonally; and anchoring to the re-oriented
 walk makes the arrow jump to the opposite edge when the direction changes instead of
 turning round.
+
+**The Heights tab draws a plane per height**, because a height is otherwise a number and a
+datum, where what anybody wants to know is whether the tool clears the clamps and where the
+cut stops. Clearance, Retract and Top are yellow — all three are somewhere the tool passes
+through air — with green for Feed and blue for Bottom, the two that are about the cut
+itself. Each is sized to the model and the stock together, whichever reaches further, plus
+a margin: most heights are measured from the stock, so a plane stopping at the model would
+not reach the thing it is measured from.
+
+**Only while that tab is in front**, which is the page's decision rather than the preview's:
+these planes span the part, and left up behind the Geometry tab they would bury the contours
+that tab is about. `_activeTab` is tracked for the rebuild already, so there is nothing new
+to watch.
+
+**Outlines always, and a fill on the one being edited** — which is also how you tell five
+stacked outlines apart, so the fill is the labelling rather than decoration. The trigger is
+focus on that height's offset box, through `OnGainedFocus`/`OnLostFocus`. Moving between two
+boxes raises both a loss and a gain and SOLIDWORKS decides the order, so the loss only
+clears the fill if it is still the height that lost it.
+
+The outline ignores depth and the fill does not, which is not an inconsistency: the outline
+says *where* the plane is and has to be readable behind the part — at the model's own top or
+bottom face it would otherwise z-fight with the face it sits on, and Bottom defaults exactly
+there — while the fill says *which* plane is being edited and is worth more for being
+occluded. A plane under the part, seen from above, should read as an outline poking past the
+silhouette rather than as a wash over the model it is beneath.
+
+Heights resolve through `HeightSetting.TryResolve`, the same Core call generation makes, one
+at a time — so a plane cannot sit somewhere the cut will not, and a height that will not
+resolve costs only its own plane. `FromSelection` is that case today, and gets no plane, for
+the reason in the gaps below.
 
 **Accepting the page generates the operation.** Committing is the ask for a toolpath, and a
 new operation accepted without one shows nothing at all. Only that operation: an edit marks

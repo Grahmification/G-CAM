@@ -192,13 +192,17 @@ stock and origin that selecting it in the tree gives. The page is built once for
 and finds the preview for whichever part is in front, which is why it takes a
 `Func<IJobPreview>` rather than one instance.
 
-The Operation page draws its contours: each one highlighted along its length with an arrow
-beside it saying which side will be cut, through `ICutDirectionPreview` and its own
-`cut-direction` layer. It needs nothing else, because it is opened from the tree with its
-operation selected, so the toolpath on screen is already that operation's and only that
-one. A live preview of the path *being edited* is still a different feature — see
-[operations.md](operations.md), which also says why the arrow takes its side from the
-strategy's own offset.
+The Operation page draws what the tab in front is about, through two contracts of its own
+and a layer each: `ICutDirectionPreview` highlights the contours and puts an arrow beside
+each saying which side will be cut, and `IHeightsPreview` draws a plane per machining
+height while the Heights tab is open. Two rather than one because they are independent —
+the contours stay up whatever tab is in front, and the planes do not.
+
+It needs nothing else, because the page is opened from the tree with its operation
+selected, so the toolpath on screen is already that operation's and only that one. A live
+preview of the path *being edited* is still a different feature — see
+[operations.md](operations.md), which also says why the arrow takes its side, and the
+planes their heights, from the calls generation itself makes.
 
 The arrows are the one thing in a scene that is **not** fixed geometry. Everything else is
 millimetres that mean the same at any zoom, which is what lets `SceneRenderer` convert once
