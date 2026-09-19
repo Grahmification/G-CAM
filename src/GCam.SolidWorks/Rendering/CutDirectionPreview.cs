@@ -15,8 +15,9 @@ using SolidWorks.Interop.sldworks;
 namespace GCam.SolidWorks.Rendering
 {
     /// <summary>
-    /// Draws an arrow beside each of an operation's contours, on the side the cutter will
-    /// run and pointing the way it will travel.
+    /// Draws what an operation is about to cut: each contour highlighted along its own
+    /// length, with an arrow beside it on the side the cutter will run and pointing the
+    /// way it will travel.
     /// </summary>
     /// <remarks>
     /// What the Geometry tab of the Operation page shows while it is open. The question it
@@ -27,6 +28,11 @@ namespace GCam.SolidWorks.Rendering
     /// <b>The side comes from the same offset the strategy cuts</b>, through
     /// <see cref="Contour2dCutSide"/>. Nothing here re-derives it, and nothing here knows
     /// the rule.
+    ///
+    /// <b>The highlight follows the chained contour, not the selection.</b> SOLIDWORKS
+    /// already lights up what was picked; what it cannot show is what those picks chained
+    /// into, which is the thing that gets cut. They differ whenever an edge is reached by
+    /// tangent propagation rather than by being clicked.
     ///
     /// One layer, replaced on every change, in the same shape as <see cref="JobPreview"/>
     /// - a producer states everything it wants drawn and the layer name keeps it out of
@@ -52,17 +58,29 @@ namespace GCam.SolidWorks.Rendering
         /// </remarks>
         private const double ChordTolerance = 0.05;
 
+        /// <summary>How wide a highlighted edge is drawn, pixels.</summary>
+        /// <remarks>
+        /// Wide enough to read as a highlight over the edge SOLIDWORKS has already
+        /// thickened for being selected, and narrow enough to stay inside the line widths
+        /// a smoothed GL line is reliably given. Pixels, so it does not change with zoom -
+        /// which is most of why a flat line beats the swept tube it is imitating.
+        /// </remarks>
+        private const double HighlightWidth = 4.0;
+
         /// <summary>
-        /// Dark blue: the arrows read poorly against a shaded grey part in anything
-        /// lighter, which is what the first orange attempt was.
+        /// Dark blue: this reads poorly against a shaded grey part in anything lighter,
+        /// which is what the first orange attempt was.
         /// </summary>
         /// <remarks>
+        /// One colour for the arrow and the highlight, so they read as one annotation
+        /// rather than two things that happen to be on at once.
+        ///
         /// Darker than the blue <see cref="ToolpathMesh"/> cuts in, because the two do
         /// share a screen: editing an operation that has already generated leaves its
-        /// toolpath up, and these arrows say what is going to happen rather than what has
-        /// been computed.
+        /// toolpath up, and this says what is going to happen rather than what has been
+        /// computed.
         /// </remarks>
-        private static readonly RenderColour ArrowColour = new RenderColour(0.05, 0.12, 0.5);
+        private static readonly RenderColour HighlightColour = new RenderColour(0.05, 0.12, 0.5);
 
         private readonly SldWorks _swApp;
         private readonly ModelDoc2 _model;
@@ -113,19 +131,29 @@ namespace GCam.SolidWorks.Rendering
                 IReadOnlyList<CutSideMarker> markers =
                     Contour2dCutSide.Markers(contours, settings, _offsetter);
 
-                if (markers.Count == 0)
+                // Everything comes out in the job's frame; a scene is drawn in the part's.
+                // Points move, directions only turn.
+                List<RenderBatch> highlights = contours
+                    .Select(c => Highlight(c.Path, frame.ToPart))
+                    .Where(b => b != null)
+                    .ToList();
+
+                List<ScreenArrow> arrows = markers.Select(m => new ScreenArrow(
+                    frame.ToPart.Transform(m.Anchor),
+                    frame.ToPart.TransformDirection(m.Travel),
+                    frame.ToPart.TransformDirection(m.Side),
+                    HighlightColour)).ToList();
+
+                if (highlights.Count == 0 && arrows.Count == 0)
                 {
                     Clear();
                     return;
                 }
 
-                // Markers come out in the job's frame; a scene is drawn in the part's. The
-                // anchor moves, the directions only turn.
-                _viewport.Scene.SetArrows(Layer, markers.Select(m => new ScreenArrow(
-                    frame.ToPart.Transform(m.Anchor),
-                    frame.ToPart.TransformDirection(m.Travel),
-                    frame.ToPart.TransformDirection(m.Side),
-                    ArrowColour)));
+                // Both, in one call: a layer states everything it wants drawn. A contour
+                // whose side could not be measured still gets its edge highlighted, which
+                // is why these are counted separately rather than together.
+                _viewport.Scene.Set(Layer, highlights, arrows);
             }
             catch (Exception ex)
             {
@@ -134,6 +162,41 @@ namespace GCam.SolidWorks.Rendering
                 // Better nothing than arrows describing a state we can no longer work out.
                 Clear();
             }
+        }
+
+        /// <summary>
+        /// One contour drawn along its own length, in part coordinates.
+        /// </summary>
+        /// <remarks>
+        /// <b>Always on top, like the arrow.</b> Not for emphasis - the highlight sits
+        /// exactly on a model edge, so depth testing it against the part it lies on is
+        /// z-fighting by construction, and the line would break up into stipple as the
+        /// view moved. Turning depth off removes the question rather than tuning an
+        /// offset, and it also means the far side of a profile stays visible, which is
+        /// what someone checking a selection wants.
+        /// </remarks>
+        private static RenderBatch Highlight(Polyline path, Matrix4 toPart)
+        {
+            if (path == null || path.IsEmpty)
+            {
+                return null;
+            }
+
+            List<Vec3> points = path.Points.Select(toPart.Transform).ToList();
+
+            // A closed contour does not repeat its first point and a line strip does not
+            // close itself, so the last segment has to be asked for.
+            if (path.IsClosed)
+            {
+                points.Add(points[0]);
+            }
+
+            return new RenderBatch(
+                PrimitiveKind.LineStrip,
+                points,
+                HighlightColour,
+                lineWidth: HighlightWidth,
+                alwaysOnTop: true);
         }
 
         public void Clear()
