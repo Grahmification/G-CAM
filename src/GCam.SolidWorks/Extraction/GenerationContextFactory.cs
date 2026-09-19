@@ -149,68 +149,8 @@ namespace GCam.SolidWorks.Extraction
         /// Core does pure arithmetic over a dictionary rather than calling back across the
         /// boundary, so everything a height might need is resolved before it is asked for.
         /// </remarks>
-        private Dictionary<string, double> SelectionHeights(Operation operation, JobFrame frame)
-        {
-            var heights = new Dictionary<string, double>(StringComparer.Ordinal);
-
-            foreach (HeightSetting height in new[]
-            {
-                operation.Heights.Clearance,
-                operation.Heights.Retract,
-                operation.Heights.Feed,
-                operation.Heights.Top,
-                operation.Heights.Bottom,
-            })
-            {
-                if (height.Mode != HeightMode.FromSelection || height.Reference == null)
-                {
-                    continue;
-                }
-
-                string id = height.Reference.PersistentId;
-
-                if (string.IsNullOrEmpty(id) || heights.ContainsKey(id))
-                {
-                    continue;
-                }
-
-                double? z = HeightOf(PersistentRefs.Resolve(_model, id), frame);
-
-                if (z.HasValue)
-                {
-                    heights[id] = z.Value;
-                }
-            }
-
-            return heights;
-        }
-
-        /// <summary>
-        /// The height of a picked entity in the job's frame, or null if it has gone.
-        /// </summary>
-        /// <remarks>
-        /// The top of whatever was picked, which is what "measure from this face" means
-        /// for a face that is not exactly flat.
-        /// </remarks>
-        private double? HeightOf(object entity, JobFrame frame)
-        {
-            var face = entity as Face2;
-
-            if (face != null)
-            {
-                var body = face.GetBody() as Body2;
-
-                if (body != null)
-                {
-                    // Measuring the whole body is wrong for a face partway up it, and
-                    // measuring a face needs the extreme-point probe pointed at the face
-                    // rather than the body. Until that exists, refuse rather than guess.
-                    return null;
-                }
-            }
-
-            return null;
-        }
+        private Dictionary<string, double> SelectionHeights(Operation operation, JobFrame frame) =>
+            EntityHeights.ForOperation(_model, operation.Heights, frame);
 
         private IReadOnlyList<ResolvedContour> ExtractContours(Operation operation, JobFrame frame)
         {

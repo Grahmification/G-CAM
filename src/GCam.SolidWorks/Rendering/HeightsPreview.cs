@@ -112,7 +112,11 @@ namespace GCam.SolidWorks.Rendering
                 // the model would not reach the thing it is measured from.
                 Bounds extent = stock.IsEmpty ? model : model.Union(stock);
 
-                var context = HeightContext.From(stock, model, NoSelectionHeights);
+                // Heights measured from a picked face, edge or vertex are resolved through
+                // the same call generation makes, so a plane appears the moment the pick
+                // does rather than only once the operation has been generated.
+                var context = HeightContext.From(
+                    stock, model, EntityHeights.ForOperation(_model, operation.Heights, frame));
 
                 var batches = new List<RenderBatch>();
 
@@ -196,16 +200,5 @@ namespace GCam.SolidWorks.Rendering
             }
         }
 
-        /// <summary>
-        /// Heights measured from a selected face have no Z here.
-        /// </summary>
-        /// <remarks>
-        /// <see cref="HeightMode.FromSelection"/> does not work anywhere yet -
-        /// <c>GenerationContextFactory.HeightOf</c> returns null on every path, and the
-        /// page has no box to set the reference with. Passing nothing means such a height
-        /// gets no plane, which is the same answer generation gives it.
-        /// </remarks>
-        private static readonly IReadOnlyDictionary<string, double> NoSelectionHeights =
-            new Dictionary<string, double>();
     }
 }

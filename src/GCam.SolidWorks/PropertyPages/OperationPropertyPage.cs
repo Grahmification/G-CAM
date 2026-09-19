@@ -80,6 +80,14 @@ namespace GCam.SolidWorks.PropertyPages
         private const int IdBottomMode = 53;
         private const int IdBottomOffset = 54;
 
+        // Heights: the box each row shows when its mode is "Selection", directly under
+        // that row's drop-down.
+        private const int IdClearanceSelection = 55;
+        private const int IdRetractSelection = 56;
+        private const int IdFeedSelection = 57;
+        private const int IdTopSelection = 58;
+        private const int IdBottomSelection = 59;
+
         // Passes.
         private const int IdMultipleDepths = 62;
         private const int IdMaximumStepdown = 63;
@@ -111,8 +119,28 @@ namespace GCam.SolidWorks.PropertyPages
         private const int IdVerticalStockToLeaveLabel = 92;
         private const int IdVerticalStockToLeave = 93;
 
-        /// <summary>Tells this page's selection box from every other box on the page.</summary>
+        /// <summary>
+        /// Tells this page's contour box from every other box on the page. A power of
+        /// two, as every mark must be - see <see cref="MarkFor"/>.
+        /// </summary>
         private const int MarkContours = 1;
+
+        /// <summary>
+        /// A mark for each of the five height boxes: 2, 4, 8, 16, 32.
+        /// </summary>
+        /// <remarks>
+        /// <b>Marks must be powers of two.</b> The help says so outright under
+        /// IPropertyManagerPageSelectionbox::Mark, and they are matched bitwise - so the
+        /// obvious 2, 3, 4, 5, 6 silently overlaps: 3 shares a bit with both 1 and 2, and
+        /// a face picked into that box was counted as a contour as well. What that looked
+        /// like was an operation refusing to generate for having no contour selected,
+        /// while the page plainly showed some. See
+        /// docs/solidworks-api/property-manager-pages.md.
+        ///
+        /// A mark each rather than one between them, because only one box is visible at a
+        /// time but a hidden box with the same mark still answers.
+        /// </remarks>
+        private static int MarkFor(HeightKind kind) => 1 << ((int)kind + 1);
 
         /// <summary>
         /// What the tool header reads when the operation has no tool.
@@ -394,28 +422,67 @@ namespace GCam.SolidWorks.PropertyPages
 
             IPropertyManagerPageGroup group = AddGroup(tab, GroupHeights, "Heights");
 
-            AddHeight(group, "Clearance", IdClearanceLabel, IdClearanceMode, IdClearanceOffset,
-                "Where rapids cross, above everything including clamps.");
-            AddHeight(group, "Retract", IdRetractLabel, IdRetractMode, IdRetractOffset,
-                "Where the tool goes between passes.");
-            AddHeight(group, "Feed", IdFeedLabel, IdFeedMode, IdFeedOffset,
-                "Where rapid becomes feed on the way down.");
-            AddHeight(group, "Top", IdTopLabel, IdTopMode, IdTopOffset,
-                "Where cutting starts.");
-            AddHeight(group, "Bottom", IdBottomLabel, IdBottomMode, IdBottomOffset,
-                "Where cutting stops.");
+            AddHeight(group, HeightKind.Clearance, "Clearance",
+                IdClearanceLabel, IdClearanceMode, IdClearanceSelection, IdClearanceOffset,
+                "Where rapids cross, above everything including clamps.",
+                _working.Heights.Clearance);
+            AddHeight(group, HeightKind.Retract, "Retract",
+                IdRetractLabel, IdRetractMode, IdRetractSelection, IdRetractOffset,
+                "Where the tool goes between passes.", _working.Heights.Retract);
+            AddHeight(group, HeightKind.Feed, "Feed",
+                IdFeedLabel, IdFeedMode, IdFeedSelection, IdFeedOffset,
+                "Where rapid becomes feed on the way down.", _working.Heights.Feed);
+            AddHeight(group, HeightKind.Top, "Top",
+                IdTopLabel, IdTopMode, IdTopSelection, IdTopOffset,
+                "Where cutting starts.", _working.Heights.Top);
+            AddHeight(group, HeightKind.Bottom, "Bottom",
+                IdBottomLabel, IdBottomMode, IdBottomSelection, IdBottomOffset,
+                "Where cutting stops.", _working.Heights.Bottom);
         }
 
-        /// <summary>One height: a caption, what it is measured from, and how far off.</summary>
+        /// <summary>
+        /// One height: a caption, what it is measured from, what to measure from when that
+        /// is a piece of geometry, and how far off.
+        /// </summary>
+        /// <remarks>
+        /// The selection box is created at the visibility it needs rather than shown
+        /// afterwards, because a page is rebuilt for every show and
+        /// <see cref="GCamPropertyPage.SetVisible"/> on a page about to be shown is the
+        /// call that kills SOLIDWORKS. Only a live change of the drop-down toggles it -
+        /// see <see cref="ShowSelectionBoxFor"/>.
+        /// </remarks>
         private void AddHeight(
-            IPropertyManagerPageGroup group, string caption, int labelId, int modeId, int offsetId,
-            string tip)
+            IPropertyManagerPageGroup group,
+            HeightKind kind,
+            string caption,
+            int labelId,
+            int modeId,
+            int selectionId,
+            int offsetId,
+            string tip,
+            HeightSetting height)
         {
             AddLabel(group, labelId, caption + " — measured from");
 
             _heights[modeId] = new HeightField
             {
+                Kind = kind,
                 Mode = AddCombobox(group, modeId, HeightModeCaptions, tip),
+                Selection = AddSelectionbox(
+                    group,
+                    selectionId,
+                    MarkFor(kind),
+                    new[]
+                    {
+                        swSelectType_e.swSelFACES,
+                        swSelectType_e.swSelEDGES,
+                        swSelectType_e.swSelVERTICES,
+                    },
+                    singleEntityOnly: true,
+                    tip: "A flat face, a flat edge or a vertex to measure " + caption.ToLowerInvariant() +
+                         " from. Anything that is not at one height is refused.",
+                    visible: height.Mode == HeightMode.FromSelection),
+                SelectionId = selectionId,
                 Offset = AddLengthbox(
                     group, offsetId, caption + " offset",
                     "Distance above that datum. Negative goes below."),
@@ -423,10 +490,17 @@ namespace GCam.SolidWorks.PropertyPages
             };
         }
 
-        /// <summary>A height's two controls, kept together so loading cannot mismatch them.</summary>
+        /// <summary>A height's controls, kept together so loading cannot mismatch them.</summary>
         private sealed class HeightField
         {
+            public HeightKind Kind { get; set; }
+
             public IPropertyManagerPageCombobox Mode { get; set; }
+
+            /// <summary>Shown only while the mode is <see cref="HeightMode.FromSelection"/>.</summary>
+            public IPropertyManagerPageSelectionbox Selection { get; set; }
+
+            public int SelectionId { get; set; }
 
             public IPropertyManagerPageNumberbox Offset { get; set; }
 
@@ -600,6 +674,10 @@ namespace GCam.SolidWorks.PropertyPages
             RestoreContourSelection();
             ShowCutDirection();
             ShowHeights();
+
+            // Last, because restoring the selections moves the focus about. A fresh show
+            // opens on the Tool tab, where nothing should be collecting clicks.
+            ActivateSelectionForTab();
         }
 
         /// <summary>
@@ -704,6 +782,23 @@ namespace GCam.SolidWorks.PropertyPages
                         missing.Add(contour.ToString());
                     }
                 }
+
+                // The height references go back into their own boxes in the same pass,
+                // because the clear above took them off screen too.
+                foreach (HeightField field in _heights.Values)
+                {
+                    HeightSetting height = SettingFor(field.Kind);
+
+                    if (height?.Mode != HeightMode.FromSelection || height.Reference == null)
+                    {
+                        continue;
+                    }
+
+                    if (!JobSelections.SelectRef(model, height.Reference, MarkFor(field.Kind), Log))
+                    {
+                        missing.Add(height.Reference.ToString());
+                    }
+                }
             }
             finally
             {
@@ -713,7 +808,7 @@ namespace GCam.SolidWorks.PropertyPages
             if (missing.Count > 0)
             {
                 Log.Warn(
-                    "{0} of this operation's contours are no longer in the model: {1}",
+                    "{0} of this operation's references are no longer in the model: {1}",
                     missing.Count, string.Join(", ", missing));
             }
         }
@@ -883,7 +978,78 @@ namespace GCam.SolidWorks.PropertyPages
             _focusedHeight = null;
 
             ShowHeights();
+            ActivateSelectionForTab();
             return true;
+        }
+
+        /// <summary>
+        /// Makes the selection box belonging to the tab in front the active one, so a
+        /// click in the graphics area lands where the user is looking.
+        /// </summary>
+        /// <remarks>
+        /// <b>A selection box stays active across a tab change unless something says
+        /// otherwise.</b> Every control on the page exists whichever tab is in front -
+        /// tabs hide controls, they do not create them - so the contour box went on
+        /// collecting clicks while the Heights tab was up, and picking a face for a height
+        /// added it to the contours instead.
+        ///
+        /// There is no call for "no box is active": <c>SetSelectionFocus</c> only ever
+        /// makes one active. So a tab with a box of its own claims the focus, and a tab
+        /// without one pushes the focus onto an ordinary control and relies on SOLIDWORKS
+        /// dropping the box - which is what it does when the user clicks into a number box
+        /// by hand.
+        /// </remarks>
+        private void ActivateSelectionForTab()
+        {
+            if (_activeTab == TabGeometry)
+            {
+                _contours?.SetSelectionFocus();
+                return;
+            }
+
+            if (_activeTab == TabHeights && ActivateHeightSelection())
+            {
+                return;
+            }
+
+            FocusControl(FirstControlOf(_activeTab));
+        }
+
+        /// <summary>
+        /// Activates the box of the first height measured from geometry, if there is one.
+        /// </summary>
+        /// <remarks>
+        /// Only one of the five is ever visible at a time in practice, and with none of
+        /// them set to Selection there is nothing on this tab to pick into - which is the
+        /// case the caller handles by moving the focus instead.
+        /// </remarks>
+        private bool ActivateHeightSelection()
+        {
+            foreach (HeightField field in _heights.Values)
+            {
+                if (SettingFor(field.Kind)?.Mode == HeightMode.FromSelection)
+                {
+                    field.Selection?.SetSelectionFocus();
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// A control on each tab that is safe to park the focus on - never a selection
+        /// box, and never a height offset box, whose focus fills a plane.
+        /// </summary>
+        private static int FirstControlOf(int tab)
+        {
+            switch (tab)
+            {
+                case TabHeights: return IdClearanceMode;
+                case TabPasses: return IdDirection;
+                case TabLinking: return IdLeadInRadius;
+                default: return IdSpindleRpm;
+            }
         }
 
         /// <summary>
@@ -1008,11 +1174,11 @@ namespace GCam.SolidWorks.PropertyPages
                     ShowCutDirection();
                     break;
 
-                case IdClearanceMode: SetMode(_working.Heights.Clearance, item); break;
-                case IdRetractMode: SetMode(_working.Heights.Retract, item); break;
-                case IdFeedMode: SetMode(_working.Heights.Feed, item); break;
-                case IdTopMode: SetMode(_working.Heights.Top, item); break;
-                case IdBottomMode: SetMode(_working.Heights.Bottom, item); break;
+                case IdClearanceMode: SetMode(_working.Heights.Clearance, id, item); break;
+                case IdRetractMode: SetMode(_working.Heights.Retract, id, item); break;
+                case IdFeedMode: SetMode(_working.Heights.Feed, id, item); break;
+                case IdTopMode: SetMode(_working.Heights.Top, id, item); break;
+                case IdBottomMode: SetMode(_working.Heights.Bottom, id, item); break;
             }
 
             // A datum change moves a plane as surely as an offset does.
@@ -1081,12 +1247,7 @@ namespace GCam.SolidWorks.PropertyPages
         /// </remarks>
         protected override void OnSelectionboxListChanged(int id, int count)
         {
-            if (_loading || id != IdContours)
-            {
-                return;
-            }
-
-            if (!IsOpen || IsRebuilding || _closing)
+            if (_loading || !IsOpen || IsRebuilding || _closing)
             {
                 return;
             }
@@ -1094,6 +1255,19 @@ namespace GCam.SolidWorks.PropertyPages
             ModelDoc2 model = _activeDocument();
 
             if (model == null)
+            {
+                return;
+            }
+
+            HeightField height = _heights.Values.FirstOrDefault(h => h.SelectionId == id);
+
+            if (height != null)
+            {
+                HeightReferencePicked(model, height);
+                return;
+            }
+
+            if (id != IdContours)
             {
                 return;
             }
@@ -1130,6 +1304,42 @@ namespace GCam.SolidWorks.PropertyPages
             }
 
             ShowCutDirection();
+        }
+
+        /// <summary>
+        /// Records what a height is now measured from, and redraws its plane.
+        /// </summary>
+        /// <remarks>
+        /// An emptied box leaves the reference null, which is the same state a height
+        /// switched to Selection starts in: the mode will not resolve, so no plane appears
+        /// and generation refuses the operation by name. Better than holding a stale pick
+        /// the box no longer shows.
+        /// </remarks>
+        private void HeightReferencePicked(ModelDoc2 model, HeightField field)
+        {
+            HeightSetting height = SettingFor(field.Kind);
+
+            if (height == null)
+            {
+                return;
+            }
+
+            height.Reference = JobSelections.RefWithMark(model, MarkFor(field.Kind), Log);
+
+            ShowHeights();
+        }
+
+        private HeightSetting SettingFor(HeightKind kind)
+        {
+            switch (kind)
+            {
+                case HeightKind.Clearance: return _working.Heights.Clearance;
+                case HeightKind.Retract: return _working.Heights.Retract;
+                case HeightKind.Feed: return _working.Heights.Feed;
+                case HeightKind.Top: return _working.Heights.Top;
+                case HeightKind.Bottom: return _working.Heights.Bottom;
+                default: return null;
+            }
         }
 
         /// <remarks>
@@ -1220,11 +1430,58 @@ namespace GCam.SolidWorks.PropertyPages
 
         private Contour2dSettings Settings() => (Contour2dSettings)_working.Settings;
 
-        private static void SetMode(HeightSetting height, int item)
+        private void SetMode(HeightSetting height, int modeId, int item)
         {
-            if (item >= 0 && item < HeightModes.Length)
+            if (item < 0 || item >= HeightModes.Length)
             {
-                height.Mode = HeightModes[item];
+                return;
+            }
+
+            height.Mode = HeightModes[item];
+            ShowSelectionBoxFor(modeId, height.Mode);
+        }
+
+        /// <summary>
+        /// Shows or hides one height's selection box, to match the datum just chosen.
+        /// </summary>
+        /// <remarks>
+        /// <b>Only ever reached from a live drop-down change</b>, because
+        /// <see cref="OnComboboxSelectionChanged"/> returns early while
+        /// <see cref="_loading"/> is held. That restriction is the whole safety argument:
+        /// <c>IPropertyManagerPageControl.Visible</c> on a page that has been shown and
+        /// closed kills SOLIDWORKS outright, so the initial state is settled when the
+        /// control is created and only the user's own change touches this. The same
+        /// arrangement as <c>JobPropertyPage.ShowControlsFor</c>, which has held up.
+        ///
+        /// The reference is deliberately kept when the mode moves away from Selection and
+        /// back - so does the box's own contents, since the page is not rebuilt - which
+        /// means changing your mind twice does not cost the pick.
+        /// </remarks>
+        private void ShowSelectionBoxFor(int modeId, HeightMode mode)
+        {
+            HeightField field;
+
+            if (!_heights.TryGetValue(modeId, out field))
+            {
+                return;
+            }
+
+            bool wanted = mode == HeightMode.FromSelection;
+
+            SetVisible(field.Selection, wanted);
+
+            if (wanted)
+            {
+                // Choosing Selection is the ask to pick something, so the box that just
+                // appeared takes the clicks - otherwise the next one would go to whichever
+                // box was active before, which is the contour box.
+                field.Selection?.SetSelectionFocus();
+            }
+            else
+            {
+                // The box has gone; the focus must not stay on it or the graphics area
+                // would keep picking into something nobody can see.
+                FocusControl(modeId);
             }
         }
 

@@ -187,18 +187,33 @@ namespace GCam.SolidWorks.Selection
         public static bool SelectContour(
             ModelDoc2 model, ContourSelection contour, int mark, IGCamLog log = null)
         {
-            log = log ?? NullLog.Instance;
-
-            if (model == null || contour == null || contour.IsEmpty)
+            if (contour == null || contour.IsEmpty)
             {
                 return false;
             }
 
-            object found = PersistentRefs.Resolve(model, contour.Entity?.PersistentId);
+            return SelectRef(model, contour.Entity, mark, log);
+        }
+
+        /// <summary>
+        /// Selects one stored reference into the box with this mark.
+        /// </summary>
+        /// <returns>False when it no longer resolves, or SOLIDWORKS refused it.</returns>
+        public static bool SelectRef(
+            ModelDoc2 model, GeometryRef reference, int mark, IGCamLog log = null)
+        {
+            log = log ?? NullLog.Instance;
+
+            if (model == null || reference == null || !reference.HasPersistentId)
+            {
+                return false;
+            }
+
+            object found = PersistentRefs.Resolve(model, reference.PersistentId);
 
             if (found == null)
             {
-                log.Debug("{0} no longer resolves in this part.", contour.Entity);
+                log.Debug("{0} no longer resolves in this part.", reference);
                 return false;
             }
 
@@ -208,7 +223,7 @@ namespace GCam.SolidWorks.Selection
             {
                 log.Warn(
                     "{0} resolved to a {1}, which cannot be selected. This is a G-CAM bug.",
-                    contour.Entity, found.GetType().Name);
+                    reference, found.GetType().Name);
                 return false;
             }
 
@@ -227,8 +242,82 @@ namespace GCam.SolidWorks.Selection
                 return true;
             }
 
-            log.Debug("{0} resolved but SOLIDWORKS refused to select it.", contour.Entity);
+            log.Debug("{0} resolved but SOLIDWORKS refused to select it.", reference);
             return false;
+        }
+
+        /// <summary>
+        /// The single entity in the box with this mark, or null when it is empty.
+        /// </summary>
+        /// <remarks>
+        /// The kind is read off what was actually picked rather than asked for, because a
+        /// box that accepts a face, an edge or a vertex cannot know in advance - and the
+        /// kind is what a later reader uses to decide what the reference means.
+        ///
+        /// <b>The label is the kind, because these things have no name.</b>
+        /// <see cref="PersistentRefs.NameOf"/> answers for bodies and features only, and
+        /// returns null for a face, an edge or a vertex - the same fact
+        /// <see cref="ContourSelectionsFrom"/> records. Treating an empty name as "nothing
+        /// picked", which is what <see cref="RefsWithMark"/> may do because its callers
+        /// only ever pick named things, silently stored a null reference on every pick
+        /// here. What that looked like was a selection box that displayed the face
+        /// perfectly - SOLIDWORKS draws that itself - while the operation refused to
+        /// generate for having nothing selected, and re-editing showed an empty box.
+        /// </remarks>
+        public static GeometryRef RefWithMark(ModelDoc2 model, int mark, IGCamLog log = null)
+        {
+            var selection = model?.SelectionManager as SelectionMgr;
+
+            if (selection == null || selection.GetSelectedObjectCount2(mark) < 1)
+            {
+                return null;
+            }
+
+            object entity = selection.GetSelectedObject6(1, mark);
+            GeometryRefKind kind = KindOf(entity);
+
+            if (kind == GeometryRefKind.Unknown)
+            {
+                return null;
+            }
+
+            GeometryRef reference = PersistentRefs.Describe(
+                model, entity, kind, PersistentRefs.NameOf(entity) ?? kind.ToString());
+
+            if (!reference.HasPersistentId)
+            {
+                // Without an id there is nothing to resolve later, so the pick would be
+                // lost the moment the page closed - as a null reference, indistinguishable
+                // from never having picked anything.
+                (log ?? NullLog.Instance).Warn(
+                    "SOLIDWORKS would not give a persistent reference for the selected {0}, " +
+                    "so it cannot be stored.",
+                    kind);
+
+                return null;
+            }
+
+            return reference;
+        }
+
+        private static GeometryRefKind KindOf(object entity)
+        {
+            if (entity is Face2)
+            {
+                return GeometryRefKind.Face;
+            }
+
+            if (entity is Edge)
+            {
+                return GeometryRefKind.Edge;
+            }
+
+            if (entity is Vertex)
+            {
+                return GeometryRefKind.Vertex;
+            }
+
+            return GeometryRefKind.Unknown;
         }
 
         /// <summary>The solid body with this name, or null. The migration fallback.</summary>

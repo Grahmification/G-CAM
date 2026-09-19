@@ -642,6 +642,13 @@ namespace GCam.SolidWorks.PropertyPages
         /// SOLIDWORKS decides which box a click belongs to, and how
         /// ISelectionMgr::GetSelectedObject6 later tells them apart, so each box on a
         /// page needs its own.
+        ///
+        /// <b>Must be a power of two.</b> The help requires it and marks are matched
+        /// bitwise, so 3 overlaps both 1 and 2 - a pick lands in several boxes at once and
+        /// reads back as whichever of them answers first. Checked here because the failure
+        /// is silent and turns up somewhere else entirely: the first time this was got
+        /// wrong, an operation refused to generate for having no contours while its
+        /// contour box plainly showed some.
         /// </param>
         protected static IPropertyManagerPageSelectionbox AddSelectionbox(
             IPropertyManagerPageGroup group,
@@ -650,10 +657,26 @@ namespace GCam.SolidWorks.PropertyPages
             swSelectType_e[] filters,
             bool singleEntityOnly,
             string tip,
-            short height = 0)
+            short height = 0,
+            bool visible = true)
         {
+            if (mark <= 0 || (mark & (mark - 1)) != 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(mark),
+                    mark,
+                    "A selection box mark must be a power of two (1, 2, 4, 8, …). Marks are " +
+                    "matched bitwise, so anything else overlaps another box and their picks " +
+                    "run together.");
+            }
+
             var box = AddControl<IPropertyManagerPageSelectionbox>(
-                group, id, swPropertyManagerPageControlType_e.swControlType_Selectionbox, string.Empty, tip);
+                group,
+                id,
+                swPropertyManagerPageControlType_e.swControlType_Selectionbox,
+                string.Empty,
+                tip,
+                visible);
 
             box.Height = height > 0
                 ? height
@@ -695,6 +718,25 @@ namespace GCam.SolidWorks.PropertyPages
             }
 
             return control;
+        }
+
+        /// <summary>
+        /// Puts the keyboard focus on a control of the shown page.
+        /// </summary>
+        /// <remarks>
+        /// <b>The only way to stop a selection box being the active one.</b>
+        /// <see cref="IPropertyManagerPageSelectionbox.SetSelectionFocus"/> makes a box
+        /// active and there is no call that makes none active, so a page that wants
+        /// clicks in the graphics area to stop landing in a box has to give the focus to
+        /// something else.
+        ///
+        /// False when the page is not up, or SOLIDWORKS declined - neither is worth
+        /// throwing over, because the focus is an convenience and the page works without
+        /// it.
+        /// </remarks>
+        protected bool FocusControl(int controlId)
+        {
+            return _page != null && _isOpen && _page.SetFocus(controlId);
         }
 
         /// <summary>

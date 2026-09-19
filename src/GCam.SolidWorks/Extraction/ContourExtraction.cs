@@ -196,7 +196,12 @@ namespace GCam.SolidWorks.Extraction
         /// <summary>
         /// One edge as a chain of points, in millimetres, in the job's frame.
         /// </summary>
-        private static Polyline Tessellate(Edge edge, JobFrame frame, double chordToleranceMillimetres)
+        /// <remarks>
+        /// Internal rather than private because <see cref="EntityHeights"/> needs the same
+        /// thing for a different question - whether an edge lies at one Z. Tessellating an
+        /// edge into the job's frame is worth having once.
+        /// </remarks>
+        internal static Polyline Tessellate(Edge edge, JobFrame frame, double chordToleranceMillimetres)
         {
             var curve = edge.GetCurve() as Curve;
 
