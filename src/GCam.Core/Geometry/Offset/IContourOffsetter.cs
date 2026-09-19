@@ -26,9 +26,14 @@ namespace GCam.Core.Geometry.Offset
         /// </summary>
         /// <param name="contour">A closed contour. Millimetres.</param>
         /// <param name="distance">
-        /// How far, in millimetres. Positive grows the contour, negative shrinks it - so
-        /// which sign puts the cutter outside depends on which way the contour runs, and
-        /// the caller decides that by orienting the contour first.
+        /// How far, in millimetres. Positive grows the enclosed region and negative
+        /// shrinks it, <b>whichever way round the contour runs</b> - so a positive
+        /// distance always puts the cutter outside, and orienting the contour first
+        /// changes only the direction of travel.
+        ///
+        /// That was documented the other way about until 2026-09-19, and it is worth
+        /// being exact: believing the side followed the orientation is what put
+        /// climb/conventional in charge of which side of an open edge was cut.
         /// </param>
         /// <param name="arcTolerance">
         /// How far the rounded outside corners may deviate from a true arc, millimetres.

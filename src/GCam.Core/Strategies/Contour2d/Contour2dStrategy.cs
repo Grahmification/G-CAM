@@ -240,26 +240,16 @@ namespace GCam.Core.Strategies.Contour2d
         /// </summary>
         /// <remarks>
         /// The offset is the cutter's radius plus whatever is being left on the wall.
-        /// Which side it lands on is decided differently for the two kinds of contour,
-        /// because a closed one has an inside and an open one does not:
         ///
-        /// - **Closed.** Orientation carries the side. The contour is run
-        ///   counter-clockwise for a climb cut and clockwise otherwise, and a single
-        ///   positive offset then lands the cutter correctly without a sign to get
-        ///   backwards.
-        /// - **Open.** There is no inside, so orientation says nothing and the side is
-        ///   named outright. Climb puts the material on the left of travel - a cutter
-        ///   turning clockwise seen from above then has its edge moving with the feed at
-        ///   the point of contact, which is what climb means - so the cutter centre goes
-        ///   to the right.
+        /// <b>Climb and conventional only reverse the direction of travel</b>, which is
+        /// what the words mean on a machine: with the cutter on a given side, reversing
+        /// the feed is exactly what turns one into the other. A closed profile is cut
+        /// outside; an open one is cut on the hand <see cref="ResolvedContour.Reversed"/>
+        /// chooses.
         ///
-        /// <see cref="ResolvedContour.Reversed"/> flips whichever of those applies, and is
-        /// applied last so it always wins: for a closed profile that swaps inside for
-        /// outside, and for an open one it swaps hands.
-        ///
-        /// All of that lives in <see cref="Contour2dOffsetting"/> rather than here,
-        /// because the cut-direction arrows on the Geometry tab have to land on the same
-        /// side as this does. Only the distance is decided here.
+        /// All of it lives in <see cref="Contour2dOffsetting"/> rather than here, because
+        /// the cut-direction arrows on the Geometry tab have to land on the same side as
+        /// this does. Only the distance is decided here.
         /// </remarks>
         private Polyline OffsetForCutter(
             ResolvedContour profile, double radius, Contour2dSettings settings)

@@ -25,15 +25,29 @@ namespace GCam.Core.Strategies.Contour2d
         /// The contour in the order the cutter walks it.
         /// </summary>
         /// <remarks>
-        /// Closed contours run counter-clockwise for a climb cut and clockwise otherwise;
-        /// an open one is walked as picked. <see cref="ResolvedContour.Reversed"/> flips
-        /// either, which is how the user chooses the side.
+        /// <b>Climb and conventional differ only in direction of travel.</b> The cutter
+        /// stays on the side <see cref="ResolvedContour.Reversed"/> puts it on - outside a
+        /// closed profile or inside it, one hand or the other of an open one - and the two
+        /// cut directions walk that same side opposite ways round. That is what the words
+        /// mean on a machine: with the cutter on a given side, reversing the feed is
+        /// exactly what turns a climb cut into a conventional one.
+        ///
+        /// A closed profile is cut on the outside - see <see cref="Offset"/> - and runs
+        /// counter-clockwise to climb, clockwise to cut conventionally. <c>Reversed</c>
+        /// turns it round as well; for a closed contour that is all it can do today, which
+        /// is the "inside profiles" gap in docs/design/operations.md.
         /// </remarks>
         public static Polyline Walked(ResolvedContour profile, bool climb)
         {
-            return profile.Path.IsClosed
-                ? profile.Path.WithDirection(CounterClockwise(profile, climb))
-                : profile.Reversed ? profile.Path.Reversed() : profile.Path;
+            if (profile.Path.IsClosed)
+            {
+                return profile.Path.WithDirection(CounterClockwise(profile, climb));
+            }
+
+            // Same rule, expressed against the path as picked: the cutter keeps its hand
+            // and the walk turns round. Reading it the other way - fixing the walk and
+            // flipping the hand - is what made conventional cut the far side of an edge.
+            return CounterClockwise(profile, climb) ? profile.Path : profile.Path.Reversed();
         }
 
         /// <summary>
@@ -74,6 +88,11 @@ namespace GCam.Core.Strategies.Contour2d
                     .FirstOrDefault();
             }
 
+            // **Orientation does not decide the side here, the sign does.** Measured, not
+            // assumed: Clipper grows the enclosed region for a positive distance whichever
+            // way the path runs, so a closed profile is cut outside and the direction of
+            // travel is free to be whatever climb asks for. That is why this branch needs
+            // no counterpart to the flip the open one does.
             IReadOnlyList<Polyline> offset = offsetter.Offset(walked, distance, arcTolerance);
 
             if (offset.Count == 0)
@@ -102,7 +121,7 @@ namespace GCam.Core.Strategies.Contour2d
         public static bool WalksBackwards(ResolvedContour profile, bool climb) =>
             profile.Path.IsClosed
                 ? profile.Path.IsCounterClockwise != CounterClockwise(profile, climb)
-                : profile.Reversed;
+                : !CounterClockwise(profile, climb);
 
         private static bool CounterClockwise(ResolvedContour profile, bool climb) =>
             climb != profile.Reversed;

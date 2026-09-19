@@ -88,13 +88,27 @@ namespace GCam.Core.Tests.Strategies
         }
 
         [Fact]
-        public void A_conventional_cut_puts_it_on_the_other_side()
+        public void A_conventional_cut_keeps_the_side_and_reverses_the_travel()
         {
+            // It swapped sides until 2026-09-19, which is not what the words mean: with
+            // the cutter on a given side, reversing the feed is exactly what turns a climb
+            // cut into a conventional one. Choosing the side is the Reverse button's job.
             var settings = new Contour2dSettings { Direction = CutDirection.Conventional };
 
             Toolpath path = Generate(Context(new ResolvedContour(Line()), settings));
 
-            Assert.All(CuttingYs(path), y => Assert.Equal(ToolDiameter / 2, y, 2));
+            Assert.All(CuttingYs(path), y => Assert.Equal(-ToolDiameter / 2, y, 2));
+
+            // The line is picked running +X, so a conventional cut runs -X. Measured from
+            // where the tool comes down to where the cut ends: a two-point offset is a
+            // single cutting move, so comparing cutting moves to each other compares one
+            // move with itself.
+            double from = path.Moves.First(m => m.Kind == MoveKind.Plunge).End.X;
+            double to = path.Moves.Last(m => m.Kind == MoveKind.Cutting).End.X;
+
+            Assert.True(
+                to < from,
+                $"a conventional cut should run back down the edge; it went {from:0.#} to {to:0.#}");
         }
 
         [Fact]
