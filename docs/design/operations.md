@@ -296,9 +296,10 @@ The cost is real: **a model edit can silently change how far a chain runs**, by 
 edges tangent that were not. Staleness covers it — a SOLIDWORKS rebuild marks every
 operation stale, so the path is regenerated and seen before it can post without a warning.
 
-`Reversed` is one flag rather than an inside/outside setting, because which side the cutter
-runs on follows from the direction the chain is walked and the climb/conventional choice.
-It is the same thing HSMWorks' per-contour arrow toggles.
+`Reversed` is one flag rather than an inside/outside setting, because it *is* the side:
+inside instead of outside for a closed contour, the other hand for an open one. It is the
+same thing HSMWorks' per-contour arrow toggles. The climb/conventional choice is
+independent of it and only reverses travel.
 
 **`Reversed` is honoured; the two propagation flags are still stored only.** Reversing is
 how the user picks which side of a contour the cutter runs on — outside instead of inside
@@ -454,18 +455,28 @@ full circle. The cutter plunged onto the finished wall and looped right round it
 
 Three things in it are worth knowing before changing it:
 
-- **A closed contour carries its side in its orientation.** It is run counter-clockwise
-  for a climb cut and clockwise otherwise, then offset by a single positive distance — so
-  the cutter lands correctly without a sign to get backwards. Clipper normalises a closed
-  path's orientation before offsetting, so a positive distance always grows it: `Direction`
-  changes which way round the *same outside* path is walked, which is exactly
-  climb versus conventional. **There is consequently no way to cut an inside profile yet** —
-  a pocket wall needs the offset to go the other way, and nothing asks it to.
-- **An open path has no inside, so its side is named outright.** Climb puts the material
-  on the left of travel — a cutter turning clockwise seen from above then has its edge
-  moving *with* the feed where it touches the wall, which is what climb means — so the
-  cutter centre goes to the right. `Reversed` flips whichever of the two rules applies,
-  and is applied last so it always wins.
+- **The side is `Reversed`'s alone; `Direction` only reverses travel.** That is what the
+  words mean on a machine: with the cutter on a given side, reversing the feed is exactly
+  what turns a climb cut into a conventional one. Both rules live in
+  `Contour2dOffsetting`, so the cut-direction arrows cannot disagree with the toolpath.
+- **A closed contour takes its side from the sign of the offset**, not from its
+  orientation. Measured, and it is the opposite of what this note said until 2026-09-19:
+  Clipper grows the enclosed region for a positive distance *whichever way the path runs*,
+  so orientation is free to carry the direction of travel instead. Reversed therefore
+  offsets inward, which is how a pocket is cut.
+- **Reversing a closed contour turns it round as well as moving the cutter inside**, and
+  that is required rather than incidental: climb on the outside of a boss is a
+  counter-clockwise run and climb on the inside of a pocket is a clockwise one, so a cut
+  that moved inside without reversing would quietly stop being a climb cut. `climb !=
+  Reversed` reads as "counter-clockwise" and is right for all four combinations.
+- **An open path has no inside, so its side is named outright** — right of travel for a
+  climb cut, since a cutter turning clockwise seen from above then has its edge moving
+  *with* the feed where it touches. Travel turns round with `Direction` so that the hand
+  stays put. A negative distance is not passed through: an open path has no area to
+  shrink, so the side is flipped and the magnitude used.
+- **A closed pass starts midway along its longest run, not at a corner.** A lead-in
+  reaches back about r√2, which at a corner aims at the neighbouring wall. Cutting outside
+  hid it; the first pocket put the touch-down 1mm off the wall it was about to finish.
 - **The last pass lands exactly on the bottom**, not a float's width above it. The
   alternative leaves a witness ridge that no operator can explain.
 - **A feed left at zero falls back to the cutting feed.** Zero means "not set", and
@@ -716,7 +727,7 @@ costs height on every show.
 | Tool | The base page | Two groups: the tool's name as a header with Browse…, then feed and speed — one physical cutter, but numbers that belong to this operation alone |
 | Geometry | The strategy | Selection box, a Reverse button for the highlighted contour, a line saying which are reversed, and in the 3D view each contour highlighted with an arrow beside it — see below |
 | Heights | The base page | Five mode + offset rows, and a plane in the 3D view for each — see below |
-| Passes | The strategy | Stepover, stepdown, tolerance, and stock to leave in a group whose header checkbox turns it off without clearing the amounts |
+| Passes | The strategy | Stepover, stepdown, tolerance, and stock to leave in a group whose header checkbox turns it off without clearing the amounts. Either amount may be negative, which cuts past the profile rather than short of it — radial stock past the cutter radius carries it to the other side, leads and all |
 | Linking | The strategy | Lead-in/out, ramping, retracts — only for strategies that have them |
 
 Tool and Heights are common to every strategy; Geometry, Passes and Linking are
@@ -789,9 +800,9 @@ array and material state inside SOLIDWORKS' own context.
 the same call `Contour2dStrategy` makes to place the cutter — and measures which way the
 result moved. The two cannot disagree, which matters more here than anywhere else on the
 page: an arrow pointing at the wrong side of an edge would be believed. It is also not a
-rule worth holding twice, because a closed contour carries its side in its orientation and
-an open one names the side outright, so there is no single perpendicular to write down.
-A contour whose side cannot be measured gets no arrow rather than a guessed one.
+rule worth holding twice — a closed contour takes its side from a sign and an open one
+from a named hand, so there is no single perpendicular to write down. A contour whose side
+cannot be measured gets no arrow rather than a guessed one.
 
 The arrow is anchored to the midpoint of the contour's longest segment **as picked**, not
 as walked. Halfway along lands exactly on a corner of a rectangle, where the offset is not
@@ -827,8 +838,16 @@ silhouette rather than as a wash over the model it is beneath.
 
 Heights resolve through `HeightSetting.TryResolve`, the same Core call generation makes, one
 at a time — so a plane cannot sit somewhere the cut will not, and a height that will not
-resolve costs only its own plane. `FromSelection` is that case today, and gets no plane, for
-the reason in the gaps below.
+resolve costs only its own plane — a `FromSelection` height with nothing picked yet, most
+often.
+
+**Choosing `Selection` shows a box under that row** taking a face, edge or vertex.
+`EntityHeights` reads its Z, and accepts only geometry that lies at a single one: a flat
+face — read from `ISurface.PlaneParams` and checked square to the job's Z, not measured —
+a flat edge including a circle, or a vertex. A sloped or cylindrical face is refused,
+because "the height of that" has no one answer and any of the plausible ones would be a
+decision the user cannot see. Generation and the planes share the call, so a plane cannot
+sit where the cut will not.
 
 **Accepting the page generates the operation.** Committing is the ask for a toolpath, and a
 new operation accepted without one shows nothing at all. Only that operation: an edit marks
@@ -872,14 +891,14 @@ decisions to leave them out; they are unbuilt.
 | --- | --- |
 | `Comment` | Exists on `Operation` and is committed by the page, with no control to set it |
 | `Enabled` | Not on the page. Set from the job tree's Suppress command instead — see [In the job tree](#in-the-job-tree) — which is where HSMWorks puts it too |
-| The `FromSelection` height mode | Offered in all five mode drop-downs, and it cannot work: there is no reference selection box to set `HeightSetting.Reference`, and `GenerationContextFactory.HeightOf` returns null on every path. Either wire both ends or take the mode out of the list |
+| Reading a height off a *sloped* face | `FromSelection` works for anything at a single Z — see the Heights tab above. A face that is not square to the job's Z is refused rather than guessed at, which is the right answer until somebody decides what it should mean |
 | `Operation.Validate()` | Never called. OK commits an operation with no tool or no contour without saying so, and the complaint arrives at generation time instead |
 | Lead `Distance`, `Sweep`, `VerticalRadius`, `Perpendicular` | Stored, round-tripped and read by the strategy; not editable |
 | Contour modifiers | `Reversed` is reachable, via the Reverse button. `PropagateTangent` and `PropagateAlongZ` are still stored as intent and never honoured |
 | The derived feeds and speeds | Surface speed and feed per tooth are meant to be editable at both ends (see above); only the canonical values have boxes. `FeedsAndSpeeds` is already in Core |
 | Conditional visibility | Maximum stepdown shows when multiple depths is off; the lead-out radius shows when "same as lead in" is ticked. `JobPropertyPage.ShowControlsFor` is the pattern to copy |
 | The rest of the live preview | The cut-direction arrows are built. The stock and heights are not drawn while the page is up, and parameter edits do not regenerate the toolpath — only accepting the page does |
-| Inside profiles | Only the outside of a closed contour can be cut — see the offsetting note under 2D contouring. A pocket needs the offset inward, and no setting asks for it |
+| Roughing a pocket out | The Reverse button cuts the inside of a closed contour, so a finishing pass round a pocket wall works. Clearing the material in the middle of one is a different strategy, not a setting on this one |
 
 ## In the job tree
 

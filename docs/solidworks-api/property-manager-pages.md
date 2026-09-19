@@ -129,21 +129,29 @@ What is actually known, as opposed to inferred:
 | --- | --- |
 | `Combobox.Clear` | **Fatal**, measured |
 | `Combobox.InsertItem` | **Fatal**, measured |
-| `Label.Caption` | **Fatal**, measured |
-| `IPropertyManagerPageControl.Visible` | **Fatal**, measured (section below) |
+| `Label.Caption` | **Safe**, measured — from an ordinary callback; see below |
+| `IPropertyManagerPageControl.Visible` | **Safe** from a live user change; **fatal** on a page about to be shown (section below) |
+| `IPropertyManagerPageSelectionbox.SetSelectionFocus`, `IPropertyManagerPage2.SetFocus` | **Safe**, measured |
 | `Numberbox.Value`, `Combobox.CurrentSelection` | **Unknown** — assume fatal |
 
-**Nothing written to a shown page has yet been seen to survive.** Two generalisations were
-tried and both were wrong, at the cost of a crash each:
+**Generalising from this table has been wrong three times.** Each entry is worth what it
+was measured at and nothing more:
 
 1. *"`Clear` is fatal because it invalidates the `CurrentSelection` index, so append with
    `InsertItem` instead."* `InsertItem` died in the same place.
 2. *"Changing a control's structure is fatal; writing a value to a control that already
-   exists is fine."* `Label.Caption` is exactly such a value write, and it died too — as
-   `Visible` should already have warned, being an ordinary property on an existing control.
+   exists is fine."* `Label.Caption` appeared to disprove this by dying too.
+3. *"Then nothing written to a shown page survives — treat them as read-only."* Also
+   wrong, and it cost a page rebuild on every Reverse press for months.
 
-The working rule is therefore the blunt one: **a shown page's controls are read-only.**
-Anything else needs measuring first.
+**`Label.Caption` was the misleading one.** It was bisected inside `BrowseForTool`, which
+opens a modal WPF dialog over the page before writing. Written from a plain button press
+it is fine — verified on 2025 SP3 by reversing a contour repeatedly across several page
+opens, which is what the `Visible` crash needed to show itself. What is fatal in that
+method is therefore something narrower than "writing to a shown page", and is still
+unidentified; `BrowseForTool` keeps its rebuild until somebody measures which call it is.
+
+So: measure the call you need, in the situation you need it, and add a row.
 
 **The design consequence is not a workaround, it is a constraint.** A control whose
 *contents* must change while the page is up cannot be a combobox. Two wrong turns were
@@ -345,6 +353,15 @@ box.SingleEntityOnly = false;
 selections apart afterwards. A page with two boxes and one mark cannot separate them.
 G-CAM's job page uses 1 for the model bodies and 2 for the coordinate system.
 
+**Marks must be powers of two — 1, 2, 4, 8 — and the help says so outright** under
+`IPropertyManagerPageSelectionbox::Mark`. They are matched bitwise, so the obvious 2, 3,
+4, 5, 6 for five boxes overlaps: 3 shares a bit with both 1 and 2, and a face picked into
+that box is counted as a member of those boxes too. Nothing complains. What it looked like
+was an operation refusing to generate for having no contour selected while its contour box
+plainly showed several, and a height reference that read back as the wrong entity.
+`GCamPropertyPage.AddSelectionbox` now throws on a mark that is not a power of two, because
+the failure is silent and surfaces somewhere else entirely.
+
 Useful filters so far: `swSelSOLIDBODIES` (76) and `swSelCOORDSYS` (61).
 
 **What the box displays is not what you selected.** Clicking a coordinate system in the
@@ -500,13 +517,14 @@ Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
 | Selection boxes: bodies and coordinate systems | **Not yet exercised** |
 | Selection boxes: contour edges and faces, stored and restored | **Confirmed** — but only after `ClearSelection2`; see [coordinate-systems.md](coordinate-systems.md) |
 | `IPropertyManagerPageSelectionbox.CurrentSelection` after a button press | **Confirmed** — gives the highlighted row, and -1 when none is highlighted |
-| `Visible` on a user-driven stock mode change | **Not yet exercised** — the one remaining caller |
+| `Visible` on a live user-driven change | **Confirmed safe** — the height rows show a selection box when their mode becomes Selection |
+| Selection box marks that are **not** powers of two | **Confirmed broken** — see below |
 | A button control, and `OnButtonPress` reaching the page | **Confirmed** — Browse… opens the tool picker |
 | A modal WPF dialog shown from inside `OnButtonPress` | **Confirmed** — the tool library browser, and the nested pump is fine |
 | `IModelDoc2::SetSaveFlag` from inside a live page handler | **Confirmed** |
 | `IPropertyManagerPageCombobox.Clear` on a shown page | **Confirmed fatal** — first call |
 | `IPropertyManagerPageCombobox.InsertItem` on a shown page | **Confirmed fatal** — first call |
-| `IPropertyManagerPageLabel.Caption` on a shown page | **Confirmed fatal** — first call |
+| `IPropertyManagerPageLabel.Caption` on a shown page | **Confirmed safe** from an ordinary callback; fatal inside `BrowseForTool`, which shows a modal WPF dialog first |
 | Numberbox `Value` and combobox `CurrentSelection` on a shown page | **Not yet exercised** — assume fatal |
 | `RebuildAfterHandlerReturns` — deferred close and re-show | **Confirmed** — Browse rebuilds the Operation page, edits and selections survive |
 | Tabs, and a page-level group above the tab strip | **Confirmed** — the Operation page's five tabs, and the name group that sat above them |
