@@ -1,7 +1,7 @@
 # Drawing OpenGL over the SOLIDWORKS 3D view
 
-How G-CAM puts its own graphics — the stock box now, toolpaths and the simulated tool
-later — into the SOLIDWORKS graphics window.
+How G-CAM puts its own graphics — the stock box, toolpaths and cut-direction arrows now,
+the simulated tool later — into the SOLIDWORKS graphics window.
 
 Target: **SOLIDWORKS 2025 SP3**. Statements below are tagged **Verified** (tried on that
 version), **From docs** (the installed API help says so), or **Assumed**.
@@ -178,6 +178,41 @@ drawn early would simply be painted over by the ordinary geometry it is meant to
 
 `SceneRenderer.Rebuild` sorts on `AlwaysOnTop` then `IsTransparent`. Both are stable sorts,
 so a producer still controls the order within each group.
+
+## Sizing something in pixels rather than millimetres
+
+**Verified on 2025 SP3** — the cut-direction arrows on the Operation page hold their size
+at any zoom.
+
+An annotation that should stay the same size on screen needs to know what a pixel is worth
+in model units. That is readable from the context itself, without any SOLIDWORKS API:
+
+```csharp
+Gl.GetDoublev(Gl.GL_MODELVIEW_MATRIX, modelView);    // both column-major
+Gl.GetDoublev(Gl.GL_PROJECTION_MATRIX, projection);
+Gl.GetIntegerv(Gl.GL_VIEWPORT, viewport);
+```
+
+`ViewScale` then projects two points a known distance apart — the anchor, and the anchor
+stepped 1mm along the world direction that maps to the screen's X axis — and divides by the
+pixels between them. Measuring rather than extracting a scale factor is what makes it
+independent of whether the projection is orthographic or perspective and of where
+SOLIDWORKS put the zoom. Under perspective the answer legitimately differs with depth,
+which is why it takes the point it is about.
+
+The world direction that maps to eye +X is the first *row* of the modelview's rotation —
+elements 0, 4 and 8 in column-major storage — normalised, since a scale may be carried
+there.
+
+Two things fall out of doing this here rather than through `IModelView`:
+
+- **No view to find.** Whichever window fired the notification is the one whose matrices
+  are current, so two windows at different zooms each size their own drawing correctly from
+  a single shared scene. Going through the API would need a scene per view.
+- **No repaint to chase.** There is no zoom-changed event to subscribe to; the size is
+  simply recomputed on the frame that is already being drawn.
+
+These are reads, so `GlState` has nothing extra to put back.
 
 ## Asking for a repaint
 

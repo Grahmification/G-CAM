@@ -192,10 +192,19 @@ stock and origin that selecting it in the tree gives. The page is built once for
 and finds the preview for whichever part is in front, which is why it takes a
 `Func<IJobPreview>` rather than one instance.
 
-The Operation page has no preview call of its own. It does not need one: it is opened from
-the tree with its operation selected, so the toolpath on screen is already that operation's
-and only that one. A live preview of the path being edited is a different feature, and is
-listed as such in [operations.md](operations.md).
+The Operation page draws one thing of its own: the cut-direction arrows, through
+`ICutDirectionPreview` and its own `cut-direction` layer. It needs nothing else, because it
+is opened from the tree with its operation selected, so the toolpath on screen is already
+that operation's and only that one. A live preview of the path *being edited* is still a
+different feature — see [operations.md](operations.md), which also says why the arrows take
+their side from the strategy's own offset.
+
+Those arrows are the one thing in a scene that is **not** fixed geometry. Everything else is
+millimetres that mean the same at any zoom, which is what lets `SceneRenderer` convert once
+and cache against `RenderScene.Version`; a `ScreenArrow` carries its shape in *pixels* and
+is expanded into triangles every frame. Affordable only because there are a handful of them
+at nine vertices each — the rule stays that anything the size of a toolpath is fixed
+geometry.
 
 Three parts again, none of which can see the other two: `Core/Abstractions/IJobPreview`
 is what the tree and the page both state intent through, and `JobPreview` in
@@ -210,13 +219,19 @@ a job with no stock set up is exactly when someone is checking where the origin 
 keeps it legible on a 20mm part and on a two-metre one with nothing to configure, and it
 costs nothing per frame because it is rebuilt only when the job changes.
 
-The alternative, HSMWorks' constant apparent size, was considered and rejected *for now*:
-it needs `IModelView.Scale2` and `FrameHeight` read per view, the geometry rebuilt on
-every `ViewChangeNotify` — continuously, while rotating or zooming — and, because two
-windows on one part can sit at different zooms, a scene per *view* rather than per
-document. That last part is the real cost: it would change the shape of the renderer, not
-just add a subscription. Revisit if the proportional triad turns out to be annoying in
-practice.
+The alternative, HSMWorks' constant apparent size, was rejected *for now* on a cost that
+turned out to be avoidable, and the reasoning is kept because it is the trap: it looked
+like it needed `IModelView.Scale2` and `FrameHeight` read per view, the geometry rebuilt on
+every `ViewChangeNotify` while rotating or zooming, and — because two windows on one part
+can sit at different zooms — a scene per *view* rather than per document.
+
+**None of that is necessary.** `ScreenArrow` does screen-constant sizing by expanding at
+draw time instead of storing a size in the scene, and `ViewScale` measures the scale from
+the OpenGL matrices that are already current inside `BufferSwapNotify`. The per-view
+problem dissolves because that notification *is* per view: each window sizes what it draws
+from its own context, so one scene still serves them all. The triad could move to the same
+footing whenever the proportional one becomes annoying; it is a small change now, not a
+change to the shape of the renderer.
 
 **Rendering rides on the G-CAM tab's lifetime.** `JobTreeTabs.DocumentTab` owns the
 document's `ViewportRenderer` and `JobPreview` alongside its viewmodel, and disposes

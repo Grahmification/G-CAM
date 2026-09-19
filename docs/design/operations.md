@@ -714,9 +714,9 @@ costs height on every show.
 | Tab | Built by | Contents |
 | --- | --- | --- |
 | Tool | The base page | Two groups: the tool's name as a header with Browse…, then feed and speed — one physical cutter, but numbers that belong to this operation alone |
-| Geometry | The strategy | Selection box, a Reverse button for the highlighted contour, and a line saying which are reversed |
+| Geometry | The strategy | Selection box, a Reverse button for the highlighted contour, a line saying which are reversed, and an arrow in the 3D view per contour — see below |
 | Heights | The base page | Five mode + offset rows |
-| Passes | The strategy | Stepover, stepdown, stock to leave, … |
+| Passes | The strategy | Stepover, stepdown, tolerance, and stock to leave in a group whose header checkbox turns it off without clearing the amounts |
 | Linking | The strategy | Lead-in/out, ramping, retracts — only for strategies that have them |
 
 Tool and Heights are common to every strategy; Geometry, Passes and Linking are
@@ -755,9 +755,37 @@ its way to showing the page again — and those callbacks are indistinguishable 
 clearing the box. Acting on them commits an empty contour list over the real one.
 
 A live preview follows the edit, as the Job page already does with its clone: the page
-edits a clone, the preview shows the clone, Cancel leaves nothing behind. Parameter edits
-redraw the *stock and heights* preview immediately; they do not regenerate the toolpath.
-**Not built yet** — see the gaps below.
+edits a clone, the preview shows the clone, Cancel leaves nothing behind. **The
+cut-direction arrows are the part of that which exists**; the stock-and-heights preview
+and regenerating the toolpath as parameters change are not — see the gaps below.
+
+**Which side of an edge will be cut is the question the Geometry tab could not answer.**
+Until the toolpath exists there is nothing on screen saying whether the cutter runs inside
+or outside a profile, and by the time there is, the page has been accepted. So each
+selected contour gets one arrow beside it, in the contour's own plane, on the cutter's side
+and pointing the way it travels. It redraws on every pick, on Climb/Conventional and on
+Reverse, and goes when the page closes.
+
+**The arrow reads the side off a real offset rather than re-deriving it.**
+`Contour2dCutSide` offsets the contour a probe distance through `Contour2dOffsetting` —
+the same call `Contour2dStrategy` makes to place the cutter — and measures which way the
+result moved. The two cannot disagree, which matters more here than anywhere else on the
+page: an arrow pointing at the wrong side of an edge would be believed. It is also not a
+rule worth holding twice, because a closed contour carries its side in its orientation and
+an open one names the side outright, so there is no single perpendicular to write down.
+A contour whose side cannot be measured gets no arrow rather than a guessed one.
+
+The arrow is anchored to the midpoint of the contour's longest segment **as picked**, not
+as walked. Halfway along lands exactly on a corner of a rectangle, where the offset is not
+parallel to the contour and the side reads diagonally; and anchoring to the re-oriented
+walk makes the arrow jump to the opposite edge when the direction changes instead of
+turning round.
+
+**Accepting the page generates the operation.** Committing is the ask for a toolpath, and a
+new operation accepted without one shows nothing at all. Only that operation: an edit marks
+the ones below it stale, and regenerating those stays the user's call. It may fail — no
+tool, nothing selected — which is the honest answer to what was just accepted; the queue
+records it on the operation and the tree shows it.
 
 **The tool is a header label and a Browse button, not a drop-down**, which is HSMWorks'
 shape and — it turns out — the only shape available. A shown page's controls cannot be
@@ -801,7 +829,7 @@ decisions to leave them out; they are unbuilt.
 | Contour modifiers | `Reversed` is reachable, via the Reverse button. `PropagateTangent` and `PropagateAlongZ` are still stored as intent and never honoured |
 | The derived feeds and speeds | Surface speed and feed per tooth are meant to be editable at both ends (see above); only the canonical values have boxes. `FeedsAndSpeeds` is already in Core |
 | Conditional visibility | Maximum stepdown shows when multiple depths is off; the lead-out radius shows when "same as lead in" is ticked. `JobPropertyPage.ShowControlsFor` is the pattern to copy |
-| The live preview | Described above, not built |
+| The rest of the live preview | The cut-direction arrows are built. The stock and heights are not drawn while the page is up, and parameter edits do not regenerate the toolpath — only accepting the page does |
 | Inside profiles | Only the outside of a closed contour can be cut — see the offsetting note under 2D contouring. A pocket needs the offset inward, and no setting asks for it |
 
 ## In the job tree
