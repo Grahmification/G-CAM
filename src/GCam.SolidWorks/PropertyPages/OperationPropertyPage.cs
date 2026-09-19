@@ -315,9 +315,15 @@ namespace GCam.SolidWorks.PropertyPages
             JobDocument jobs = _jobsForActiveDocument();
             _currentTool = jobs?.FindTool(_working.ToolId);
 
-            // A fresh edit starts at the first tab. Only a rebuild keeps its place, which
-            // is why this is here rather than in BuildControls.
-            _activeTab = TabTool;
+            // A fresh edit starts at the tab with the work on it; only a rebuild keeps its
+            // place, which is why this is here rather than in BuildControls.
+            //
+            // Which tab that is depends on why the page is open. A new operation has no
+            // tool, and nothing else on the page means much until it has one. An operation
+            // the job already holds is being opened to change what it cuts far more often
+            // than to change its cutter. The same test as OnOperationCommitted's, and it
+            // holds for the same reason: a new operation does not reach the job until OK.
+            _activeTab = job.Operations.Contains(operation) ? TabGeometry : TabTool;
 
             Show();
         }
