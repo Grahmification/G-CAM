@@ -192,14 +192,15 @@ stock and origin that selecting it in the tree gives. The page is built once for
 and finds the preview for whichever part is in front, which is why it takes a
 `Func<IJobPreview>` rather than one instance.
 
-The Operation page draws one thing of its own: the cut-direction arrows, through
-`ICutDirectionPreview` and its own `cut-direction` layer. It needs nothing else, because it
-is opened from the tree with its operation selected, so the toolpath on screen is already
-that operation's and only that one. A live preview of the path *being edited* is still a
-different feature — see [operations.md](operations.md), which also says why the arrows take
-their side from the strategy's own offset.
+The Operation page draws its contours: each one highlighted along its length with an arrow
+beside it saying which side will be cut, through `ICutDirectionPreview` and its own
+`cut-direction` layer. It needs nothing else, because it is opened from the tree with its
+operation selected, so the toolpath on screen is already that operation's and only that
+one. A live preview of the path *being edited* is still a different feature — see
+[operations.md](operations.md), which also says why the arrow takes its side from the
+strategy's own offset.
 
-Those arrows are the one thing in a scene that is **not** fixed geometry. Everything else is
+The arrows are the one thing in a scene that is **not** fixed geometry. Everything else is
 millimetres that mean the same at any zoom, which is what lets `SceneRenderer` convert once
 and cache against `RenderScene.Version`; a `ScreenArrow` carries its shape in *pixels* and
 is expanded into triangles every frame. Affordable only because there are a handful of them

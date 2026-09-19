@@ -714,7 +714,7 @@ costs height on every show.
 | Tab | Built by | Contents |
 | --- | --- | --- |
 | Tool | The base page | Two groups: the tool's name as a header with Browse…, then feed and speed — one physical cutter, but numbers that belong to this operation alone |
-| Geometry | The strategy | Selection box, a Reverse button for the highlighted contour, a line saying which are reversed, and an arrow in the 3D view per contour — see below |
+| Geometry | The strategy | Selection box, a Reverse button for the highlighted contour, a line saying which are reversed, and in the 3D view each contour highlighted with an arrow beside it — see below |
 | Heights | The base page | Five mode + offset rows |
 | Passes | The strategy | Stepover, stepdown, tolerance, and stock to leave in a group whose header checkbox turns it off without clearing the amounts |
 | Linking | The strategy | Lead-in/out, ramping, retracts — only for strategies that have them |
@@ -761,10 +761,28 @@ and regenerating the toolpath as parameters change are not — see the gaps belo
 
 **Which side of an edge will be cut is the question the Geometry tab could not answer.**
 Until the toolpath exists there is nothing on screen saying whether the cutter runs inside
-or outside a profile, and by the time there is, the page has been accepted. So each
-selected contour gets one arrow beside it, in the contour's own plane, on the cutter's side
-and pointing the way it travels. It redraws on every pick, on Climb/Conventional and on
-Reverse, and goes when the page closes.
+or outside a profile, and by the time there is, the page has been accepted. So each contour
+is drawn along its own length, with one arrow beside it in the contour's own plane, on the
+cutter's side and pointing the way it travels. Both redraw on every pick, on
+Climb/Conventional and on Reverse, and go when the page closes.
+
+**The highlight follows the chained contour, not the selection**, which is the half
+SOLIDWORKS cannot show: it already lights up what was picked, and what gets cut is what
+those picks chained into. The two differ wherever an edge is reached by tangent propagation
+rather than by being clicked. A contour whose side cannot be measured is still highlighted;
+only its arrow is missing.
+
+Both are drawn without depth testing. For the arrow that is ordinary annotation behaviour;
+for the highlight it is structural — the line lies exactly on a model edge, so testing it
+against the part it sits on is z-fighting by construction, and it would break into stipple
+as the view moved.
+
+**Flat lines rather than HSMWorks' 3D tubes**, because the overlay draws unlit on purpose
+(see [opengl-overlay.md](../solidworks-api/opengl-overlay.md)). An unlit tube renders as a
+flat ribbon — all of the cost, none of the roundness — and its radius would be in
+millimetres, so it would swell with zoom where a line width in pixels does not. Tubes
+become worth revisiting only alongside lit rendering, which needs normals, a second vertex
+array and material state inside SOLIDWORKS' own context.
 
 **The arrow reads the side off a real offset rather than re-deriving it.**
 `Contour2dCutSide` offsets the contour a probe distance through `Contour2dOffsetting` —
