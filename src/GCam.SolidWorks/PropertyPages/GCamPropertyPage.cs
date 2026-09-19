@@ -535,19 +535,29 @@ namespace GCam.SolidWorks.PropertyPages
         /// <see cref="JobPropertyPage"/> for the conversion and why it is measured
         /// rather than assumed.
         /// </summary>
+        /// <param name="allowNegative">
+        /// Lets the box take a value below zero. Off by default, because most lengths on a
+        /// page are sizes or radii and a negative one is meaningless - but an *offset*
+        /// measures from a datum in both directions, and a box that will not accept a
+        /// minus sign silently contradicts a tip that says "negative goes below".
+        /// </param>
         protected static IPropertyManagerPageNumberbox AddLengthbox(
-            IPropertyManagerPageGroup group, int id, string caption, string tip, bool visible = true)
+            IPropertyManagerPageGroup group,
+            int id,
+            string caption,
+            string tip,
+            bool visible = true,
+            bool allowNegative = false)
         {
             var box = AddControl<IPropertyManagerPageNumberbox>(
                 group, id, swPropertyManagerPageControlType_e.swControlType_Numberbox, caption, tip, visible);
 
             // Units cannot be changed once the page is shown, so this has to happen here.
-            // The upper bound is deliberately generous rather than a guess at machine
-            // capacity; it exists to stop a typo becoming a kilometre of stock.
+            // The bound is deliberately generous rather than a guess at machine capacity.
             box.SetRange2(
                 (int)swNumberboxUnitType_e.swNumberBox_Length,
-                Minimum: 0,
-                Maximum: 10000,
+                Minimum: allowNegative ? -LengthLimit : 0,
+                Maximum: LengthLimit,
                 Inclusive: true,
                 Increment: 1,
                 FastIncr: 10,
@@ -555,6 +565,16 @@ namespace GCam.SolidWorks.PropertyPages
 
             return box;
         }
+
+        /// <summary>
+        /// How far a length box will go, either side of zero.
+        /// </summary>
+        /// <remarks>
+        /// In the units the box exchanges, which for a length box is metres - so this is
+        /// not the kilometre-ish limit it reads as. It is here to keep the two ends
+        /// symmetrical rather than to police anything.
+        /// </remarks>
+        private const double LengthLimit = 10000;
 
         /// <summary>
         /// A number box for something that is not a length - a speed, a feed, a count, an

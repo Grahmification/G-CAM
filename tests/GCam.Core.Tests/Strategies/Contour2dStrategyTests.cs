@@ -111,6 +111,25 @@ namespace GCam.Core.Tests.Strategies
         }
 
         [Fact]
+        public void Stock_to_leave_past_the_cutter_radius_carries_an_open_cut_to_the_other_side()
+        {
+            // An open path has no area to shrink, so a negative offset cannot be handed
+            // to the offsetter as-is - the side is flipped and the distance made positive.
+            // Climb puts the cutter to the right of travel, at Y -5 with a 10mm cutter;
+            // -8mm of stock leaves 3mm on the far side instead.
+            var settings = new Contour2dSettings { StockToLeave = -8 };
+            var line = new Polyline(new[] { new Vec3(0, 0, 0), new Vec3(100, 0, 0) });
+
+            Toolpath path = Generate(Context(settings, line));
+
+            IEnumerable<Vec3> cutting = path.Moves
+                .Where(m => m.Kind == MoveKind.Cutting)
+                .Select(m => m.End);
+
+            Assert.All(cutting, p => Assert.Equal(3, p.Y, 2));
+        }
+
+        [Fact]
         public void Stock_to_leave_turned_off_is_ignored_without_being_cleared()
         {
             var settings = new Contour2dSettings

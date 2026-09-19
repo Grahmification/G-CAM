@@ -191,16 +191,11 @@ namespace GCam.Core.Strategies.Contour2d
                 problems.Add("One of the selected contours is empty.");
             }
 
-            if (StockToLeave < 0)
-            {
-                problems.Add("Stock to leave cannot be negative; use a smaller contour instead.");
-            }
-
-            if (VerticalStockToLeave < 0)
-            {
-                problems.Add("Vertical stock to leave cannot be negative.");
-            }
-
+            // Stock to leave is deliberately unbounded in sign. Negative cuts past the
+            // profile rather than short of it, which is how a cutter running undersize is
+            // taken out - and radial stock more negative than the cutter's radius carries
+            // it across to the other side of the contour, which is occasionally what is
+            // wanted and never something to guess at on the user's behalf.
             problems.AddRange(MultipleDepths.Validate());
             problems.AddRange(LeadIn.Validate("Lead-in"));
 

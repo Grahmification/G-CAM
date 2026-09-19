@@ -485,7 +485,8 @@ namespace GCam.SolidWorks.PropertyPages
                 SelectionId = selectionId,
                 Offset = AddLengthbox(
                     group, offsetId, caption + " offset",
-                    "Distance above that datum. Negative goes below."),
+                    "Distance above that datum. Negative goes below.",
+                    allowNegative: true),
                 OffsetId = offsetId,
             };
         }
@@ -579,13 +580,18 @@ namespace GCam.SolidWorks.PropertyPages
             IPropertyManagerPageGroup group = AddCheckedGroup(
                 tab, GroupStockToLeave, "Stock to leave", Settings().StockToLeaveEnabled);
 
+            // Negative is allowed on both: it cuts past the profile rather than short of
+            // it, which is how you take out a cutter running undersize.
             AddLabel(group, IdStockToLeaveLabel, "Radial (wall)");
             _stockToLeave = AddLengthbox(
-                group, IdStockToLeave, "Radial", "Material left on the wall.");
+                group, IdStockToLeave, "Radial", "Material left on the wall. Negative cuts past it.",
+                allowNegative: true);
 
             AddLabel(group, IdVerticalStockToLeaveLabel, "Axial (floor)");
             _verticalStockToLeave = AddLengthbox(
-                group, IdVerticalStockToLeave, "Axial", "Material left on the floor.");
+                group, IdVerticalStockToLeave, "Axial",
+                "Material left on the floor. Negative cuts below it.",
+                allowNegative: true);
         }
 
         private void BuildLinkingTab(IPropertyManagerPage2 page)

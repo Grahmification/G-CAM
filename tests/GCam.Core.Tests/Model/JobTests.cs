@@ -141,10 +141,12 @@ namespace GCam.Core.Tests.Model
         [Fact]
         public void Job_validation_reports_the_stocks_problems_as_well()
         {
+            // A fixed box left at no size. It used to be a negative offset, which is a
+            // legitimate stock now.
             var job = new Job { Name = "Roughing" };
-            job.Stock.SideOffset = -1;
+            job.Stock.Mode = StockMode.FixedSizeBox;
 
-            Assert.Contains("Side offset", string.Join(" ", job.Validate()));
+            Assert.Contains("Stock width", string.Join(" ", job.Validate()));
         }
 
         [Fact]

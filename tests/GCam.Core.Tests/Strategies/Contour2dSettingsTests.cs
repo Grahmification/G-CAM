@@ -59,13 +59,15 @@ namespace GCam.Core.Tests.Strategies
         }
 
         [Fact]
-        public void Negative_stock_to_leave_is_reported_on_both_axes()
+        public void Negative_stock_to_leave_is_allowed_on_both_axes()
         {
+            // It cuts past the profile rather than short of it - how an undersize cutter
+            // is taken out. Refused until 2026-09-19.
             Contour2dSettings settings = Usable();
             settings.StockToLeave = -0.2;
             settings.VerticalStockToLeave = -0.2;
 
-            Assert.Equal(2, settings.Validate().Count);
+            Assert.Empty(settings.Validate());
         }
 
         [Fact]

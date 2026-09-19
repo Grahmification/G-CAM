@@ -59,6 +59,16 @@ namespace GCam.Core.Strategies.Contour2d
                 // to the right.
                 OffsetSide side = climb ? OffsetSide.Right : OffsetSide.Left;
 
+                // A closed contour takes a negative distance directly - it shrinks - but
+                // an open path has no area to shrink, and IContourOffsetter says so: its
+                // distance is always positive and the side is named. So the sign is read
+                // here, where it means what it means, and the cutter crosses over.
+                if (distance < 0)
+                {
+                    side = side == OffsetSide.Right ? OffsetSide.Left : OffsetSide.Right;
+                    distance = -distance;
+                }
+
                 return offsetter.OffsetOpen(walked, distance, side, arcTolerance)
                     .OrderByDescending(p => p.Length)
                     .FirstOrDefault();

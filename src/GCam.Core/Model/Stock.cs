@@ -134,19 +134,13 @@ namespace GCam.Core.Model
         {
             var problems = new List<string>();
 
+            // The relative modes have nothing to check. An offset may be any sign: zero
+            // machines exactly to the model, and negative puts the stock face inside it,
+            // which is what a part already roughed elsewhere looks like. Whether the
+            // offsets leave a box with any size in it cannot be answered here, because
+            // that depends on the model they are measured from - see ComputeBounds.
             switch (Mode)
             {
-                case StockMode.RelativeBox:
-                    Require(problems, SideOffset, "Side offset");
-                    RequireRelativeZ(problems);
-                    break;
-
-                case StockMode.RelativeBoxXY:
-                    Require(problems, OffsetX, "X offset");
-                    Require(problems, OffsetY, "Y offset");
-                    RequireRelativeZ(problems);
-                    break;
-
                 case StockMode.FixedSizeBox:
                     RequirePositive(problems, Width, "Stock width");
                     RequirePositive(problems, Depth, "Stock depth");
@@ -155,22 +149,6 @@ namespace GCam.Core.Model
             }
 
             return problems;
-        }
-
-        private void RequireRelativeZ(ICollection<string> problems)
-        {
-            Require(problems, TopOffset, "Top offset");
-            Require(problems, BottomOffset, "Bottom offset");
-        }
-
-        private static void Require(ICollection<string> problems, double value, string label)
-        {
-            // Zero is fine - machining exactly to the model is a legitimate thing to
-            // want. Negative is not: it describes stock inside the part.
-            if (value < 0)
-            {
-                problems.Add($"{label} cannot be negative.");
-            }
         }
 
         private static void RequirePositive(ICollection<string> problems, double value, string label)

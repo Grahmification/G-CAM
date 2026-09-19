@@ -199,23 +199,28 @@ namespace GCam.SolidWorks.PropertyPages
 
             _top = AddLengthField(
                 stock, IdTopLabel, IdTop, "Top offset",
-                "Material above the top of the model", relative);
+                "Material above the top of the model. Negative sits inside it", relative,
+                allowNegative: true);
 
             _side = AddLengthField(
                 stock, IdSideLabel, IdSide, "Side offset",
-                "Material on all four sides", mode == StockMode.RelativeBox);
+                "Material on all four sides. Negative sits inside the model",
+                mode == StockMode.RelativeBox, allowNegative: true);
 
             _offsetX = AddLengthField(
                 stock, IdOffsetXLabel, IdOffsetX, "X offset",
-                "Material to the left and right", mode == StockMode.RelativeBoxXY);
+                "Material to the left and right. Negative sits inside the model",
+                mode == StockMode.RelativeBoxXY, allowNegative: true);
 
             _offsetY = AddLengthField(
                 stock, IdOffsetYLabel, IdOffsetY, "Y offset",
-                "Material front and back", mode == StockMode.RelativeBoxXY);
+                "Material front and back. Negative sits inside the model",
+                mode == StockMode.RelativeBoxXY, allowNegative: true);
 
             _bottom = AddLengthField(
                 stock, IdBottomLabel, IdBottom, "Bottom offset",
-                "Material below the bottom of the model", relative);
+                "Material below the bottom of the model. Negative sits inside it", relative,
+                allowNegative: true);
 
             _width = AddLengthField(
                 stock, IdWidthLabel, IdWidth, "Width (X)",
@@ -230,18 +235,23 @@ namespace GCam.SolidWorks.PropertyPages
                 "Absolute stock size in Z", mode == StockMode.FixedSizeBox);
         }
 
+        /// <param name="allowNegative">
+        /// True for the offsets, which measure from the model and may legitimately sit
+        /// inside it; false for the absolute sizes, where a negative is meaningless.
+        /// </param>
         private static LengthField AddLengthField(
             IPropertyManagerPageGroup group,
             int labelId,
             int boxId,
             string label,
             string tip,
-            bool visible)
+            bool visible,
+            bool allowNegative = false)
         {
             return new LengthField
             {
                 Label = AddLabel(group, labelId, label, visible),
-                Box = AddLengthbox(group, boxId, label, tip, visible),
+                Box = AddLengthbox(group, boxId, label, tip, visible, allowNegative),
             };
         }
 

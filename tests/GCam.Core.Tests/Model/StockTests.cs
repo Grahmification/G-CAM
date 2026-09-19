@@ -161,11 +161,12 @@ namespace GCam.Core.Tests.Model
         }
 
         [Fact]
-        public void Negative_offsets_are_rejected_because_they_describe_stock_inside_the_part()
+        public void Negative_offsets_are_allowed_because_stock_can_sit_inside_the_model()
         {
+            // A part already roughed elsewhere. Rejected until 2026-09-19.
             var stock = new Stock { Mode = StockMode.RelativeBox, SideOffset = -1 };
 
-            Assert.Contains("Side offset", Assert.Single(stock.Validate()));
+            Assert.Empty(stock.Validate());
         }
 
         [Fact]
