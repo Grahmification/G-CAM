@@ -180,7 +180,8 @@ namespace GCam.Core.Strategies.Contour2d
 
             // Which way the leads may swing. Worked out once per pass from where the wall
             // is, and used by both the entry and the exit arc.
-            bool turnLeft = LeadTurnsLeft(profile.Path, cutterPath);
+            bool turnLeft = LeadTurnsLeft(profile.Path, cutterPath)
+                            != CutterHasCrossedOver(radius, settings);
 
             LeadSettings leadIn = settings.LeadIn;
             var entryArc = default(LeadArc);
@@ -266,10 +267,35 @@ namespace GCam.Core.Strategies.Contour2d
             return Contour2dOffsetting.Offset(
                 profile,
                 settings.Direction == CutDirection.Climb,
-                radius + settings.EffectiveStockToLeave,
+                CutterOffset(radius, settings),
                 _offsetter,
                 ArcTolerance);
         }
+
+        /// <summary>How far the cutter centre runs from the profile, and on which side.</summary>
+        private static double CutterOffset(double radius, Contour2dSettings settings) =>
+            radius + settings.EffectiveStockToLeave;
+
+        /// <summary>
+        /// True when stock to leave is negative enough to carry the cutter through the
+        /// profile and out the other side.
+        /// </summary>
+        /// <remarks>
+        /// <b>The leads keep the side they would have had at zero stock to leave.</b>
+        /// <see cref="LeadTurnsLeft"/> reads the side off the geometry - it asks where the
+        /// wall is, seen from the cutter path - which is exactly right until the cutter
+        /// crosses the profile, at which point the wall appears on the other side and the
+        /// leads follow it across. What that looked like was a lead flipping hands the
+        /// moment radial stock to leave passed -radius, while everything else about the
+        /// pass simply moved further over.
+        ///
+        /// Deriving the crossing is safe where deriving the *side* would not be: this is
+        /// one sign, known exactly from the distance the offset was asked for, and it says
+        /// nothing about climb, reverse or which hand an open path takes. Measuring it
+        /// instead would mean offsetting a second time to somewhere the cutter is not.
+        /// </remarks>
+        private static bool CutterHasCrossedOver(double radius, Contour2dSettings settings) =>
+            CutterOffset(radius, settings) < 0;
 
         private static IEnumerable<Move> ProfileMoves(Polyline profile, double feed)
         {

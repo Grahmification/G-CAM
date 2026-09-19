@@ -199,6 +199,39 @@ namespace GCam.Core.Tests.Strategies
         }
 
         [Fact]
+        public void Stock_to_leave_past_the_cutter_radius_does_not_flip_the_lead_over()
+        {
+            // The whole pass moves to the far side of the profile, and the lead is
+            // supposed to move with it - same hand, further across. It did not: the side
+            // is read off where the wall is seen from the cutter path, and once the cutter
+            // crosses the profile the wall appears on the other side, so the lead swapped
+            // hands while nothing else about the pass did.
+            //
+            // The property is the lead's hand, not its clearance: past -radius the cut is
+            // deliberately on the other side of the line, so "off the wall" no longer
+            // means anything.
+            Assert.Equal(LeadHand(0), LeadHand(-8));
+        }
+
+        /// <summary>
+        /// Which side of the cut the tool comes down on, as a sign: the plunge point
+        /// across the direction of travel.
+        /// </summary>
+        private static double LeadHand(double stockToLeave)
+        {
+            Contour2dSettings settings = Leading(CutDirection.Climb);
+            settings.StockToLeave = stockToLeave;
+
+            Toolpath path = Generate(new ResolvedContour(Line()), settings);
+
+            // The line runs along +X, so across it is simply Y.
+            double plunge = path.Moves.First(m => m.Kind == MoveKind.Plunge).End.Y;
+            double cut = path.Moves.First(m => m.Kind == MoveKind.Cutting).End.Y;
+
+            return Math.Sign(plunge - cut);
+        }
+
+        [Fact]
         public void The_lead_arc_turns_the_way_its_centre_lies()
         {
             // The two have to agree or the arc meets the profile from the wrong quarter.
