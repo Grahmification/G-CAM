@@ -36,7 +36,8 @@ namespace GCam.Core.Tests.Strategies
             Contour2dSettings settings = null,
             Polyline contour = null,
             ResolvedHeights heights = null,
-            double diameter = ToolDiameter)
+            double diameter = ToolDiameter,
+            bool reversed = false)
         {
             settings = settings ?? new Contour2dSettings();
 
@@ -62,7 +63,7 @@ namespace GCam.Core.Tests.Strategies
                 // clearance 40, retract 35, feed 32, top 30, bottom 0
                 heights ?? new ResolvedHeights(40, 35, 32, 30, 0),
                 new Bounds(new Vec3(-5, -5, 0), new Vec3(105, 65, 30)),
-                new[] { contour ?? Rectangle() });
+                new[] { new ResolvedContour(contour ?? Rectangle(), reversed) });
         }
 
         private static Toolpath Generate(GenerationContext context)
@@ -108,6 +109,39 @@ namespace GCam.Core.Tests.Strategies
                 .Min(m => m.End.X);
 
             Assert.Equal(-5.5, left, 2);
+        }
+
+        [Fact]
+        public void Reversing_a_closed_contour_cuts_the_inside_of_it()
+        {
+            // What the Reverse button is for, and the "inside profiles" gap until
+            // 2026-09-19: the cutter runs within the loop instead of around it. A 100x60
+            // rectangle with a 10mm cutter leaves the centre on 5..95 by 5..55.
+            Toolpath path = Generate(Context(reversed: true));
+
+            IEnumerable<Vec3> cutting = path.Moves
+                .Where(m => m.Kind == MoveKind.Cutting)
+                .Select(m => m.End);
+
+            Assert.Equal(5, cutting.Min(p => p.X), 2);
+            Assert.Equal(95, cutting.Max(p => p.X), 2);
+            Assert.Equal(5, cutting.Min(p => p.Y), 2);
+            Assert.Equal(55, cutting.Max(p => p.Y), 2);
+        }
+
+        [Fact]
+        public void A_closed_pass_starts_mid_edge_rather_than_on_a_corner()
+        {
+            // A lead-in reaches back about r√2, which at a corner aims at the next wall.
+            // Cutting outside hid that; the first inside cut put the touch-down 1mm off
+            // the wall it was about to finish.
+            Toolpath path = Generate(Context());
+
+            Vec3 start = path.Moves.First(m => m.Kind == MoveKind.Cutting).End;
+
+            Assert.True(
+                Math.Abs(start.X - -5) > 1 && Math.Abs(start.X - 105) > 1,
+                $"the cut started at X {start.X:0.#}, which is a corner of the offset path");
         }
 
         [Fact]

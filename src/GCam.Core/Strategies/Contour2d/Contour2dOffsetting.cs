@@ -32,10 +32,13 @@ namespace GCam.Core.Strategies.Contour2d
         /// mean on a machine: with the cutter on a given side, reversing the feed is
         /// exactly what turns a climb cut into a conventional one.
         ///
-        /// A closed profile is cut on the outside - see <see cref="Offset"/> - and runs
-        /// counter-clockwise to climb, clockwise to cut conventionally. <c>Reversed</c>
-        /// turns it round as well; for a closed contour that is all it can do today, which
-        /// is the "inside profiles" gap in docs/design/operations.md.
+        /// <b>Reversing a closed contour turns it round as well as moving the cutter
+        /// inside it, and that is not a side-effect.</b> Climb means the cutter's edge
+        /// moves with the feed where it touches; on the outside of a boss that is a
+        /// counter-clockwise run, and on the inside of a pocket it is a clockwise one. A
+        /// cut that moved inside without turning round would quietly stop being a climb
+        /// cut. So <c>climb != Reversed</c> reads as "counter-clockwise", and it is right
+        /// for all four combinations.
         /// </remarks>
         public static Polyline Walked(ResolvedContour profile, bool climb)
         {
@@ -90,10 +93,12 @@ namespace GCam.Core.Strategies.Contour2d
 
             // **Orientation does not decide the side here, the sign does.** Measured, not
             // assumed: Clipper grows the enclosed region for a positive distance whichever
-            // way the path runs, so a closed profile is cut outside and the direction of
-            // travel is free to be whatever climb asks for. That is why this branch needs
-            // no counterpart to the flip the open one does.
-            IReadOnlyList<Polyline> offset = offsetter.Offset(walked, distance, arcTolerance);
+            // way the path runs. So the sign carries outside-or-inside, and the walk is
+            // left free to carry the direction of travel - the two would otherwise fight
+            // over one property.
+            double outwards = profile.Reversed ? -distance : distance;
+
+            IReadOnlyList<Polyline> offset = offsetter.Offset(walked, outwards, arcTolerance);
 
             if (offset.Count == 0)
             {

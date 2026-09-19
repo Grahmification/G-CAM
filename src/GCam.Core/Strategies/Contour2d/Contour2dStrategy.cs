@@ -168,7 +168,7 @@ namespace GCam.Core.Strategies.Contour2d
             ResolvedHeights heights,
             CuttingData cutting)
         {
-            Polyline cutterPath = OffsetForCutter(profile, radius, settings);
+            Polyline cutterPath = StartAwayFromCorners(OffsetForCutter(profile, radius, settings));
 
             if (cutterPath == null || cutterPath.IsEmpty)
             {
@@ -265,6 +265,64 @@ namespace GCam.Core.Strategies.Contour2d
         /// <summary>How far the cutter centre runs from the profile, and on which side.</summary>
         private static double CutterOffset(double radius, Contour2dSettings settings) =>
             radius + settings.EffectiveStockToLeave;
+
+        /// <summary>
+        /// A closed pass rotated to begin midway along its longest straight run.
+        /// </summary>
+        /// <remarks>
+        /// <b>A lead-in reaches back about r&#8730;2 from where the cut starts</b>, and at a
+        /// corner that diagonal runs at the neighbouring wall rather than away from
+        /// anything. Cutting the outside of a profile hid it - back from a corner is out
+        /// into fresh air - but the first pocket cut inside a rectangle put the touch-down
+        /// 1mm off the wall it was about to finish.
+        ///
+        /// Breaking in mid-edge is what a person would do, and it costs nothing: a closed
+        /// pass returns to where it began, so where that is changes only the entry mark.
+        /// The longest run is picked because it is the roomiest, by the same argument as
+        /// the cut-direction arrow's anchor.
+        ///
+        /// Open paths are left alone - their ends are the geometry, not a choice.
+        /// </remarks>
+        private static Polyline StartAwayFromCorners(Polyline path)
+        {
+            if (path == null || !path.IsClosed || path.Count < 3)
+            {
+                return path;
+            }
+
+            int longest = -1;
+            double best = Precision.Epsilon;
+
+            for (int i = 0; i < path.SegmentCount; i++)
+            {
+                double length = (path.EndOfSegment(i) - path[i]).Length;
+
+                if (length > best)
+                {
+                    best = length;
+                    longest = i;
+                }
+            }
+
+            if (longest < 0)
+            {
+                return path;
+            }
+
+            var points = new List<Vec3>
+            {
+                path[longest] + ((path.EndOfSegment(longest) - path[longest]) * 0.5),
+            };
+
+            // Round to the point the new start was taken from, which then closes back to
+            // it. A closed polyline does not repeat its first point.
+            for (int step = 1; step <= path.Count; step++)
+            {
+                points.Add(path[(longest + step) % path.Count]);
+            }
+
+            return new Polyline(points, closed: true);
+        }
 
         /// <summary>
         /// True when stock to leave is negative enough to carry the cutter through the
