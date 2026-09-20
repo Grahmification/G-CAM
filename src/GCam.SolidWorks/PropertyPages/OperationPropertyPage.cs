@@ -157,6 +157,16 @@ namespace GCam.SolidWorks.PropertyPages
         private const string NoToolCaption = "No tool chosen";
 
         /// <summary>
+        /// The least time between two checks of the contour box, milliseconds.
+        /// </summary>
+        /// <remarks>
+        /// Idle fires continuously, so this is what keeps the check to a couple of COM
+        /// reads a second. Fast enough that a stale highlight is never up long enough to
+        /// be believed.
+        /// </remarks>
+        private const int SelectionWatchInterval = 400;
+
+        /// <summary>
         /// The height modes offered, in the order they appear. Kept beside the captions so
         /// the two cannot drift.
         /// </summary>
@@ -249,6 +259,30 @@ namespace GCam.SolidWorks.PropertyPages
         /// </summary>
         private bool? _shownTangent;
         private bool? _shownAlongZ;
+
+        /// <summary>
+        /// How many entities were in the contour box when this page last read it. What
+        /// <see cref="CheckContourSelection"/> compares against.
+        /// </summary>
+        private int _syncedContours;
+
+        /// <summary>True while subscribed to the idle notification that runs the watch.</summary>
+        private bool _watchingIdle;
+
+        /// <summary>When the contour box was last checked, from <c>TickCount</c>.</summary>
+        private int _lastSelectionCheck;
+
+        /// <summary>
+        /// True when the Geometry tab's controls are describing a contour list that has
+        /// since changed. Cleared by <see cref="RefreshContourControls"/>, at idle.
+        /// </summary>
+        private bool _controlsOutOfStep;
+
+        /// <summary>Selection boxes that have changed and not yet been read.</summary>
+        private readonly HashSet<int> _pendingSelections = new HashSet<int>();
+
+        /// <summary>True while a modal dialog of ours is over the page.</summary>
+        private bool _browsing;
 
         private bool _closing;
 
@@ -712,6 +746,7 @@ namespace GCam.SolidWorks.PropertyPages
         protected override void PageShown()
         {
             RestoreContourSelection();
+            StartSelectionWatch();
             ShowCutDirection();
             ShowHeights();
 
@@ -845,6 +880,10 @@ namespace GCam.SolidWorks.PropertyPages
                 _loading = false;
             }
 
+            // What the watch compares against: everything just put back is a selection
+            // this page already knows about.
+            _syncedContours = JobSelections.CountWithMark(model, MarkContours);
+
             if (missing.Count > 0)
             {
                 Log.Warn(
@@ -891,6 +930,144 @@ namespace GCam.SolidWorks.PropertyPages
             return reversed.Count == 0
                 ? status
                 : status + " Reversed: " + string.Join(", ", reversed) + ".";
+        }
+
+        /// <summary>
+        /// Watches the contour box for a change SOLIDWORKS did not report.
+        /// </summary>
+        /// <remarks>
+        /// <b>Deleting rows from a selection box does not always raise
+        /// <c>OnSelectionboxListChanged</c></b> - measured on 2025 SP3, where deleting both
+        /// rows through the box's own right-click menu produced no callback at all. Without
+        /// this the page goes on holding contours the user has deleted: their chains stay
+        /// highlighted in the graphics area over an empty box, and OK commits geometry that
+        /// is no longer selected.
+        ///
+        /// Comparing counts rather than contents, and against what this page last *read*
+        /// rather than against its own contour list: an entity the list legitimately drops
+        /// - anything that is not an edge or a face - would otherwise read as a change on
+        /// every check and re-read for ever.
+        ///
+        /// <b>Driven by SOLIDWORKS' idle notification, never by a timer.</b> A
+        /// <c>System.Windows.Forms.Timer</c> ticks inside the nested message loop a
+        /// right-click menu runs, so the check landed in the middle of SOLIDWORKS' own
+        /// handling of the deletion and re-entered it to read the model and force a
+        /// repaint - which killed SOLIDWORKS outright. <c>OnIdleNotify</c> fires "after
+        /// all of the messages have been processed, including posted repaints", which is
+        /// exactly the moment this work is safe.
+        /// </remarks>
+        private void StartSelectionWatch()
+        {
+            if (_watchingIdle)
+            {
+                return;
+            }
+
+            SwApp.OnIdleNotify += OnIdle;
+            _watchingIdle = true;
+        }
+
+        private void StopSelectionWatch()
+        {
+            if (!_watchingIdle)
+            {
+                return;
+            }
+
+            _watchingIdle = false;
+
+            try
+            {
+                SwApp.OnIdleNotify -= OnIdle;
+            }
+            catch (Exception ex)
+            {
+                Errors.Handle(ex, nameof(StopSelectionWatch), quiet: true);
+            }
+        }
+
+        /// <summary>
+        /// An entry point: SOLIDWORKS' idle notification, fired when it has finished
+        /// everything it had to do.
+        /// </summary>
+        /// <remarks>
+        /// Quiet, and cheap: idle fires continuously, so nothing happens here beyond a
+        /// clock comparison until <see cref="SelectionWatchInterval"/> has passed, and
+        /// nothing happens then beyond reading one count.
+        ///
+        /// Only while the Geometry tab is in front, because that is the only time the
+        /// contour box can be picked into - and only when no dialog of ours is over the
+        /// page, since re-reading redraws, and redrawing from under a modal window is the
+        /// one thing <see cref="BrowseForTool"/> proves is dangerous here.
+        /// </remarks>
+        private int OnIdle()
+        {
+            try
+            {
+                if (!IsOpen || IsRebuilding || _closing || _loading || _browsing)
+                {
+                    return 0;
+                }
+
+                // One thing per turn of the pump, controls last: this is the ordering the
+                // silent kill in SelectionChanged is avoided by.
+                if (_pendingSelections.Count > 0)
+                {
+                    ApplyPendingSelections();
+                    return 0;
+                }
+
+                if (_controlsOutOfStep)
+                {
+                    RefreshContourControls();
+                    return 0;
+                }
+
+                if (_activeTab != TabGeometry)
+                {
+                    return 0;
+                }
+
+                int now = System.Environment.TickCount;
+
+                if (unchecked(now - _lastSelectionCheck) < SelectionWatchInterval)
+                {
+                    return 0;
+                }
+
+                _lastSelectionCheck = now;
+
+                CheckContourSelection();
+            }
+            catch (Exception ex)
+            {
+                Errors.Handle(ex, nameof(OnIdle), quiet: true);
+            }
+
+            return 0;
+        }
+
+        private void CheckContourSelection()
+        {
+            ModelDoc2 model = _activeDocument();
+
+            if (model == null)
+            {
+                return;
+            }
+
+            int count = JobSelections.CountWithMark(model, MarkContours);
+
+            if (count == _syncedContours)
+            {
+                return;
+            }
+
+            Log.Debug(
+                "The contour box holds {0} item(s) and nothing said so; re-reading from {1}.",
+                count, _syncedContours);
+
+            SelectionChanged(IdContours);
         }
 
         /// <summary>
@@ -1094,7 +1271,20 @@ namespace GCam.SolidWorks.PropertyPages
         /// </remarks>
         private void BrowseForTool()
         {
-            Tool partTool = _pickToolIntoPart();
+            Tool partTool;
+
+            // Nothing of ours may run while the browser is over the page - see
+            // OnSelectionWatchTick.
+            _browsing = true;
+
+            try
+            {
+                partTool = _pickToolIntoPart();
+            }
+            finally
+            {
+                _browsing = false;
+            }
 
             if (partTool == null)
             {
@@ -1427,6 +1617,36 @@ namespace GCam.SolidWorks.PropertyPages
                 return;
             }
 
+            // **Nothing is done here but a note of which box changed.** The help is
+            // explicit that this arrives in the middle of SOLIDWORKS' own selection
+            // processing, is neither a pre- nor a post-notification, and that an add-in
+            // may only query, never act. Reading the model and redrawing from here is
+            // acting. It is done at idle instead - see OnIdle.
+            _pendingSelections.Add(id);
+        }
+
+        private void ApplyPendingSelections()
+        {
+            var ids = _pendingSelections.ToList();
+            _pendingSelections.Clear();
+
+            foreach (int id in ids)
+            {
+                SelectionChanged(id);
+            }
+        }
+
+        /// <summary>
+        /// Reads a selection box's contents onto the working operation, once SOLIDWORKS
+        /// has finished with the selection that changed.
+        /// </summary>
+        private void SelectionChanged(int id)
+        {
+            if (_loading || !IsOpen || IsRebuilding || _closing)
+            {
+                return;
+            }
+
             ModelDoc2 model = _activeDocument();
 
             if (model == null)
@@ -1487,11 +1707,29 @@ namespace GCam.SolidWorks.PropertyPages
                 settings.Contours.Add(picked);
             }
 
-            // The list has changed under the controls that describe one row of it.
+            _syncedContours = JobSelections.CountWithMark(model, MarkContours);
+
+            // **The 3D view first, the page's own controls afterwards and on another turn
+            // of the pump.** Reading or writing a control in the same turn as a deletion
+            // SOLIDWORKS never reported takes the call chain out from under us - no
+            // exception, nothing in the log, execution simply stops - and whatever came
+            // after it is lost. What matters is the graphics, so it goes first, and the
+            // controls are left to OnIdle by which time SOLIDWORKS has finished.
+            ShowCutDirection();
+
+            _controlsOutOfStep = true;
+        }
+
+        /// <summary>
+        /// Brings the Geometry tab's controls back in step with the contour list, on a
+        /// turn of the message pump of its own.
+        /// </summary>
+        private void RefreshContourControls()
+        {
+            _controlsOutOfStep = false;
+
             ShowContourModifiers();
             _contoursStatus.Caption = ContourStatus();
-
-            ShowCutDirection();
         }
 
         /// <summary>
@@ -1550,6 +1788,8 @@ namespace GCam.SolidWorks.PropertyPages
             }
 
             _closing = true;
+
+            StopSelectionWatch();
 
             // Before the commit, like the job page's stock box: the arrows describe the
             // clone that is about to be dropped. On OK the tree reselects the operation a

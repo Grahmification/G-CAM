@@ -117,6 +117,21 @@ namespace GCam.SolidWorks.Selection
             ContourSelectionsFrom(model, mark);
 
         /// <summary>
+        /// How many entities are in the box with this mark, whatever their type.
+        /// </summary>
+        /// <remarks>
+        /// Everything selected, not just what a contour can be made of, so that a page
+        /// comparing this against its own list is comparing like with like: an entity that
+        /// is counted here and skipped there would otherwise read as a change for ever.
+        /// </remarks>
+        public static int CountWithMark(ModelDoc2 model, int mark)
+        {
+            var selection = model?.SelectionManager as SelectionMgr;
+
+            return selection == null ? 0 : selection.GetSelectedObjectCount2(mark);
+        }
+
+        /// <summary>
         /// The edges and faces currently selected in the graphics area.
         /// </summary>
         /// <remarks>
