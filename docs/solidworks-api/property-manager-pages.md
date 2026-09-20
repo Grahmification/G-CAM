@@ -320,6 +320,70 @@ have a current selection. Pressing a button does **not** deactivate the box: ver
 `ReverseHighlightedContour` acts on the row when there is one and asks for a highlight when
 there is not, which is the behaviour wanted.
 
+## A selection box reports the highlighted row only if you ask — **From docs**
+
+There *is* a notification for "the user clicked a different row", and it is easy to
+conclude there is not: nothing in `IPropertyManagerPage2Handler9` is named for it. It
+arrives as `OnListboxSelectionChanged`, whose help covers "a list box **or selection list
+box**", and a selection box only sends it when created with
+
+```csharp
+box.Style |= (int)swPropMgrPageSelectionBoxStyle_e
+    .swPropMgrPageSelectionBoxStyle_WantListboxSelectionChanged;   // 8
+```
+
+`Style` is build-time only, which costs nothing on pages rebuilt per show. Without it, a
+control that describes "the highlighted contour" has no way to notice the highlight
+moving; with it, the Operation page's Geometry tab follows the row.
+
+## A deleted row is often not reported at all — **Verified (2025 SP3)**
+
+Deleting rows from a selection box through its own right-click menu frequently raises
+**no** `OnSelectionboxListChanged`. Measured repeatedly on one part: sometimes every
+deletion reported, sometimes the last one only, sometimes neither of two. A page that
+reads its selections only from that callback therefore keeps geometry the user has
+removed — in G-CAM the deleted contours stayed highlighted in the graphics area over an
+empty box, and OK would have committed them.
+
+**The callback is also not a place to do anything**, which is documented and easily
+missed:
+
+> The method is called during the process of SOLIDWORKS selection. It is neither a
+> pre-notification nor a post-notification. The add-in should not be taking any action
+> that may affect the model or the selection list. The add-in should only be querying
+> information.
+
+So a page that must know what is in a box needs a second route. G-CAM's is a watch on
+`SldWorks::OnIdleNotify`: at most a few times a second, compare
+`ISelectionMgr::GetSelectedObjectCount2(mark)` with the count the page last read, and
+re-read when they differ. Comparing against the last *read* count and not against the
+page's own list matters — an entity the page legitimately ignores would otherwise read as
+a change for ever.
+
+### Why idle, and not a timer
+
+A `System.Windows.Forms.Timer` **ticks inside the nested message loop a context menu
+runs**. The first version of this watch was a 400ms timer, and it fired in the middle of
+SOLIDWORKS' own handling of the deletion, re-entering it to read the model and force a
+repaint. SOLIDWORKS died instantly, with the log's last line inside the re-read.
+`OnIdleNotify` is documented as firing "after all of the messages have been processed,
+included posted repaints", which is exactly the property wanted.
+
+### Reading or writing a control in that same turn is fatal, silently
+
+With the watch moved to idle, the re-read reached the page's own controls — a
+`CurrentSelection` read and a `Label.Caption` write — and **execution stopped there**. No
+exception reached `ErrorHandler`, nothing was logged, SOLIDWORKS stayed up, and the next
+idle ran normally. That signature is a corrupted-state exception escaping into COM, which
+.NET does not hand to a `catch` and SOLIDWORKS discards.
+
+The same control access is fine at idle after an ordinary pick — measured in the same
+run, three seconds earlier. What is fatal is doing it in the same turn of the pump as a
+deletion SOLIDWORKS never reported. So the page does one thing per turn and leaves its
+controls until last: the model and the 3D view are updated first, a flag says the controls
+are out of step, and the next idle brings them into line. Anything that must not be lost
+therefore belongs *before* the first control access, not after it.
+
 ## A page empties its own selection boxes as it comes down — **Verified (2025 SP3)**
 
 `OnSelectionboxListChanged` fires while SOLIDWORKS takes a page apart, reporting the box
@@ -517,6 +581,12 @@ Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
 | Selection boxes: bodies and coordinate systems | **Not yet exercised** |
 | Selection boxes: contour edges and faces, stored and restored | **Confirmed** — but only after `ClearSelection2`; see [coordinate-systems.md](coordinate-systems.md) |
 | `IPropertyManagerPageSelectionbox.CurrentSelection` after a button press | **Confirmed** — gives the highlighted row, and -1 when none is highlighted |
+| `OnListboxSelectionChanged` from a selection box, with `WantListboxSelectionChanged` set | **Confirmed** — the row-highlight notification |
+| `OnSelectionboxListChanged` when rows are deleted from the box's right-click menu | **Confirmed unreliable** — often never fires; see above |
+| A `System.Windows.Forms.Timer` polling the selection while a context menu is open | **Confirmed fatal** — it ticks inside the menu's own message loop |
+| `SldWorks::OnIdleNotify` as the clock for that work instead | **Confirmed** |
+| Reading or writing a page control in the same pump turn as an unreported deletion | **Confirmed fatal, silently** — no exception, no log, SOLIDWORKS survives, the rest of the call is lost |
+| `Checkbox.Checked` on a shown page | **Not yet exercised** — written only when the value changes, which has not yet coincided with a measurement |
 | `Visible` on a live user-driven change | **Confirmed safe** — the height rows show a selection box when their mode becomes Selection |
 | Selection box marks that are **not** powers of two | **Confirmed broken** — see below |
 | A button control, and `OnButtonPress` reaching the page | **Confirmed** — Browse… opens the tool picker |

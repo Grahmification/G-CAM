@@ -16,5 +16,6 @@ Official reference: the SolidWorks API Help installed alongside SolidWorks, and 
 - [Storing data inside a SOLIDWORKS document](third-party-storage.md) — the store API and its own notifications, why writing is only legal during a save, and why each open document needs its own subscriber.
 - [NuGet dependencies in an add-in](addin-dependencies.md) — why packages fail to load with no app.config, and why a try/catch cannot save you.
 - [Drawing OpenGL over the 3D view](opengl-overlay.md) — `BufferSwapNotify` and the type you must cast to, why only OpenGL 1.1 is safely reachable, leaving the context as you found it, and why the Performance option everyone blames turns out to be innocent.
+- [Turning an edge into points](edge-tessellation.md) — why ignoring `ICurveParamData.Sense` makes an arc tessellate the long way round, and measuring the result against the curve's own length.
 - [Coordinate systems and bounding boxes](coordinate-systems.md) — why the transform is measured rather than read out of `ArrayData`, and why `GetExtremePoint` rather than `GetBodyBox` or tessellation.
 - [CodeStack](codestack.md) — third-party task-oriented resource; what it covers that the official help doesn't, and how to clone it offline.

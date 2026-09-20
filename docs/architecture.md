@@ -20,6 +20,7 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/Hosting` — Manager Pane tab, one per open part, kept in sync by document events | Done | [UI shells](design/ui-shells.md) |
 | `Core/Model` — Job, Stock, JobDocument, the part's tool list | Done, and persisted | [Jobs](design/jobs.md) |
 | `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4, Polyline | Started — what stock, rendering and contouring need | |
+| `Core/Geometry` — `Chaining`, `EdgePropagation` (how far a pick runs, over an `IEdgeTopology` the SolidWorks project implements) | Done for contouring | [Operations](design/operations.md) |
 | `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done. Closed contours by the sign of the distance — orientation does not affect the side; one side of an open path by extracting it from Clipper's ribbon | [Operations](design/operations.md) |
 | `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh, HeightPlaneMesh, ScreenArrow, PreviewSelection | Done for what exists to draw | [Jobs](design/jobs.md) |
 | `Core/Selection` — `MultiSelection<T>`, the click / Ctrl-click / Shift-click rules | Done | [Jobs](design/jobs.md) |
@@ -27,7 +28,7 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/PropertyPages` — handler base, shared page base, Job and Operation pages | Done (2025 SP3). The Operation page is five tabs and rebuilds itself to show a change; its real gaps are tabulated under "the property page" in the design note | [Operations](design/operations.md) |
 | `SolidWorks/Selection` — selection boxes to bodies, coordinate systems and contour edges, stored and restored | Done (2025 SP3) | |
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box, origin triad, toolpaths), contour highlights, cut-direction arrows and the view scale that sizes them, height planes | Done | [Jobs](design/jobs.md) |
-| `SolidWorks/Extraction` — transforms, model extent, contour tessellation, generation context | Done; a contour generates from selected edges on a real part (2025 SP3). Open chains are cut, not discarded | [Operations](design/operations.md) |
+| `SolidWorks/Extraction` — transforms, model extent, contour tessellation, edge topology, generation context | Done; a contour generates from selected edges on a real part (2025 SP3). Open chains are cut, not discarded, and a pick runs as far as its own modifiers say | [Operations](design/operations.md), [Edge tessellation](solidworks-api/edge-tessellation.md) |
 | `Core/Model` — Operation, heights, geometry references, Toolpath | Done | [Operations](design/operations.md) |
 | `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates; face, adaptive and drill are designed only | [Operations](design/operations.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; runs on the STA thread until an `SwDispatcher` exists | [Operations](design/operations.md) |
@@ -99,6 +100,9 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   ├── Geometry/
 │   │   │   ├── Chaining.cs            loose curve pieces → contours, open or closed,
 │   │   │   │                          each knowing which pieces it was built from
+│   │   │   ├── EdgePropagation.cs     how far a selection runs from the edge picked —
+│   │   │   │                          tangentially, or along one Z; over IEdgeTopology,
+│   │   │   │                          which GCam.SolidWorks answers
 │   │   │   ├── Primitives/            Vec3, Bounds, Matrix4, Polyline
 │   │   │   ├── Offset/                IContourOffsetter + Clipper2Offsetter
 │   │   │   ├── Brep/                  own face/edge/loop model, SW-independent
@@ -135,7 +139,8 @@ Directory.Build.props                  shared settings + $(SolidWorksApiDir)
 │   │   ├── Extraction/                SW geometry → GCam.Core, units conversion;
 │   │   │                              CoordinateSystems, JobFrame, ModelExtent,
 │   │   │                              ContourExtraction (edges → tessellated loops),
-│   │   │                              GenerationContextFactory
+│   │   │                              ModelEdgeTopology (IEdge/IVertex → Core's
+│   │   │                              IEdgeTopology), GenerationContextFactory
 │   │   │                              — later the BRep walk
 │   │   ├── Rendering/
 │   │   │   ├── Interop/Gl.cs          [DllImport("opengl32.dll")] — ~20 entry points

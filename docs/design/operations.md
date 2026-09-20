@@ -4,11 +4,12 @@ What every operation has regardless of strategy, how a strategy adds the rest, a
 one gets generated, stored, drawn and edited. Read this before touching `Core/Model`,
 `Core/Strategies`, `Core/Generation`, the Operation property page or toolpath rendering.
 
-Built as far as slice 14 of the build order at the end of this document, everything up to
-slice 11 verified by hand on 2025 SP3: a 2D contour generates from edges selected on a real
-part — open profiles as well as closed — draws, and persists; there is a five-tab property
-page to set it up on, a tool can be picked out of a library into the part, and each contour
-can be reversed to cut its other side. The job tree deletes, duplicates, renames,
+Built as far as slice 15 of the build order at the end of this document, everything up to
+slice 11 and slice 15 verified by hand on 2025 SP3: a 2D contour generates from edges
+selected on a real part — open profiles as well as closed — draws, and persists; there is a
+five-tab property page to set it up on, a tool can be picked out of a library into the
+part, and each contour carries its own direction and how far it propagates from the edge
+that was picked. The job tree deletes, duplicates, renames,
 suppresses and generates one — see [In the job tree](#in-the-job-tree). Nothing has been
 posted, and the page has real gaps — they are listed under
 [the property page](#the-property-page) rather than left to be discovered.
@@ -296,15 +297,14 @@ The cost is real: **a model edit can silently change how far a chain runs**, by 
 edges tangent that were not. Staleness covers it — a SOLIDWORKS rebuild marks every
 operation stale, so the path is regenerated and seen before it can post without a warning.
 
-`Reversed` is one flag rather than an inside/outside setting, because it *is* the side:
-inside instead of outside for a closed contour, the other hand for an open one. It is the
-same thing HSMWorks' per-contour arrow toggles. The climb/conventional choice is
-independent of it and only reverses travel.
+`Reversed` is **the direction of travel** — HSMWorks' per-contour arrow, and the Reverse
+button on the Geometry tab. Which side of the line the cutter runs on is not stored at
+all: it follows from the direction and the climb/conventional choice together, which is
+what those words mean on a machine — see
+[2D contouring](#2d-contouring-the-first-strategy).
 
-**`Reversed` is honoured; the two propagation flags are still stored only.** Reversing is
-how the user picks which side of a contour the cutter runs on — outside instead of inside
-for a closed profile, the other hand for an open one — and it is the Reverse button on the
-Geometry tab.
+All three flags are honoured. The two propagation flags are the checkboxes beside Reverse,
+and what they do is [the walk](#how-far-a-pick-runs) below.
 
 The flag is per *pick*, but a **chain has exactly one direction**, because it is cut as one
 continuous move. Chaining pools every selected edge, so one chain is often built from
@@ -320,6 +320,34 @@ closed one it could not, because `Contour2dStrategy` forces the orientation from
 climb/conventional setting as the first thing it does, and that would quietly undo the
 reversal. Hence `ResolvedContour`, which pairs the curve with the intent and lets the
 strategy apply it last.
+
+### How far a pick runs
+
+`Core/Geometry/EdgePropagation` walks the model's edges from the one that was picked;
+`GCam.SolidWorks/Extraction/ModelEdgeTopology` answers its questions from `IEdge` and
+`IVertex`, so the walk itself is graph arithmetic with headless tests, the same split
+`Chaining` makes. HSMWorks' two modifiers, as measured against it:
+
+| | |
+| --- | --- |
+| **Tangential propagation** | Follows edges running smoothly on from this one, **forwards only** — the way the arrow points, so Reverse turns the walk round with it. It may climb or descend a 3D edge |
+| **Propagate along Z** | Follows any joining edge lying flat at the picked edge's own height, **both ways** — and opening the backward end is what lets tangency run backwards too |
+
+One walk, not two: at every junction an edge is crossed when *either* rule accepts what is
+on the far side, which is why the two are commonly on together.
+
+**Tangency wins where both rules match, and a branch is an ambiguity inside the rule that
+won.** Two tangent continuations have no answer the user could have meant, and neither do
+two level edges with nothing tangent — so the walk stops. But one tangent continuation
+alongside an edge that merely happens to lie at the same height is not a branch: that is
+the junction a fillet makes where its end edge crosses the face, and treating it as one
+stopped the walk dead at the corners propagation exists to get round.
+
+**A propagated chain is flattened onto the Z of the edge it was picked from**, because a
+walk that ran up a 3D edge still has to be cut at one depth, and a piece that collapses to
+nothing — a riser the walk climbed — is dropped. Flattening is a parameter of extraction
+rather than a rule inside the walk, so a 3D strategy can take the same chains where they
+actually lie.
 
 **Tangential extension is a different thing and is not here.** `tangentialExtensionDistance`
 and its family are strategy parameters that act on an already-fixed selection, so they
@@ -455,25 +483,26 @@ full circle. The cutter plunged onto the finished wall and looped right round it
 
 Three things in it are worth knowing before changing it:
 
-- **The side is `Reversed`'s alone; `Direction` only reverses travel.** That is what the
-  words mean on a machine: with the cutter on a given side, reversing the feed is exactly
-  what turns a climb cut into a conventional one. Both rules live in
-  `Contour2dOffsetting`, so the cut-direction arrows cannot disagree with the toolpath.
+- **Travel is `Reversed`'s alone; the side is climb/conventional's.** HSMWorks' split, and
+  the one that keeps each control doing one thing: Reverse turns the arrow round, and
+  climb/conventional moves the cutter across the line without touching the arrow. Both
+  still change the side, because with travel fixed the side is exactly what climb means.
+  Both rules live in `Contour2dOffsetting`, so the cut-direction arrows cannot disagree
+  with the toolpath. *(This is the opposite way round from what the code did until
+  2026-09-20, when `Reversed` chose the side and `Direction` reversed travel. Both are
+  self-consistent; only this one matches HSMWorks, and only this one lets a user change
+  the side without also changing which way the profile is cut.)*
 - **A closed contour takes its side from the sign of the offset**, not from its
-  orientation. Measured, and it is the opposite of what this note said until 2026-09-19:
-  Clipper grows the enclosed region for a positive distance *whichever way the path runs*,
-  so orientation is free to carry the direction of travel instead. Reversed therefore
-  offsets inward, which is how a pocket is cut.
-- **Reversing a closed contour turns it round as well as moving the cutter inside**, and
-  that is required rather than incidental: climb on the outside of a boss is a
-  counter-clockwise run and climb on the inside of a pocket is a clockwise one, so a cut
-  that moved inside without reversing would quietly stop being a climb cut. `climb !=
-  Reversed` reads as "counter-clockwise" and is right for all four combinations.
+  orientation. Measured: Clipper grows the enclosed region for a positive distance
+  *whichever way the path runs*, so orientation is free to carry travel instead. Outward
+  for `climb != Reversed` — climb on the outside of a boss is a counter-clockwise run and
+  climb on the inside of a pocket is a clockwise one — and inward otherwise, which is how
+  a pocket is cut.
 - **An open path has no inside, so its side is named outright** — right of travel for a
   climb cut, since a cutter turning clockwise seen from above then has its edge moving
-  *with* the feed where it touches. Travel turns round with `Direction` so that the hand
-  stays put. A negative distance is not passed through: an open path has no area to
-  shrink, so the side is flipped and the magnitude used.
+  *with* the feed where it touches. Travel does not turn round with `Direction`, so the
+  hand is what changes. A negative distance is not passed through: an open path has no
+  area to shrink, so the side is flipped and the magnitude used.
 - **A closed pass starts midway along its longest run, not at a corner.** A lead-in
   reaches back about r√2, which at a corner aims at the neighbouring wall. Cutting outside
   hid it; the first pocket put the touch-down 1mm off the wall it was about to finish.
@@ -725,7 +754,7 @@ costs height on every show.
 | Tab | Built by | Contents |
 | --- | --- | --- |
 | Tool | The base page | Two groups: the tool's name as a header with Browse…, then feed and speed — one physical cutter, but numbers that belong to this operation alone |
-| Geometry | The strategy | Selection box, a Reverse button for the highlighted contour, a line saying which are reversed, and in the 3D view each contour highlighted with an arrow beside it — see below |
+| Geometry | The strategy | Selection box, then the controls for the highlighted contour — two propagation checkboxes and Reverse — a line naming that contour and saying which are reversed, and in the 3D view each contour highlighted with an arrow beside it — see below |
 | Heights | The base page | Five mode + offset rows, and a plane in the 3D view for each — see below |
 | Passes | The strategy | Stepover, stepdown, tolerance, and stock to leave in a group whose header checkbox turns it off without clearing the amounts. Either amount may be negative, which cuts past the profile rather than short of it — radial stock past the cutter radius carries it to the other side, leads and all |
 | Linking | The strategy | Lead-in/out, ramping, retracts — only for strategies that have them |
@@ -776,6 +805,16 @@ or outside a profile, and by the time there is, the page has been accepted. So e
 is drawn along its own length, with one arrow beside it in the contour's own plane, on the
 cutter's side and pointing the way it travels. Both redraw on every pick, on
 Climb/Conventional and on Reverse, and go when the page closes.
+
+**The Geometry tab's controls act on one contour — the highlighted row**, and the status
+line names which, because the rows themselves cannot be annotated. Highlighting a
+different row brings that contour's modifiers up, which needs a notification SOLIDWORKS
+only sends when asked; see
+[property-manager-pages.md](../solidworks-api/property-manager-pages.md). With no row
+highlighted they act on the most recent pick, which is the state the box is in straight
+after picking. A new pick inherits whatever the checkboxes show, so picking a run of edges
+the same way does not mean setting each one afterwards — the defaults on
+`ContourSelection` are therefore what a *new operation* starts from and nothing else.
 
 **The highlight follows the chained contour, not the selection**, which is the half
 SOLIDWORKS cannot show: it already lights up what was picked, and what gets cut is what
@@ -894,7 +933,6 @@ decisions to leave them out; they are unbuilt.
 | Reading a height off a *sloped* face | `FromSelection` works for anything at a single Z — see the Heights tab above. A face that is not square to the job's Z is refused rather than guessed at, which is the right answer until somebody decides what it should mean |
 | `Operation.Validate()` | Never called. OK commits an operation with no tool or no contour without saying so, and the complaint arrives at generation time instead |
 | Lead `Distance`, `Sweep`, `VerticalRadius`, `Perpendicular` | Stored, round-tripped and read by the strategy; not editable |
-| Contour modifiers | `Reversed` is reachable, via the Reverse button. `PropagateTangent` and `PropagateAlongZ` are still stored as intent and never honoured |
 | The derived feeds and speeds | Surface speed and feed per tooth are meant to be editable at both ends (see above); only the canonical values have boxes. `FeedsAndSpeeds` is already in Core |
 | Conditional visibility | Maximum stepdown shows when multiple depths is off; the lead-out radius shows when "same as lead in" is ticked. `JobPropertyPage.ShowControlsFor` is the pattern to copy |
 | The rest of the live preview | The cut-direction arrows are built. The stock and heights are not drawn while the page is up, and parameter edits do not regenerate the toolpath — only accepting the page does |
@@ -1032,6 +1070,7 @@ while they are still cheap to change.
 | 12 | The tree's operation commands: rename, generate, suppress, duplicate, delete — and the dirty-marking every tree edit was missing | Slice 8 made operations creatable and editable and left no way to get rid of one. Two bugs came out with it: <kbd>Del</kbd> on an operation deleted its whole job, and no tree edit ever marked the part dirty | **Done** — 2026-09-15, 13 tests |
 | 13 | `OperationStatus` and the state badge in the tree | `OperationState` had been modelled, persisted and corrected on load since slice 6a, and was invisible: a stale operation looked exactly like a generated one, which made staleness a rule nobody could act on | **Done** — 2026-09-16, 18 tests |
 | 14 | `PartRebuildWatcher` — the rebuild that nothing was listening for | Slice 13 made staleness visible, which is what exposed it: `Staleness.ModelRebuilt` had been written and tested since slice 5 with no caller anywhere, so editing a dimension invalidated nothing | **Done** — 2026-09-16, 3 tests. **Not yet verified on 2025 SP3** |
+| 15 | The contour modifiers: `EdgePropagation` + `ModelEdgeTopology`, the two checkboxes, and travel/side split the way HSMWorks does it | The modifiers had been stored since slice 2 and honoured by nothing, so a selection meant one edge however it was picked. Doing it properly forced the cut-side rules into HSMWorks' shape, because a Reverse that changes what is *in* the chain cannot also be the only way to change the side | **Done** — 2026-09-20, 8 tests, verified by hand on 2025 SP3 after three bugs it exposed: see below |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an
@@ -1049,6 +1088,19 @@ shipped and "working" for a while, and none of it could have been noticed sooner
   through.
 - Contours would not restore into the page, which needed a page that reopened often enough
   for anyone to care.
+
+**Slice 15 found three faults of its own, and none of them was in the new code.** All
+three had been shipped for a week and were invisible until a chain ran further than one
+edge:
+
+- **Arcs tessellated the long way round.** `ICurveParamData.Sense` was ignored, so a
+  reversed-sense fillet came back as the complementary arc — a 1mm radius cut as the 4.4mm
+  arc that is not there. It reached the toolpath, not only the preview. See
+  [edge-tessellation.md](../solidworks-api/edge-tessellation.md).
+- **Deleting a row from the selection box is often not reported**, so the page kept
+  contours the user had removed and would have committed them on OK.
+- A junction with one tangent continuation and one edge merely at the same height was
+  read as a branch, which stopped the walk at exactly the fillets it exists to cross.
 
 The pattern is worth naming: **a slice's real test is the slice after it.** Marking one
 done because its own tests pass says nothing about whether it is right, and the three
