@@ -349,10 +349,14 @@ nothing — a riser the walk climbed — is dropped. Flattening is a parameter o
 rather than a rule inside the walk, so a 3D strategy can take the same chains where they
 actually lie.
 
-**Tangential extension is a different thing and is not here.** `tangentialExtensionDistance`
-and its family are strategy parameters that act on an already-fixed selection, so they
-belong in `Contour2dSettings` and arrive with the algorithm that honours them. The supplied
-templates set them to 0.5mm and 1mm, so they are wanted — just not yet.
+**Tangential extension is a different thing, and is a strategy parameter.** It acts on an
+already-fixed selection, so `TangentialExtensionDistance` lives in `Contour2dSettings` and
+is applied by `Core/Geometry/TangentialExtension` — one distance for both ends of every
+open contour, **before** the cutter offset, so the extension is offset with the rest of the
+profile and is cut at every depth. Negative shortens; a contour it consumes entirely is
+reported and skipped rather than cut as nothing. HSMWorks' second distance
+(`tangentialExtensionDistanceEnd`, for asymmetry) and its `tangentialFragmentExtensionDistance`,
+which stretches the computed motion instead of the profile, are both deliberately absent.
 
 ## Strategy settings
 
@@ -406,8 +410,8 @@ public interface IToolpathStrategy
 
 `GenerationContext` carries the resolved inputs — the operation, its part tool, the
 resolved contours, the resolved heights and the stock — so a strategy touches no COM and no
-SOLIDWORKS, and runs on a worker thread. Strategies are pure: same context in, same
-toolpath out. `IGenerationContextFactory` builds one, declared in Core and implemented in
+SOLIDWORKS, and runs on a worker thread. Strategies are deterministic: same context in,
+same toolpath and same warnings out. `IGenerationContextFactory` builds one, declared in Core and implemented in
 `GCam.SolidWorks`, because resolving heights and geometry is the one part of generation
 that needs the model.
 
@@ -439,6 +443,11 @@ Four outcomes that are not "generated" and not failures either:
 - **A disabled operation is skipped**, keeping whatever toolpath and state it had.
 - **An empty result is a `Warning`**, not a silent success. An operation can legitimately
   have nothing to cut, and saying nothing would look like success with an invisible result.
+- **So is a path with something worth reading about it**, through
+  `GenerationContext.Warnings` — the only thing a strategy says other than the path
+  itself. A strategy that cannot proceed throws; without this, everything short of that
+  would be lost, including a contour dropped for being shorter than its own negative
+  tangential extension.
 - **A strategy with no implementation yet fails with a readable message.** Settings, a
   property page and persistence all exist before an algorithm does, so this is a real state
   rather than a placeholder — and it beats a null reference from inside the queue.
@@ -754,7 +763,7 @@ costs height on every show.
 | Tab | Built by | Contents |
 | --- | --- | --- |
 | Tool | The base page | Two groups: the tool's name as a header with Browse…, then feed and speed — one physical cutter, but numbers that belong to this operation alone |
-| Geometry | The strategy | Selection box, then the controls for the highlighted contour — two propagation checkboxes and Reverse — a line naming that contour and saying which are reversed, and in the 3D view each contour highlighted with an arrow beside it — see below |
+| Geometry | The strategy | Selection box, then the controls for the highlighted contour — two propagation checkboxes and Reverse — a line naming that contour and saying which are reversed, the tangential extension that applies to every open contour, and in the 3D view each contour highlighted with an arrow beside it — see below |
 | Heights | The base page | Five mode + offset rows, and a plane in the 3D view for each — see below |
 | Passes | The strategy | Stepover, stepdown, tolerance, and stock to leave in a group whose header checkbox turns it off without clearing the amounts. Either amount may be negative, which cuts past the profile rather than short of it — radial stock past the cutter radius carries it to the other side, leads and all |
 | Linking | The strategy | Lead-in/out, ramping, retracts — only for strategies that have them |
