@@ -130,12 +130,15 @@ namespace GCam.SolidWorks.Extraction
             var curve = model.GetCurve() as Curve;
             CurveParamData parameters = curve == null ? null : model.GetCurveParams3();
 
+            // The edge's ends, not the curve's: they are swapped when the two run opposite
+            // ways, which is the same rule ContourExtraction.Tessellate follows to keep
+            // the walk's idea of "forwards" and the tessellated direction the same.
             ends = parameters == null
                 ? new[] { Vec3.Zero, Vec3.Zero }
                 : new[]
                 {
-                    InJob(parameters.StartPoint as double[]),
-                    InJob(parameters.EndPoint as double[]),
+                    InJob((parameters.Sense ? parameters.StartPoint : parameters.EndPoint) as double[]),
+                    InJob((parameters.Sense ? parameters.EndPoint : parameters.StartPoint) as double[]),
                 };
 
             _ends[edge] = ends;

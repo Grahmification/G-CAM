@@ -160,6 +160,23 @@ namespace GCam.Core.Tests.Geometry
         }
 
         [Fact]
+        public void A_tangent_continuation_beats_an_edge_that_is_merely_at_the_level()
+        {
+            // The junction a fillet makes on a face: something runs smoothly on, and
+            // something else happens to lie at the same height. Counting that as a branch
+            // stopped the walk at the very corners it exists to get round.
+            var edges = new Edges();
+            int picked = edges.Add(P(0, 0), P(10, 0));
+            int smooth = edges.Add(P(10, 0), P(20, 0));
+            edges.Add(P(10, 0), P(10, 10));
+            edges.Tangent(picked, smooth);
+
+            Assert.Equal(
+                new[] { picked, smooth },
+                EdgePropagation.Walk(picked, edges, tangent: true, alongZ: true));
+        }
+
+        [Fact]
         public void A_branch_stops_the_walk()
         {
             var edges = new Edges();

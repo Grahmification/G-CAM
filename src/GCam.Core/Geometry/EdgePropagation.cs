@@ -22,8 +22,9 @@ namespace GCam.Core.Geometry
     /// and vice versa. The second flag is also what opens the backward end, so tangential
     /// propagation runs both ways when it is on.
     ///
-    /// **A branch stops the walk.** Where two edges at a junction both qualify there is no
-    /// answer to which the user meant, and guessing produces a contour nobody picked.
+    /// **A branch stops the walk**, a branch being two edges a junction cannot choose
+    /// between under the rule that matched - see <see cref="Continuation"/>, which also
+    /// says why tangency beats the level rule rather than competing with it.
     /// </remarks>
     public static class EdgePropagation
     {
@@ -107,9 +108,22 @@ namespace GCam.Core.Geometry
         }
 
         /// <summary>
-        /// The one edge the walk may step onto at this junction, or -1 when there is no
-        /// such edge or more than one.
+        /// The one edge the walk may step onto at this junction, or -1 when the junction
+        /// cannot answer.
         /// </summary>
+        /// <remarks>
+        /// <b>Tangency wins where both rules match.</b> A junction commonly has one edge
+        /// running smoothly on and another that merely happens to lie at the same height -
+        /// the end edge of a fillet crossing the face is the usual one - and treating that
+        /// as a branch stopped the walk dead at the very corners it exists to get round.
+        /// The tangent continuation is the more specific answer, so it is taken whenever
+        /// there is exactly one of it.
+        ///
+        /// A branch is therefore an ambiguity *within* the rule that won: two tangent
+        /// continuations, or - with nothing tangent - two edges at the level. Neither has
+        /// an answer the user could have meant, and guessing produces a contour nobody
+        /// picked.
+        /// </remarks>
         private static int Continuation(
             int edge,
             bool atEnd,
@@ -118,7 +132,10 @@ namespace GCam.Core.Geometry
             bool alongZ,
             double level)
         {
-            int found = -1;
+            int tangentMatch = -1;
+            int tangentCount = 0;
+            int levelMatch = -1;
+            int levelCount = 0;
 
             foreach (int candidate in topology.Joining(edge, atEnd))
             {
@@ -127,23 +144,27 @@ namespace GCam.Core.Geometry
                     continue;
                 }
 
-                bool accepted = (tangent && topology.AreTangent(edge, candidate))
-                                || (alongZ && topology.LiesAt(candidate, level));
+                bool isTangent = tangent && topology.AreTangent(edge, candidate);
+                bool atLevel = alongZ && topology.LiesAt(candidate, level);
 
-                if (!accepted)
+                if (isTangent)
                 {
-                    continue;
+                    tangentCount++;
+                    tangentMatch = candidate;
                 }
-
-                if (found >= 0)
+                else if (atLevel)
                 {
-                    return -1;
+                    levelCount++;
+                    levelMatch = candidate;
                 }
-
-                found = candidate;
             }
 
-            return found;
+            if (tangentCount > 0)
+            {
+                return tangentCount == 1 ? tangentMatch : -1;
+            }
+
+            return levelCount == 1 ? levelMatch : -1;
         }
 
         private static bool Near(Vec3 a, Vec3 b) => (a - b).Length <= JunctionTolerance;

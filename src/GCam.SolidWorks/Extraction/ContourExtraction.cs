@@ -10,6 +10,7 @@ using GCam.Core.Strategies;
 using GCam.Core.Strategies.Shared;
 using GCam.SolidWorks.Selection;
 using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.swconst;
 
 namespace GCam.SolidWorks.Extraction
 {
@@ -38,6 +39,12 @@ namespace GCam.SolidWorks.Extraction
         /// feature.
         /// </summary>
         private const double LengthToleranceMetres = 1e-6;
+
+        /// <summary>
+        /// How far a tessellation may be from the length of the curve it came from before
+        /// it is reported, as a fraction.
+        /// </summary>
+        private const double LengthAgreement = 0.1;
 
         /// <summary>
         /// The selections, tessellated and chained into contours to cut.
@@ -84,7 +91,8 @@ namespace GCam.SolidWorks.Extraction
 
             foreach (OwnedEdge owned in EdgesOf(model, selections, topology, log))
             {
-                Polyline piece = Tessellate(owned.Edge, frame, chordToleranceMillimetres);
+                // The log is what lets Tessellate report geometry that came back wrong.
+                Polyline piece = Tessellate(owned.Edge, frame, chordToleranceMillimetres, log);
 
                 if (flatten && owned.Level.HasValue)
                 {
@@ -254,7 +262,8 @@ namespace GCam.SolidWorks.Extraction
         /// thing for a different question - whether an edge lies at one Z. Tessellating an
         /// edge into the job's frame is worth having once.
         /// </remarks>
-        internal static Polyline Tessellate(Edge edge, JobFrame frame, double chordToleranceMillimetres)
+        internal static Polyline Tessellate(
+            Edge edge, JobFrame frame, double chordToleranceMillimetres, IGCamLog log = null)
         {
             var curve = edge.GetCurve() as Curve;
 
@@ -275,11 +284,19 @@ namespace GCam.SolidWorks.Extraction
             double chordToleranceMetres = Math.Max(
                 Units.MillimetresToMetres(chordToleranceMillimetres), 1e-8);
 
+            // **The points go in the edge's own direction, which is not always the
+            // curve's.** `Sense` is false when the two run opposite ways, and the help is
+            // explicit about what that means: StartPoint is then the *end* of the edge.
+            // Handing those to GetTessPts unswapped asks it to travel from the end of the
+            // edge to its start, and on an arc the only way to do that is the long way
+            // round the circle - so a 1mm fillet came back as the 4.4mm arc that is not
+            // there, folded back across the corner. A line has no long way round, which is
+            // why only fillets ever showed it. Verified on 2025 SP3.
+            object from = parameters.Sense ? parameters.StartPoint : parameters.EndPoint;
+            object to = parameters.Sense ? parameters.EndPoint : parameters.StartPoint;
+
             var points = curve.GetTessPts(
-                chordToleranceMetres,
-                LengthToleranceMetres,
-                parameters.StartPoint,
-                parameters.EndPoint) as double[];
+                chordToleranceMetres, LengthToleranceMetres, from, to) as double[];
 
             if (points == null || points.Length < 6)
             {
@@ -300,7 +317,50 @@ namespace GCam.SolidWorks.Extraction
                 chain.Add(frame.ToJob.Transform(inPart));
             }
 
-            return new Polyline(chain);
+            var tessellated = new Polyline(chain);
+
+            WarnIfNotTheLengthOfTheEdge(tessellated, curve, parameters, log);
+
+            return tessellated;
+        }
+
+        /// <summary>
+        /// Says so when the points that came back are not the length the edge actually is.
+        /// </summary>
+        /// <remarks>
+        /// One COM call to catch the whole family of faults that the <c>Sense</c> bug
+        /// belonged to: geometry that is quietly wrong reads exactly like geometry that is
+        /// right, and cost an afternoon to find by eye. <c>GetLength3</c> measures the
+        /// curve itself between the edge's own parameters, so it is independent of
+        /// whatever the tessellation decided to do.
+        ///
+        /// Generous, because a tessellation is *meant* to be shorter than its curve: the
+        /// chords cut every corner, by more the coarser the tolerance. Only a difference
+        /// no tolerance explains - the wrong arc is several hundred percent - trips it.
+        /// </remarks>
+        private static void WarnIfNotTheLengthOfTheEdge(
+            Polyline tessellated, Curve curve, CurveParamData parameters, IGCamLog log)
+        {
+            if (log == null)
+            {
+                return;
+            }
+
+            double expected = Units.MetresToMillimetres(
+                curve.GetLength3(parameters.UMinValue, parameters.UMaxValue));
+
+            if (expected <= Precision.Epsilon
+                || Math.Abs(tessellated.Length - expected) <= expected * LengthAgreement)
+            {
+                return;
+            }
+
+            log.Warn(
+                "A {0} edge tessellated to {1:0.###}mm where the curve itself is {2:0.###}mm long. " +
+                "The toolpath will follow the points, so it will be wrong.",
+                (swCurveTypes_e)parameters.CurveType,
+                tessellated.Length,
+                expected);
         }
     }
 }
