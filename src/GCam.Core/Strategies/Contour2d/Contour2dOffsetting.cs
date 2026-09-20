@@ -22,35 +22,24 @@ namespace GCam.Core.Strategies.Contour2d
     internal static class Contour2dOffsetting
     {
         /// <summary>
-        /// The contour in the order the cutter walks it.
+        /// The contour in the order the cutter walks it, which
+        /// <see cref="ResolvedContour.Reversed"/> alone decides.
         /// </summary>
         /// <remarks>
-        /// <b>Climb and conventional differ only in direction of travel.</b> The cutter
-        /// stays on the side <see cref="ResolvedContour.Reversed"/> puts it on - outside a
-        /// closed profile or inside it, one hand or the other of an open one - and the two
-        /// cut directions walk that same side opposite ways round. That is what the words
-        /// mean on a machine: with the cutter on a given side, reversing the feed is
-        /// exactly what turns a climb cut into a conventional one.
-        ///
-        /// <b>Reversing a closed contour turns it round as well as moving the cutter
-        /// inside it, and that is not a side-effect.</b> Climb means the cutter's edge
-        /// moves with the feed where it touches; on the outside of a boss that is a
-        /// counter-clockwise run, and on the inside of a pocket it is a clockwise one. A
-        /// cut that moved inside without turning round would quietly stop being a climb
-        /// cut. So <c>climb != Reversed</c> reads as "counter-clockwise", and it is right
-        /// for all four combinations.
+        /// <b>Travel is Reverse's; the side is climb's.</b> HSMWorks' split, and the one
+        /// that keeps each control doing one thing: Reverse turns the arrow round, and
+        /// climb/conventional moves the cutter across the line without touching the
+        /// arrow. Both still flip the side, because with travel fixed the side is what
+        /// climb means.
         /// </remarks>
-        public static Polyline Walked(ResolvedContour profile, bool climb)
+        public static Polyline Walked(ResolvedContour profile)
         {
             if (profile.Path.IsClosed)
             {
-                return profile.Path.WithDirection(CounterClockwise(profile, climb));
+                return profile.Path.WithDirection(!profile.Reversed);
             }
 
-            // Same rule, expressed against the path as picked: the cutter keeps its hand
-            // and the walk turns round. Reading it the other way - fixing the walk and
-            // flipping the hand - is what made conventional cut the far side of an edge.
-            return CounterClockwise(profile, climb) ? profile.Path : profile.Path.Reversed();
+            return profile.Reversed ? profile.Path.Reversed() : profile.Path;
         }
 
         /// <summary>
@@ -65,7 +54,7 @@ namespace GCam.Core.Strategies.Contour2d
             IContourOffsetter offsetter,
             double arcTolerance)
         {
-            Polyline walked = Walked(profile, climb);
+            Polyline walked = Walked(profile);
 
             if (!profile.Path.IsClosed)
             {
@@ -96,7 +85,12 @@ namespace GCam.Core.Strategies.Contour2d
             // way the path runs. So the sign carries outside-or-inside, and the walk is
             // left free to carry the direction of travel - the two would otherwise fight
             // over one property.
-            double outwards = profile.Reversed ? -distance : distance;
+            //
+            // Outside for a climb cut run counter-clockwise, and for a conventional one
+            // run clockwise: climb on the outside of a boss goes counter-clockwise, and
+            // climb on the inside of a pocket goes clockwise.
+            bool outside = climb != profile.Reversed;
+            double outwards = outside ? distance : -distance;
 
             IReadOnlyList<Polyline> offset = offsetter.Offset(walked, outwards, arcTolerance);
 
@@ -110,7 +104,7 @@ namespace GCam.Core.Strategies.Contour2d
             return offset
                 .OrderByDescending(p => p.Length)
                 .First()
-                .WithDirection(CounterClockwise(profile, climb));
+                .WithDirection(!profile.Reversed);
         }
 
         /// <summary>
@@ -123,12 +117,9 @@ namespace GCam.Core.Strategies.Contour2d
         /// means the point moves when the direction changes, which for a symmetrical
         /// profile puts it on the far side of the part.
         /// </remarks>
-        public static bool WalksBackwards(ResolvedContour profile, bool climb) =>
+        public static bool WalksBackwards(ResolvedContour profile) =>
             profile.Path.IsClosed
-                ? profile.Path.IsCounterClockwise != CounterClockwise(profile, climb)
-                : !CounterClockwise(profile, climb);
-
-        private static bool CounterClockwise(ResolvedContour profile, bool climb) =>
-            climb != profile.Reversed;
+                ? profile.Path.IsCounterClockwise == profile.Reversed
+                : profile.Reversed;
     }
 }

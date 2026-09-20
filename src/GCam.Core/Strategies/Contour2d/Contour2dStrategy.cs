@@ -241,11 +241,9 @@ namespace GCam.Core.Strategies.Contour2d
         /// <remarks>
         /// The offset is the cutter's radius plus whatever is being left on the wall.
         ///
-        /// <b>Climb and conventional only reverse the direction of travel</b>, which is
-        /// what the words mean on a machine: with the cutter on a given side, reversing
-        /// the feed is exactly what turns one into the other. A closed profile is cut
-        /// outside; an open one is cut on the hand <see cref="ResolvedContour.Reversed"/>
-        /// chooses.
+        /// <b>Travel is <see cref="ResolvedContour.Reversed"/>'s; the side is
+        /// climb/conventional's.</b> With the direction of travel fixed, which side the
+        /// cutter runs on is exactly what climb and conventional mean.
         ///
         /// All of it lives in <see cref="Contour2dOffsetting"/> rather than here, because
         /// the cut-direction arrows on the Geometry tab have to land on the same side as

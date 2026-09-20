@@ -14,14 +14,14 @@ namespace GCam.Core.Tests.Strategies
         };
 
         [Fact]
-        public void Tangent_propagation_is_on_by_default()
+        public void Both_propagation_modifiers_are_on_by_default()
         {
-            // Picking one edge of a filleted pocket and getting only that edge is never
-            // what anybody meant.
+            // HSMWorks' defaults: picking one edge of a filleted pocket and getting only
+            // that edge is never what anybody meant.
             var selection = new ContourSelection(Edge());
 
             Assert.True(selection.PropagateTangent);
-            Assert.False(selection.PropagateAlongZ);
+            Assert.True(selection.PropagateAlongZ);
             Assert.False(selection.Reversed);
         }
 

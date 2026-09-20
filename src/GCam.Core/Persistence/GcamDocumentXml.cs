@@ -595,7 +595,7 @@ namespace GCam.Core.Persistence
             return new ContourSelection(ReadGeometryRef(element.Element("ref")))
             {
                 PropagateTangent = ReadBool(element, "propagateTangent", true),
-                PropagateAlongZ = ReadBool(element, "propagateAlongZ"),
+                PropagateAlongZ = ReadBool(element, "propagateAlongZ", true),
                 Reversed = ReadBool(element, "reversed"),
             };
         }

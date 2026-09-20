@@ -678,7 +678,8 @@ namespace GCam.SolidWorks.PropertyPages
             bool singleEntityOnly,
             string tip,
             short height = 0,
-            bool visible = true)
+            bool visible = true,
+            bool wantRowChanges = false)
         {
             if (mark <= 0 || (mark & (mark - 1)) != 0)
             {
@@ -704,6 +705,15 @@ namespace GCam.SolidWorks.PropertyPages
             box.Mark = mark;
             box.SingleEntityOnly = singleEntityOnly;
             box.SetSelectionFilters(filters.Select(f => (int)f).ToArray());
+
+            if (wantRowChanges)
+            {
+                // The only way to hear that the user has highlighted a different row: with
+                // this style, OnListboxSelectionChanged reports a selection box as well as
+                // a list box. Style is build-time only, which suits a page rebuilt per show.
+                box.Style |= (int)swPropMgrPageSelectionBoxStyle_e
+                    .swPropMgrPageSelectionBoxStyle_WantListboxSelectionChanged;
+            }
 
             return box;
         }

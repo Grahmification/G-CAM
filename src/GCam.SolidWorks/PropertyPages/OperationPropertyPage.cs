@@ -62,6 +62,8 @@ namespace GCam.SolidWorks.PropertyPages
         private const int IdContoursHint = 31;
         private const int IdContoursReverse = 32;
         private const int IdContoursStatus = 33;
+        private const int IdPropagateTangent = 34;
+        private const int IdPropagateAlongZ = 35;
 
         // Heights: label, mode, offset for each of the five.
         private const int IdClearanceLabel = 40;
@@ -207,6 +209,8 @@ namespace GCam.SolidWorks.PropertyPages
         private IPropertyManagerPageSelectionbox _contours;
         private IPropertyManagerPageButton _contoursReverse;
         private IPropertyManagerPageLabel _contoursStatus;
+        private IPropertyManagerPageCheckbox _propagateTangent;
+        private IPropertyManagerPageCheckbox _propagateAlongZ;
         private IPropertyManagerPageCombobox _direction;
         private IPropertyManagerPageNumberbox _stockToLeave;
         private IPropertyManagerPageNumberbox _verticalStockToLeave;
@@ -238,6 +242,13 @@ namespace GCam.SolidWorks.PropertyPages
 
         /// <summary>The part tool the working operation uses, or null. Drives the header.</summary>
         private Tool _currentTool;
+
+        /// <summary>
+        /// What the propagation checkboxes are currently showing, so a write to a shown
+        /// page only happens when it would change something.
+        /// </summary>
+        private bool? _shownTangent;
+        private bool? _shownAlongZ;
 
         private bool _closing;
 
@@ -530,16 +541,26 @@ namespace GCam.SolidWorks.PropertyPages
                 new[] { swSelectType_e.swSelEDGES, swSelectType_e.swSelFACES },
                 singleEntityOnly: false,
                 tip: "Edges or faces to follow. They need not form a closed profile.",
-                height: 60);
+                height: 60,
+                wantRowChanges: true);
 
             AddLabel(
                 group, IdContoursHint,
                 "Pick edges to follow, or a face to follow its boundary.");
 
+            // Per contour, not per operation: each pick runs as far as its own two boxes
+            // say it does, and highlighting a row brings that row's settings back up.
+            _propagateTangent = AddCheckbox(
+                group, IdPropagateTangent, "Tangential propagation",
+                "Follow edges that run smoothly on from this one, forwards only.");
+            _propagateAlongZ = AddCheckbox(
+                group, IdPropagateAlongZ, "Propagate along Z",
+                "Follow joining edges that lie at this one's height, both ways.");
+
             _contoursReverse = AddButton(
                 group, IdContoursReverse, "Reverse",
-                "Cut the highlighted contour the other way round, which puts the cutter " +
-                "on its other side.");
+                "Cut the highlighted contour the other way round, which turns its arrow " +
+                "round and puts the cutter on its other side.");
 
             _contoursStatus = AddLabel(group, IdContoursStatus, string.Empty);
         }
@@ -636,6 +657,13 @@ namespace GCam.SolidWorks.PropertyPages
 
                 _toolName.Caption = ToolLabel();
                 _contoursStatus.Caption = ContourStatus();
+
+                // Nothing is shown yet, so the checkboxes are written unconditionally -
+                // which is also what gives ShowContourModifiers something to compare with.
+                _shownTangent = null;
+                _shownAlongZ = null;
+                ShowContourModifiers();
+
                 ShowCuttingData();
 
                 LoadHeight(IdClearanceMode, _working.Heights.Clearance);
@@ -831,8 +859,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// <remarks>
         /// Contours are numbered from 1, counting down the selection box, because that is
         /// what someone reading the list will count. The rows themselves cannot be
-        /// annotated - their text belongs to SOLIDWORKS - so saying which are reversed is
-        /// the only way to show it.
+        /// annotated - their text belongs to SOLIDWORKS - so this line is the only place
+        /// that can say which contour the checkboxes are describing, and which contours
+        /// are reversed.
         /// </remarks>
         private string ContourStatus()
         {
@@ -842,6 +871,12 @@ namespace GCam.SolidWorks.PropertyPages
             {
                 return "Nothing selected.";
             }
+
+            int row;
+            TargetContour(out row);
+
+            string status = "Contour " + (row + 1).ToString(CultureInfo.CurrentCulture) +
+                            " of " + contours.Count + ".";
 
             var reversed = new List<string>();
 
@@ -854,8 +889,102 @@ namespace GCam.SolidWorks.PropertyPages
             }
 
             return reversed.Count == 0
-                ? "Highlight one and press Reverse to cut its other side."
-                : "Reversed: " + string.Join(", ", reversed) + " of " + contours.Count + ".";
+                ? status
+                : status + " Reversed: " + string.Join(", ", reversed) + ".";
+        }
+
+        /// <summary>
+        /// The contour the Geometry tab's controls act on: the highlighted row, or the
+        /// most recent pick when no row is highlighted.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="IPropertyManagerPageSelectionbox.CurrentSelection"/> is -1 whenever
+        /// nothing is highlighted, which is the state the box is in straight after a pick.
+        /// Falling back to the last row means the checkboxes describe the edge just
+        /// picked, which is the one being thought about; the status line names it either
+        /// way, so the controls are never about a contour nobody can identify.
+        /// </remarks>
+        private ContourSelection TargetContour(out int row)
+        {
+            List<ContourSelection> contours = Settings().Contours;
+
+            row = _contours == null ? -1 : _contours.CurrentSelection;
+
+            if (row < 0 || row >= contours.Count)
+            {
+                row = contours.Count - 1;
+            }
+
+            return row >= 0 ? contours[row] : null;
+        }
+
+        /// <summary>
+        /// Brings the propagation checkboxes up to date with the contour they describe.
+        /// </summary>
+        /// <remarks>
+        /// <b>Written only when the value actually changes.</b> Writing to a control on a
+        /// shown page is the call that has killed SOLIDWORKS three times over, and while a
+        /// checkbox has not been measured, the cheapest insurance is to make the write
+        /// rare: moving between rows that agree costs nothing.
+        /// </remarks>
+        private void ShowContourModifiers()
+        {
+            int row;
+            ContourSelection target = TargetContour(out row) ?? new ContourSelection();
+
+            if (_shownTangent != target.PropagateTangent)
+            {
+                _propagateTangent.Checked = target.PropagateTangent;
+                _shownTangent = target.PropagateTangent;
+            }
+
+            if (_shownAlongZ != target.PropagateAlongZ)
+            {
+                _propagateAlongZ.Checked = target.PropagateAlongZ;
+                _shownAlongZ = target.PropagateAlongZ;
+            }
+        }
+
+        /// <summary>
+        /// Records a propagation modifier against the contour the checkboxes describe, and
+        /// redraws what that changes.
+        /// </summary>
+        /// <remarks>
+        /// With nothing selected there is no contour to write to and the box is left as
+        /// the user set it; the next pick takes the defaults and
+        /// <see cref="ShowContourModifiers"/> puts the box back in step.
+        /// </remarks>
+        private void SetContourModifier(bool tangent, bool value)
+        {
+            int row;
+            ContourSelection target = TargetContour(out row);
+
+            if (tangent)
+            {
+                _shownTangent = value;
+            }
+            else
+            {
+                _shownAlongZ = value;
+            }
+
+            if (target == null)
+            {
+                return;
+            }
+
+            if (tangent)
+            {
+                target.PropagateTangent = value;
+            }
+            else
+            {
+                target.PropagateAlongZ = value;
+            }
+
+            // The chain this contour runs into is what changed, so the highlight and its
+            // arrow are both out of date.
+            ShowCutDirection();
         }
 
         /// <summary>
@@ -1169,7 +1298,31 @@ namespace GCam.SolidWorks.PropertyPages
                 case IdEvenStepdowns: settings.MultipleDepths.UseEvenStepdowns = value; break;
                 case IdLeadIn: settings.LeadIn.Enabled = value; break;
                 case IdLeadOutSame: settings.LeadOutMatchesLeadIn = value; break;
+
+                case IdPropagateTangent: SetContourModifier(tangent: true, value: value); break;
+                case IdPropagateAlongZ: SetContourModifier(tangent: false, value: value); break;
             }
+        }
+
+        /// <summary>
+        /// The user has highlighted a different contour, so the controls beneath the box
+        /// are about a different contour too.
+        /// </summary>
+        /// <remarks>
+        /// Reaches a *selection* box only because it was created with
+        /// <c>swPropMgrPageSelectionBoxStyle_WantListboxSelectionChanged</c>; the help
+        /// documents this callback for "a list box or selection list box", and without
+        /// that style nothing reports a row change at all.
+        /// </remarks>
+        protected override void OnListboxSelectionChanged(int id, int item)
+        {
+            if (_loading || !IsOpen || IsRebuilding || _closing || id != IdContours)
+            {
+                return;
+            }
+
+            ShowContourModifiers();
+            _contoursStatus.Caption = ContourStatus();
         }
 
         protected override void OnComboboxSelectionChanged(int id, int item)
@@ -1324,6 +1477,10 @@ namespace GCam.SolidWorks.PropertyPages
 
                 settings.Contours.Add(picked);
             }
+
+            // The list has changed under the controls that describe one row of it.
+            ShowContourModifiers();
+            _contoursStatus.Caption = ContourStatus();
 
             ShowCutDirection();
         }

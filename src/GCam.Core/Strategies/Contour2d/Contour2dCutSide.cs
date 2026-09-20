@@ -116,14 +116,13 @@ namespace GCam.Core.Strategies.Contour2d
             Vec3 travel;
 
             // Anchored to the contour as picked, not to the re-oriented walk, so the
-            // arrow stays on the edge it is about. Only its direction answers to climb,
-            // conventional and Reverse.
+            // arrow stays on the edge it is about. Only Reverse turns it round.
             if (!LongestSegment(profile.Path, out anchor, out travel))
             {
                 return null;
             }
 
-            if (Contour2dOffsetting.WalksBackwards(profile, climb))
+            if (Contour2dOffsetting.WalksBackwards(profile))
             {
                 travel = travel * -1;
             }

@@ -54,12 +54,18 @@ namespace GCam.SolidWorks.Extraction
         /// so it is reversed if **any** of the picks that built it was marked reversed -
         /// see <see cref="Chaining.ChainWithSources"/>.
         /// </remarks>
+        /// <param name="flatten">
+        /// Whether a propagated chain is projected onto the Z of the edge it was picked
+        /// from. True for 2D work, where a chain that has run up a 3D edge still has to be
+        /// cut at one depth; a 3D strategy would take the edges where they actually lie.
+        /// </param>
         public static IReadOnlyList<ResolvedContour> Extract(
             ModelDoc2 model,
             IEnumerable<ContourSelection> selections,
             JobFrame frame,
             double chordToleranceMillimetres,
-            IGCamLog log = null)
+            IGCamLog log = null,
+            bool flatten = true)
         {
             log = log ?? NullLog.Instance;
 
@@ -74,10 +80,16 @@ namespace GCam.SolidWorks.Extraction
             // what lets a chain be traced back to the picks that made it.
             var pieces = new List<Polyline>();
             var pieceOwners = new List<ContourSelection>();
+            var topology = new ModelEdgeTopology(frame);
 
-            foreach (OwnedEdge owned in EdgesOf(model, selections, log))
+            foreach (OwnedEdge owned in EdgesOf(model, selections, topology, log))
             {
                 Polyline piece = Tessellate(owned.Edge, frame, chordToleranceMillimetres);
+
+                if (flatten && owned.Level.HasValue)
+                {
+                    piece = Flattened(piece, owned.Level.Value);
+                }
 
                 if (piece != null && !piece.IsEmpty)
                 {
@@ -100,22 +112,29 @@ namespace GCam.SolidWorks.Extraction
         /// <summary>An edge and the selection it was reached through.</summary>
         private struct OwnedEdge
         {
-            public OwnedEdge(Edge edge, ContourSelection owner)
+            public OwnedEdge(Edge edge, ContourSelection owner, double? level)
             {
                 Edge = edge;
                 Owner = owner;
+                Level = level;
             }
 
             public Edge Edge { get; }
 
             public ContourSelection Owner { get; }
+
+            /// <summary>The Z of the picked edge, when this one is to be flattened onto it.</summary>
+            public double? Level { get; }
         }
 
         /// <summary>
-        /// Every edge the selections amount to, with tangent propagation applied.
+        /// Every edge the selections amount to, with propagation applied.
         /// </summary>
         private static IEnumerable<OwnedEdge> EdgesOf(
-            ModelDoc2 model, IEnumerable<ContourSelection> selections, IGCamLog log)
+            ModelDoc2 model,
+            IEnumerable<ContourSelection> selections,
+            ModelEdgeTopology topology,
+            IGCamLog log)
         {
             // Reference equality: the CLR hands out one runtime callable wrapper per COM
             // identity, so the same edge reached twice is the same object - the same
@@ -139,20 +158,37 @@ namespace GCam.SolidWorks.Extraction
                     continue;
                 }
 
-                foreach (Edge edge in EdgesFrom(entity, selection, log))
+                double? level = LevelOf(entity as Edge, selection, topology);
+
+                foreach (Edge edge in EdgesFrom(entity, selection, topology, log))
                 {
                     // An edge reached through two picks belongs to the first: it is one
                     // piece of one chain, and it cannot be walked two ways at once.
                     if (edge != null && seen.Add(edge))
                     {
-                        yield return new OwnedEdge(edge, selection);
+                        yield return new OwnedEdge(edge, selection, level);
                     }
                 }
             }
         }
 
+        /// <summary>
+        /// The Z a pick's chain is flattened onto, or null when nothing propagates from it
+        /// and so nothing can have left that level.
+        /// </summary>
+        private static double? LevelOf(
+            Edge picked, ContourSelection selection, ModelEdgeTopology topology)
+        {
+            if (picked == null || !(selection.PropagateTangent || selection.PropagateAlongZ))
+            {
+                return null;
+            }
+
+            return topology.StartOf(topology.Index(picked)).Z;
+        }
+
         private static IEnumerable<Edge> EdgesFrom(
-            object entity, ContourSelection selection, IGCamLog log)
+            object entity, ContourSelection selection, ModelEdgeTopology topology, IGCamLog log)
         {
             var face = entity as Face2;
             if (face != null)
@@ -176,21 +212,38 @@ namespace GCam.SolidWorks.Extraction
                 yield break;
             }
 
-            yield return edge;
+            // The walk itself is in Core; this only says which edge it starts from and
+            // which way round. Reverse turns the arrow round, so it turns the walk round
+            // with it.
+            IReadOnlyList<int> walked = EdgePropagation.Walk(
+                topology.Index(edge),
+                topology,
+                selection.PropagateTangent,
+                selection.PropagateAlongZ,
+                forwards: !selection.Reversed);
 
-            if (!selection.PropagateTangent)
+            foreach (int index in walked)
             {
-                yield break;
+                yield return topology.At(index);
+            }
+        }
+
+        /// <summary>
+        /// One piece of a chain projected onto the level it was picked at, or null when
+        /// that leaves nothing of it - which is what happens to a vertical edge the walk
+        /// ran up.
+        /// </summary>
+        private static Polyline Flattened(Polyline piece, double z)
+        {
+            if (piece == null || piece.IsEmpty)
+            {
+                return piece;
             }
 
-            // Picking one edge of a filleted profile and cutting only that edge is never
-            // what anybody meant.
-            var tangent = edge.GetTangentEdges() as object[];
+            var flat = new Polyline(
+                piece.Points.Select(p => new Vec3(p.X, p.Y, z)).ToList(), piece.IsClosed);
 
-            foreach (object item in tangent ?? new object[0])
-            {
-                yield return item as Edge;
-            }
+            return flat.Length > Chaining.DefaultTolerance ? flat : null;
         }
 
         /// <summary>

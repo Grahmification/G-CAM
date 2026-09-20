@@ -323,8 +323,10 @@ namespace GCam.Core.Tests.Strategies
         }
 
         [Fact]
-        public void Climb_and_conventional_run_the_profile_opposite_ways()
+        public void Climb_and_conventional_run_the_profile_the_same_way()
         {
+            // Travel belongs to Reverse alone, so changing the cut direction leaves the
+            // arrow where it was.
             var climb = new Contour2dSettings { Direction = CutDirection.Climb };
             var conventional = new Contour2dSettings { Direction = CutDirection.Conventional };
 
@@ -333,15 +335,14 @@ namespace GCam.Core.Tests.Strategies
             Vec3[] otherPath = Generate(Context(conventional))
                 .Moves.Where(m => m.Kind == MoveKind.Cutting).Select(m => m.End).ToArray();
 
-            Assert.NotEqual(
-                Winding(climbPath), Winding(otherPath));
+            Assert.Equal(Winding(climbPath), Winding(otherPath));
         }
 
         [Fact]
-        public void Both_directions_still_cut_the_same_side_of_the_wall()
+        public void Conventional_cuts_the_other_side_of_the_wall()
         {
-            // The direction decides which way round, not which side: a conventional cut of
-            // an outside profile is still outside it.
+            // With travel fixed, the side is what climb and conventional mean - so the
+            // same profile run conventionally is cut inside: 5..95 rather than -5..105.
             var conventional = new Contour2dSettings { Direction = CutDirection.Conventional };
 
             Toolpath path = Generate(Context(conventional));
@@ -349,8 +350,8 @@ namespace GCam.Core.Tests.Strategies
             IEnumerable<Vec3> cutting = path.Moves
                 .Where(m => m.Kind == MoveKind.Cutting).Select(m => m.End);
 
-            Assert.Equal(-5, cutting.Min(p => p.X), 2);
-            Assert.Equal(105, cutting.Max(p => p.X), 2);
+            Assert.Equal(5, cutting.Min(p => p.X), 2);
+            Assert.Equal(95, cutting.Max(p => p.X), 2);
         }
 
         [Fact]

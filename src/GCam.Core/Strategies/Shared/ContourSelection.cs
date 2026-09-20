@@ -24,9 +24,8 @@ namespace GCam.Core.Strategies.Shared
     /// staleness - a SOLIDWORKS rebuild marks every operation stale, so the path is
     /// regenerated and seen before it can post without a warning.
     ///
-    /// Nothing here is honoured yet. The flags are stored and round-tripped; the
-    /// propagation itself lands with the contour strategy and the geometry extraction it
-    /// needs. The shape exists now because persistence will freeze it into saved parts.
+    /// The walk the two propagation flags describe is
+    /// <see cref="GCam.Core.Geometry.EdgePropagation"/>.
     /// </remarks>
     public sealed class ContourSelection
     {
@@ -43,7 +42,7 @@ namespace GCam.Core.Strategies.Shared
         public GeometryRef Entity { get; set; }
 
         /// <summary>
-        /// Follow tangentially continuous edges away from the picked one.
+        /// Follow tangentially continuous edges on from the picked one, forwards only.
         /// </summary>
         /// <remarks>
         /// On by default, because picking one edge of a filleted pocket and getting only
@@ -52,18 +51,22 @@ namespace GCam.Core.Strategies.Shared
         public bool PropagateTangent { get; set; } = true;
 
         /// <summary>
-        /// Take the same profile at every Z it occurs at, rather than only the one picked.
-        /// </summary>
-        public bool PropagateAlongZ { get; set; }
-
-        /// <summary>
-        /// Follow the chain the other way round, which is what puts the cutter on the
-        /// other side of it.
+        /// Follow joining edges that lie at the picked edge's own height, both ways.
         /// </summary>
         /// <remarks>
-        /// One flag rather than an inside/outside setting, because the side is a
-        /// consequence of the direction the chain runs in and the climb/conventional
-        /// choice - the same thing HSMWorks' little arrow toggles.
+        /// Also opens the backward end to tangential propagation - see
+        /// <see cref="GCam.Core.Geometry.EdgePropagation"/>.
+        /// </remarks>
+        public bool PropagateAlongZ { get; set; } = true;
+
+        /// <summary>
+        /// Walk the chain the other way round, which turns its arrow round and puts the
+        /// cutter on its other side.
+        /// </summary>
+        /// <remarks>
+        /// The direction of travel is this flag's alone; which side of the line the cutter
+        /// runs on follows from it and the climb/conventional choice together. It is also
+        /// what decides which way propagation runs, since that follows the arrow.
         /// </remarks>
         public bool Reversed { get; set; }
 
