@@ -244,8 +244,8 @@ namespace GCam.SolidWorks.PropertyPages
         private Tool _currentTool;
 
         /// <summary>
-        /// What the propagation checkboxes are currently showing, so a write to a shown
-        /// page only happens when it would change something.
+        /// What the propagation checkboxes are currently showing. Keeps a write to a shown
+        /// page to the times it would change something, and is what a new pick inherits.
         /// </summary>
         private bool? _shownTangent;
         private bool? _shownAlongZ;
@@ -1473,6 +1473,15 @@ namespace GCam.SolidWorks.PropertyPages
                     picked.Reversed = kept.Reversed;
                     picked.PropagateTangent = kept.PropagateTangent;
                     picked.PropagateAlongZ = kept.PropagateAlongZ;
+                }
+                else if (picked != null)
+                {
+                    // A new pick takes whatever the checkboxes are showing, so picking a
+                    // run of edges the same way does not mean setting each one afterwards.
+                    // The class defaults are then what a new operation starts from, and
+                    // nothing else.
+                    picked.PropagateTangent = _shownTangent ?? picked.PropagateTangent;
+                    picked.PropagateAlongZ = _shownAlongZ ?? picked.PropagateAlongZ;
                 }
 
                 settings.Contours.Add(picked);
