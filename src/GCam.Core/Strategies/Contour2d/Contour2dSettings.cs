@@ -35,6 +35,7 @@ namespace GCam.Core.Strategies.Contour2d
             public const string MultipleDepths = "doMultipleDepths";
             public const string MaximumStepdown = "maximumStepdown";
             public const string EvenStepdowns = "useEvenStepdowns";
+            public const string TangentialExtension = "tangentialExtensionDistance";
             public const string LeadOutMatchesLeadIn = "exitSameAsEntry";
             public const string LeadInPrefix = "entry_";
             public const string LeadOutPrefix = "exit_";
@@ -86,6 +87,20 @@ namespace GCam.Core.Strategies.Contour2d
         public double EffectiveVerticalStockToLeave =>
             StockToLeaveEnabled ? VerticalStockToLeave : 0;
 
+        /// <summary>
+        /// How far each open contour is run on past its own ends before the cutter is
+        /// offset from it, mm. Negative shortens it.
+        /// </summary>
+        /// <remarks>
+        /// One distance for both ends. HSMWorks carries a second,
+        /// `tangentialExtensionDistanceEnd`, whose default is an expression reading this
+        /// one - so a single box is its default state and the pair is what asymmetry
+        /// needs. Closed contours ignore it; see
+        /// <see cref="GCam.Core.Geometry.TangentialExtension"/>, which also says why the
+        /// Passes tab's fragment extension is a different parameter.
+        /// </remarks>
+        public double TangentialExtensionDistance { get; set; }
+
         public MultipleDepthsSettings MultipleDepths { get; set; } = new MultipleDepthsSettings();
 
         public LeadSettings LeadIn { get; set; } = new LeadSettings();
@@ -117,6 +132,7 @@ namespace GCam.Core.Strategies.Contour2d
                 StockToLeaveEnabled = StockToLeaveEnabled,
                 StockToLeave = StockToLeave,
                 VerticalStockToLeave = VerticalStockToLeave,
+                TangentialExtensionDistance = TangentialExtensionDistance,
                 MultipleDepths = MultipleDepths.Clone(),
                 LeadIn = LeadIn.Clone(),
                 LeadOut = LeadOut.Clone(),
@@ -130,6 +146,7 @@ namespace GCam.Core.Strategies.Contour2d
             bag.Set(Names.StockToLeaveEnabled, StockToLeaveEnabled);
             bag.Set(Names.StockToLeave, StockToLeave);
             bag.Set(Names.VerticalStockToLeave, VerticalStockToLeave);
+            bag.Set(Names.TangentialExtension, TangentialExtensionDistance);
 
             bag.Set(Names.MultipleDepths, MultipleDepths.Enabled);
             bag.Set(Names.MaximumStepdown, MultipleDepths.MaximumStepdown);
@@ -146,6 +163,8 @@ namespace GCam.Core.Strategies.Contour2d
             StockToLeaveEnabled = bag.GetBool(Names.StockToLeaveEnabled, StockToLeaveEnabled);
             StockToLeave = bag.GetDouble(Names.StockToLeave, StockToLeave);
             VerticalStockToLeave = bag.GetDouble(Names.VerticalStockToLeave, VerticalStockToLeave);
+            TangentialExtensionDistance =
+                bag.GetDouble(Names.TangentialExtension, TangentialExtensionDistance);
 
             MultipleDepths.Enabled = bag.GetBool(Names.MultipleDepths, MultipleDepths.Enabled);
             MultipleDepths.MaximumStepdown =

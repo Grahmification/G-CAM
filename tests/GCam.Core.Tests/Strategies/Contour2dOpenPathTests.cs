@@ -63,6 +63,13 @@ namespace GCam.Core.Tests.Strategies
         private static Toolpath Generate(GenerationContext context) =>
             new Contour2dStrategy().Generate(context, null, CancellationToken.None);
 
+        /// <summary>Where the cut starts: the tool came down there, so it is the plunge.</summary>
+        private static double StartOfCut(Toolpath path) =>
+            path.Moves.First(m => m.Kind == MoveKind.Plunge).End.X;
+
+        private static double EndOfCut(Toolpath path) =>
+            path.Moves.Last(m => m.Kind == MoveKind.Cutting).End.X;
+
         /// <summary>The Y the cutting moves run at, which says which side was cut.</summary>
         private static IReadOnlyList<double> CuttingYs(Toolpath path) =>
             path.Moves.Where(m => m.Kind == MoveKind.Cutting).Select(m => m.End.Y).ToList();
@@ -123,6 +130,43 @@ namespace GCam.Core.Tests.Strategies
 
             Assert.All(CuttingYs(forward), y => Assert.Equal(-ToolDiameter / 2, y, 2));
             Assert.All(CuttingYs(reversed), y => Assert.Equal(ToolDiameter / 2, y, 2));
+        }
+
+        [Fact]
+        public void A_tangential_extension_runs_the_cut_past_both_ends()
+        {
+            // Measured against the same cut without one, because offsetting an open path
+            // leaves a little of Clipper's end cap at each end either way. What the
+            // extension must do is move both ends out by exactly its distance - and the
+            // profile is extended *before* the offset, so the cutter stays the same
+            // distance off the edge while doing it.
+            var plain = new Contour2dSettings { Direction = CutDirection.Climb };
+            var extended = new Contour2dSettings
+            {
+                Direction = CutDirection.Climb,
+                TangentialExtensionDistance = 5,
+            };
+
+            Toolpath before = Generate(Context(new ResolvedContour(Line()), plain));
+            Toolpath after = Generate(Context(new ResolvedContour(Line()), extended));
+
+            // A two-point offset is one cutting move, so the start is where the tool came
+            // down rather than a move of its own.
+            Assert.Equal(StartOfCut(before) - 5, StartOfCut(after), 2);
+            Assert.Equal(EndOfCut(before) + 5, EndOfCut(after), 2);
+            Assert.All(CuttingYs(after), y => Assert.Equal(-ToolDiameter / 2, y, 2));
+        }
+
+        [Fact]
+        public void A_contour_a_negative_extension_consumes_is_reported_rather_than_cut()
+        {
+            var settings = new Contour2dSettings { TangentialExtensionDistance = -60 };
+            GenerationContext context = Context(new ResolvedContour(Line()), settings);
+
+            Toolpath path = Generate(context);
+
+            Assert.Empty(CuttingYs(path));
+            Assert.Single(context.Warnings);
         }
 
         [Fact]

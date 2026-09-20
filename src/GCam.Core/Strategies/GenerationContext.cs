@@ -68,6 +68,21 @@ namespace GCam.Core.Strategies
 
         public Operation Operation { get; }
 
+        /// <summary>
+        /// What the user should read about a run that nonetheless produced a toolpath.
+        /// </summary>
+        /// <remarks>
+        /// The one thing a strategy says other than the path itself, and the channel is
+        /// here because there is nowhere else for it: a strategy that cannot proceed at
+        /// all throws, and everything else it knows would otherwise be lost. The queue
+        /// puts these on the operation as <see cref="OperationState.Warning"/> - there is
+        /// a path, and something about it is worth knowing.
+        ///
+        /// A strategy stays deterministic: the same context in gives the same path and the
+        /// same warnings out.
+        /// </remarks>
+        public IList<string> Warnings { get; } = new List<string>();
+
         /// <summary>The part tool this operation cuts with, already looked up.</summary>
         public Tool Tool { get; }
 

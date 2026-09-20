@@ -211,6 +211,15 @@ namespace GCam.Core.Generation
                     operation.State = OperationState.Warning;
                     operation.StateMessage = "Generated nothing to cut.";
                 }
+                else if (context.Warnings.Count > 0)
+                {
+                    // There is a path and it is usable; something about how it was arrived
+                    // at is worth reading. The strategy is the only thing that knows.
+                    operation.State = OperationState.Warning;
+                    operation.StateMessage = string.Join(" ", context.Warnings);
+
+                    _log.Warn("Generating '{0}': {1}", operation.Name, operation.StateMessage);
+                }
                 else
                 {
                     operation.State = OperationState.Generated;

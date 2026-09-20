@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using GCam.Core.Diagnostics;
+using GCam.Core.Geometry;
 using GCam.Core.Geometry.Offset;
 using GCam.Core.Geometry.Primitives;
 using GCam.Core.Model;
@@ -92,11 +93,18 @@ namespace GCam.Core.Strategies.Contour2d
 
             foreach (ResolvedContour profile in profiles)
             {
+                ResolvedContour extended = Extended(profile, settings, context);
+
+                if (extended == null)
+                {
+                    continue;
+                }
+
                 foreach (double depth in depths)
                 {
                     cancellation.ThrowIfCancellationRequested();
 
-                    CutOnePass(path, profile, depth, radius, settings, heights, context.Cutting);
+                    CutOnePass(path, extended, depth, radius, settings, heights, context.Cutting);
 
                     progress?.Report((double)++step / total);
                 }
@@ -110,6 +118,40 @@ namespace GCam.Core.Strategies.Contour2d
             }
 
             return path;
+        }
+
+        /// <summary>
+        /// The profile run on past its own ends, or null when nothing is left of it.
+        /// </summary>
+        /// <remarks>
+        /// Before the cutter offset, not after: it is the profile that is longer, so the
+        /// wall the extension cuts is offset like the rest of it. Every depth therefore
+        /// gets the extension, which is what it is for - the cutter leaves the material at
+        /// the end of each pass rather than stopping in it.
+        ///
+        /// A negative distance long enough to consume the whole contour leaves nothing to
+        /// cut. Dropping it quietly would produce a toolpath missing a profile the user
+        /// selected and can still see highlighted, so it is reported and the rest of the
+        /// operation goes on being cut.
+        /// </remarks>
+        private static ResolvedContour Extended(
+            ResolvedContour profile, Contour2dSettings settings, GenerationContext context)
+        {
+            Polyline extended = TangentialExtension.Apply(
+                profile.Path, settings.TangentialExtensionDistance);
+
+            if (extended != null && !extended.IsEmpty)
+            {
+                return extended == profile.Path
+                    ? profile
+                    : new ResolvedContour(extended, profile.Reversed);
+            }
+
+            context.Warnings.Add(
+                $"A tangential extension of {settings.TangentialExtensionDistance:0.###}mm " +
+                "left nothing of one contour, which has not been cut.");
+
+            return null;
         }
 
         /// <summary>

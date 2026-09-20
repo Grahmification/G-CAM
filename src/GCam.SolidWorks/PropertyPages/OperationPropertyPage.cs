@@ -64,6 +64,8 @@ namespace GCam.SolidWorks.PropertyPages
         private const int IdContoursStatus = 33;
         private const int IdPropagateTangent = 34;
         private const int IdPropagateAlongZ = 35;
+        private const int IdTangentialExtensionLabel = 36;
+        private const int IdTangentialExtension = 37;
 
         // Heights: label, mode, offset for each of the five.
         private const int IdClearanceLabel = 40;
@@ -221,6 +223,7 @@ namespace GCam.SolidWorks.PropertyPages
         private IPropertyManagerPageLabel _contoursStatus;
         private IPropertyManagerPageCheckbox _propagateTangent;
         private IPropertyManagerPageCheckbox _propagateAlongZ;
+        private IPropertyManagerPageNumberbox _tangentialExtension;
         private IPropertyManagerPageCombobox _direction;
         private IPropertyManagerPageNumberbox _stockToLeave;
         private IPropertyManagerPageNumberbox _verticalStockToLeave;
@@ -597,6 +600,15 @@ namespace GCam.SolidWorks.PropertyPages
                 "round and puts the cutter on its other side.");
 
             _contoursStatus = AddLabel(group, IdContoursStatus, string.Empty);
+
+            // Below the per-contour controls because it is not one of them: it applies to
+            // every open contour the operation cuts.
+            AddLabel(group, IdTangentialExtensionLabel, "Tangential extension");
+            _tangentialExtension = AddLengthbox(
+                group, IdTangentialExtension, "Tangential extension",
+                "Run each open contour on past both of its ends before the cutter is " +
+                "offset from it. Negative shortens it; closed contours are unaffected.",
+                allowNegative: true);
         }
 
         private void BuildPassesTab(IPropertyManagerPage2 page)
@@ -705,6 +717,8 @@ namespace GCam.SolidWorks.PropertyPages
                 LoadHeight(IdFeedMode, _working.Heights.Feed);
                 LoadHeight(IdTopMode, _working.Heights.Top);
                 LoadHeight(IdBottomMode, _working.Heights.Bottom);
+
+                _tangentialExtension.Value = ToBoxLength(settings.TangentialExtensionDistance);
 
                 _direction.CurrentSelection = (short)(settings.Direction == CutDirection.Climb ? 0 : 1);
                 _stockToLeave.Value = ToBoxLength(settings.StockToLeave);
@@ -1590,6 +1604,10 @@ namespace GCam.SolidWorks.PropertyPages
                     ShowHeights();
                     break;
 
+                case IdTangentialExtension:
+                    settings.TangentialExtensionDistance = FromBoxLength(value);
+                    break;
+
                 case IdStockToLeave: settings.StockToLeave = FromBoxLength(value); break;
                 case IdVerticalStockToLeave: settings.VerticalStockToLeave = FromBoxLength(value); break;
                 case IdMaximumStepdown: settings.MultipleDepths.MaximumStepdown = FromBoxLength(value); break;
@@ -1844,6 +1862,7 @@ namespace GCam.SolidWorks.PropertyPages
             to.Contours.AddRange(from.Contours.Select(c => c.Clone()));
 
             to.Direction = from.Direction;
+            to.TangentialExtensionDistance = from.TangentialExtensionDistance;
             to.StockToLeaveEnabled = from.StockToLeaveEnabled;
             to.StockToLeave = from.StockToLeave;
             to.VerticalStockToLeave = from.VerticalStockToLeave;
