@@ -229,9 +229,18 @@ public sealed class HeightSetting
 }
 ```
 
-Modes for v1: `FromStockTop`, `FromStockBottom`, `FromModelTop`, `FromModelBottom`,
-`FromJobOrigin`, `FromSelection`. The rest of HSM's list is deliberately absent until
-something needs it; each costs a resolver and a test.
+Modes: `FromStockTop`, `FromStockBottom`, `FromModelTop`, `FromModelBottom`,
+`FromJobOrigin`, `FromSelection`, and three that each only one or two heights may use:
+
+| Mode | Measured from | Allowed on |
+| --- | --- | --- |
+| `FromContour` | The Z of the chain being cut | Top, Bottom |
+| `FromTop` | The operation's resolved top height | Feed |
+| `FromRetract` | The operation's resolved retract height | Clearance |
+
+The rest of HSM's list is deliberately absent until something needs it; each costs a
+resolver and a test. The page offers a mode only on the rows allowed to use it, and
+`Validate()` refuses one anywhere else, for a file that says otherwise.
 
 Resolution is a pure function of a `HeightContext` — the stock and model Z extents in the
 operation's frame, supplied by `GCam.SolidWorks/Extraction` — so every mode is testable
@@ -239,9 +248,58 @@ headlessly. This is what makes the heights *follow the stock*: change the stock 
 height derived from it moves, which is the property that makes the HSM model worth
 copying rather than storing five plain numbers.
 
+**A height measured from another is one step deep.** Top and Retract may not themselves
+be measured from another height, so `OperationHeights` resolves them first, into the
+context, and then everything else — no ordering problem, no cycles. The consequence is
+that a single height must be resolved through `OperationHeights.TryResolve(kind, …)`:
+`HeightSetting.TryResolve` alone cannot answer for `FromTop` or `FromRetract`, and fails
+rather than guessing.
+
+**Defaults** are clearance 5 above the retract, retract 5 above the stock top, feed 2
+above the top, top at the stock top, bottom at the model bottom. Chaining clearance and
+feed to other heights keeps them from crossing when one is moved. A strategy may start from
+its own — `StrategySettings.DefaultHeights()` — and 2D contour overrides the bottom to
+`FromContour`. A file with a height missing or in a mode this build does not know gets the
+strategy's default, not a failed load.
+
 `OperationHeights.Validate()` enforces `clearance ≥ retract ≥ feed ≥ top > bottom` after
 resolution and reports which pair is inverted. Validation runs against resolved values,
 not modes, because two different modes can resolve to the same plane.
+
+**Except retract below feed, which is corrected rather than refused.** The retract is
+lifted to the feed height and the operation gets a warning (`ResolvedHeights.RetractLiftedFrom`
+records it). The fix is obvious and only ever sends the tool higher, so refusing to
+generate over it cost more than it saved. A clearance measured from the retract follows the
+lifted value; a fixed clearance that ends up below it is still refused.
+
+### Heights measured from the contour
+
+`FromContour` is the one mode where heights are **not a property of the operation alone**:
+one operation cuts each chain at its own depth. Extraction therefore flattens every 2D chain
+to a single Z — see [How far a pick runs](#how-far-a-pick-runs) — and `ResolvedContour.Level`
+is that Z.
+
+`Core/Strategies/ContourHeights` resolves the heights once per contour and attaches them to
+the `ResolvedContour`; `Contour2dStrategy` takes its depths from each contour's own.
+`GenerationContext.Heights` stays the operation-level answer — the first contour's —
+which is right for clearance and retract, the only ones read from it.
+
+- **Clearance and retract are one plane for every contour**, because the tool crosses them
+  between contours. Feed may vary per contour, but only through a top that does.
+- **A retract lifted to the feed height is lifted to the highest feed of any contour cut**,
+  so every contour still retracts to the same plane — more air-cutting on the lower ones,
+  in exchange for a tool that always goes back to one place. A contour left out does not
+  count.
+- **One bad chain does not condemn the operation.** Heights in order for one contour can be
+  out of order for another, so a contour that fails is reported through
+  `GenerationContext.Warnings` and left uncut, the way a contour consumed by a negative
+  tangential extension is. Only when every contour fails does generation fail.
+- **The Heights tab draws no plane for a height in this mode**, which is what HSMWorks
+  does: there is no one Z to draw.
+
+On a `HeightContext` with no contour in it, a `FromContour` height does not resolve, so
+`Operation.Validate(context)` skips contour-relative heights unless given a context for a
+contour; generation checks them per contour.
 
 ## Geometry
 
@@ -343,11 +401,23 @@ alongside an edge that merely happens to lie at the same height is not a branch:
 the junction a fillet makes where its end edge crosses the face, and treating it as one
 stopped the walk dead at the corners propagation exists to get round.
 
-**A propagated chain is flattened onto the Z of the edge it was picked from**, because a
-walk that ran up a 3D edge still has to be cut at one depth, and a piece that collapses to
-nothing — a riser the walk climbed — is dropped. Flattening is a parameter of extraction
-rather than a rule inside the walk, so a 3D strategy can take the same chains where they
-actually lie.
+**Every chain comes out of 2D extraction at a single Z**, because it is cut at one depth
+and a height [measured from the contour](#heights-measured-from-the-contour) needs that
+depth to be one number. The blue highlight on the Geometry tab is drawn from the same
+chains, so it shows that Z. Two cases:
+
+- **A propagated pick is flattened before chaining**, onto the Z where the picked edge
+  starts, because the walk may have climbed a riser that has to collapse — a piece that
+  flattens to nothing is dropped.
+- **Everything else is chained in 3D first**, and a chain that comes out not flat is then
+  projected onto the level of the first pick in it; for a face, where its first edge
+  starts. Flattening each such pick first instead would pull apart a profile built from
+  separate picks at different heights, which chains as one in 3D.
+
+A chain that is purely vertical flattens to nothing and is dropped with a log line. The
+projection is `Core/Geometry/Flattening`. Flattening is a parameter of extraction rather
+than a rule inside the walk, so a 3D strategy can take the same chains where they actually
+lie.
 
 **Tangential extension is a different thing, and is a strategy parameter.** It acts on an
 already-fixed selection, so `TangentialExtensionDistance` lives in `Contour2dSettings` and
@@ -884,10 +954,12 @@ there — while the fill says *which* plane is being edited and is worth more fo
 occluded. A plane under the part, seen from above, should read as an outline poking past the
 silhouette rather than as a wash over the model it is beneath.
 
-Heights resolve through `HeightSetting.TryResolve`, the same Core call generation makes, one
-at a time — so a plane cannot sit somewhere the cut will not, and a height that will not
-resolve costs only its own plane — a `FromSelection` height with nothing picked yet, most
-often.
+Heights resolve through `OperationHeights.TryResolve(kind, …)`, the same Core rule
+generation follows, one at a time — so a plane cannot sit somewhere the cut will not,
+including a retract that has been lifted to the feed height. A height that will not
+resolve costs only its own plane, and that of any height measured from it — a
+`FromSelection` height with nothing picked yet, most often, or a `FromContour` one, which
+never has a plane.
 
 **Choosing `Selection` shows a box under that row** taking a face, edge or vertex.
 `EntityHeights` reads its Z, and accepts only geometry that lies at a single one: a flat
@@ -1080,6 +1152,7 @@ while they are still cheap to change.
 | 13 | `OperationStatus` and the state badge in the tree | `OperationState` had been modelled, persisted and corrected on load since slice 6a, and was invisible: a stale operation looked exactly like a generated one, which made staleness a rule nobody could act on | **Done** — 2026-09-16, 18 tests |
 | 14 | `PartRebuildWatcher` — the rebuild that nothing was listening for | Slice 13 made staleness visible, which is what exposed it: `Staleness.ModelRebuilt` had been written and tested since slice 5 with no caller anywhere, so editing a dimension invalidated nothing | **Done** — 2026-09-16, 3 tests. **Not yet verified on 2025 SP3** |
 | 15 | The contour modifiers: `EdgePropagation` + `ModelEdgeTopology`, the two checkboxes, and travel/side split the way HSMWorks does it | The modifiers had been stored since slice 2 and honoured by nothing, so a selection meant one edge however it was picked. Doing it properly forced the cut-side rules into HSMWorks' shape, because a Reverse that changes what is *in* the chain cannot also be the only way to change the side | **Done** — 2026-09-20, 8 tests, verified by hand on 2025 SP3 after three bugs it exposed: see below |
+| 16 | Heights that follow other things: `FromContour` (and 2D contour's default bottom), `FromTop` for feed, `FromRetract` for clearance, and a retract below feed lifted rather than refused | Every height was a property of the operation alone, so a part with profiles at several levels needed an operation per level | **Done** — 2026-09-23, 43 tests; the contour mode verified by hand on 2025 SP3 |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an
