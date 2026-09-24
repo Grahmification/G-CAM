@@ -31,7 +31,7 @@ namespace GCam.Core.Model.Heights
             double modelBottom,
             IReadOnlyDictionary<string, double> selectionHeights = null,
             double? contourLevel = null)
-            : this(stockTop, stockBottom, modelTop, modelBottom, selectionHeights, contourLevel, null, null)
+            : this(stockTop, stockBottom, modelTop, modelBottom, selectionHeights, contourLevel, null, null, null)
         {
         }
 
@@ -43,7 +43,8 @@ namespace GCam.Core.Model.Heights
             IReadOnlyDictionary<string, double> selectionHeights,
             double? contourLevel,
             double? top,
-            double? retract)
+            double? retract,
+            double? retractFloor)
         {
             StockTop = stockTop;
             StockBottom = stockBottom;
@@ -53,6 +54,7 @@ namespace GCam.Core.Model.Heights
             ContourLevel = contourLevel;
             Top = top;
             Retract = retract;
+            RetractFloor = retractFloor;
         }
 
         public double StockTop { get; }
@@ -92,6 +94,18 @@ namespace GCam.Core.Model.Heights
         /// </summary>
         public double? Retract { get; }
 
+        /// <summary>
+        /// The lowest the retract height may be used at, or null for no limit beyond the
+        /// feed height.
+        /// </summary>
+        /// <remarks>
+        /// How an operation whose feed height differs per contour keeps one retract plane:
+        /// the floor is the highest feed height of any contour it cuts, so each contour's
+        /// retract is lifted to the same Z. Survives <see cref="ForContour"/> for exactly
+        /// that reason.
+        /// </remarks>
+        public double? RetractFloor { get; }
+
         /// <summary>The same context, measured for one contour at the given Z.</summary>
         /// <remarks>
         /// Drops any resolved top and retract: a top measured from the contour moves with
@@ -100,17 +114,22 @@ namespace GCam.Core.Model.Heights
         /// </remarks>
         public HeightContext ForContour(double level) =>
             new HeightContext(
-                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, level, null, null);
+                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, level, null, null, RetractFloor);
 
         /// <summary>The same context, with the operation's top height resolved.</summary>
         public HeightContext WithTop(double top) =>
             new HeightContext(
-                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, ContourLevel, top, Retract);
+                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, ContourLevel, top, Retract, RetractFloor);
 
         /// <summary>The same context, with the operation's retract height resolved.</summary>
         public HeightContext WithRetract(double retract) =>
             new HeightContext(
-                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, ContourLevel, Top, retract);
+                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, ContourLevel, Top, retract, RetractFloor);
+
+        /// <summary>The same context, with the retract never used below the given Z.</summary>
+        public HeightContext WithRetractFloor(double floor) =>
+            new HeightContext(
+                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, ContourLevel, Top, Retract, floor);
 
         /// <summary>
         /// Builds a context from the stock and model extents, already expressed in the

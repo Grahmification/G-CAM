@@ -11,14 +11,30 @@ namespace GCam.Core.Model.Heights
     public sealed class ResolvedHeights
     {
         public ResolvedHeights(
-            double clearance, double retract, double feed, double top, double bottom)
+            double clearance,
+            double retract,
+            double feed,
+            double top,
+            double bottom,
+            double? retractLiftedFrom = null)
         {
             Clearance = clearance;
             Retract = retract;
             Feed = feed;
             Top = top;
             Bottom = bottom;
+            RetractLiftedFrom = retractLiftedFrom;
         }
+
+        /// <summary>
+        /// The retract height as entered, when it was below the feed height and
+        /// <see cref="Retract"/> has been lifted to it; null when it was used as entered.
+        /// </summary>
+        /// <remarks>
+        /// Kept so the lift can be reported: the path is still generated, but it does not
+        /// retract where the page says, and whoever runs it should be told.
+        /// </remarks>
+        public double? RetractLiftedFrom { get; }
 
         /// <summary>The plane rapids cross at, above everything including clamps.</summary>
         public double Clearance { get; }

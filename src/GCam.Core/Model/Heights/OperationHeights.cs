@@ -13,6 +13,11 @@ namespace GCam.Core.Model.Heights
     /// The rule is checked against *resolved* values rather than modes, because two
     /// different modes can land on the same plane and only the numbers say whether they
     /// did. A height pair the wrong way round is how a tool gets driven through a clamp.
+    ///
+    /// **Except retract below feed, which is corrected rather than refused.** The retract
+    /// is lifted to the feed height and the lift reported, because the fix is obvious and
+    /// safe - the tool goes up further, never less far - and refusing to generate over it
+    /// cost more than it saved. See <see cref="ResolvedHeights.RetractLiftedFrom"/>.
     /// </remarks>
     public sealed class OperationHeights
     {
@@ -60,19 +65,42 @@ namespace GCam.Core.Model.Heights
         public bool TryResolve(HeightContext context, out ResolvedHeights resolved)
         {
             resolved = null;
-            context = WithDatums(context);
+            HeightContext datums = WithDatums(context);
 
-            if (!Clearance.TryResolve(context, out double clearance)
-                || !Retract.TryResolve(context, out double retract)
-                || !Feed.TryResolve(context, out double feed)
-                || !Top.TryResolve(context, out double top)
-                || !Bottom.TryResolve(context, out double bottom))
+            if (!Clearance.TryResolve(datums, out double clearance)
+                || !TryResolveRetract(datums, out double retract)
+                || !Feed.TryResolve(datums, out double feed)
+                || !Top.TryResolve(datums, out double top)
+                || !Bottom.TryResolve(datums, out double bottom))
             {
                 return false;
             }
 
-            resolved = new ResolvedHeights(clearance, retract, feed, top, bottom);
+            Retract.TryResolve(context, out double entered);
+
+            resolved = new ResolvedHeights(
+                clearance,
+                retract,
+                feed,
+                top,
+                bottom,
+                retract > entered + Precision.Epsilon ? entered : (double?)null);
             return true;
+        }
+
+        /// <summary>
+        /// What to tell the user about heights that were corrected rather than refused, or
+        /// null when there is nothing to say.
+        /// </summary>
+        public static string DescribeCorrections(ResolvedHeights heights)
+        {
+            if (heights?.RetractLiftedFrom == null)
+            {
+                return null;
+            }
+
+            return $"Retract height ({Format(heights.RetractLiftedFrom.Value)}) was below the feed " +
+                   $"height, so the tool retracts to {Format(heights.Retract)} instead.";
         }
 
         /// <summary>
@@ -88,9 +116,18 @@ namespace GCam.Core.Model.Heights
         public bool TryResolve(HeightKind kind, HeightContext context, out double z)
         {
             z = 0;
+            HeightContext datums = WithDatums(context);
+
+            if (kind == HeightKind.Retract)
+            {
+                // The retract that will be used, lifted if it had to be - which is what the
+                // Heights tab has to draw, or its plane would sit where the tool does not go.
+                return TryResolveRetract(datums, out z);
+            }
+
             HeightSetting height = For(kind);
 
-            return height != null && height.TryResolve(WithDatums(context), out z);
+            return height != null && height.TryResolve(datums, out z);
         }
 
         /// <summary>The setting for one of the five.</summary>
@@ -170,8 +207,11 @@ namespace GCam.Core.Model.Heights
                 return problems;
             }
 
+            // Against the retract as lifted: a clearance measured from the retract has moved
+            // with it, and one that has not may now be below it, which nothing corrects.
+            // Retract against feed is not checked because it cannot fail - see the class
+            // remarks.
             RequireAtOrAbove(problems, z.Clearance, "Clearance height", z.Retract, "retract height");
-            RequireAtOrAbove(problems, z.Retract, "Retract height", z.Feed, "feed height");
             RequireAtOrAbove(problems, z.Feed, "Feed height", z.Top, "top height");
 
             if (z.DepthOfCut <= Precision.Epsilon)
@@ -205,6 +245,12 @@ namespace GCam.Core.Model.Heights
         /// retract may not be measured from another height, which is what keeps this one
         /// step deep and free of cycles. One that tries is refused by <see cref="Validate"/>
         /// and simply does not resolve here.
+        ///
+        /// **The retract carried is the lifted one**, so a clearance measured from it stays
+        /// the same distance above where the tool actually retracts to. It is lifted to the
+        /// feed height - which needs the top, hence the order - and to the context's
+        /// <see cref="HeightContext.RetractFloor"/>, which is how every contour in an
+        /// operation is given the one retract plane.
         /// </remarks>
         private HeightContext WithDatums(HeightContext context)
         {
@@ -222,10 +268,29 @@ namespace GCam.Core.Model.Heights
 
             if (IsDatum(Retract) && Retract.TryResolve(plain, out double retract))
             {
+                // The feed height cannot be measured from the retract, so resolving it here,
+                // before the retract is known, is not circular.
+                if (Feed.TryResolve(context, out double feed) && feed > retract)
+                {
+                    retract = feed;
+                }
+
+                if (context.RetractFloor.HasValue && context.RetractFloor.Value > retract)
+                {
+                    retract = context.RetractFloor.Value;
+                }
+
                 context = context.WithRetract(retract);
             }
 
             return context;
+        }
+
+        /// <summary>The retract as it will be used - lifted if it had to be.</summary>
+        private static bool TryResolveRetract(HeightContext datums, out double retract)
+        {
+            retract = datums?.Retract ?? 0;
+            return datums?.Retract != null;
         }
 
         /// <summary>True for a height that others can be measured from: one not measured from another.</summary>

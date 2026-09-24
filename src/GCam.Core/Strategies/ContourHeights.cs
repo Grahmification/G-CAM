@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using GCam.Core.Model.Heights;
 
@@ -14,6 +15,11 @@ namespace GCam.Core.Strategies
     /// contour whose heights fail is reported and left uncut, and the rest are cut, which
     /// is how a contour consumed by a negative tangential extension is already treated.
     /// Only when every contour fails is there nothing to generate.
+    ///
+    /// **One retract plane for every contour.** When the feed height follows the contour
+    /// and some contour's feed is above the retract as entered, the retract is lifted to
+    /// the highest such feed for all of them, not just for that one - more air-cutting on
+    /// the lower contours, but the tool always goes back to the same place.
     ///
     /// In Core rather than beside the extraction that calls it, because it is a rule with
     /// a right answer and a test can reach it here.
@@ -52,22 +58,45 @@ namespace GCam.Core.Strategies
             }
 
             var skipped = new List<string>();
+            var candidates = new List<ResolvedContour>();
+            double? floor = null;
 
+            // First the contours that can be cut at all, and the highest feed height among
+            // them - which is where the one retract plane has to be when any feed is above
+            // the retract as entered. A contour left out does not get a say in it.
             foreach (ResolvedContour contour in contours)
             {
-                HeightContext own = context.ForContour(contour.Level);
-                IReadOnlyList<string> problems = heights.Validate(own);
-
-                if (problems.Count > 0)
+                if (Usable(heights, context.ForContour(contour.Level), contour, skipped, ref failure))
                 {
-                    failure = failure ?? problems[0];
-                    skipped.Add(
-                        $"The contour at Z {contour.Level:0.###}mm has not been cut: {problems[0]}");
+                    candidates.Add(contour);
+
+                    if (heights.TryResolve(HeightKind.Feed, context.ForContour(contour.Level), out double feed))
+                    {
+                        floor = floor.HasValue ? Math.Max(floor.Value, feed) : feed;
+                    }
+                }
+            }
+
+            HeightContext lifted = floor.HasValue ? context.WithRetractFloor(floor.Value) : context;
+            string correction = null;
+
+            // Then again at the shared retract. Lifting it can put it above a clearance
+            // that does not follow it, which nothing corrects, so each contour is checked
+            // a second time rather than assumed still usable.
+            foreach (ResolvedContour contour in candidates)
+            {
+                HeightContext own = lifted.ForContour(contour.Level);
+
+                if (!Usable(heights, own, contour, skipped, ref failure))
+                {
                     continue;
                 }
 
                 heights.TryResolve(own, out ResolvedHeights resolved);
                 kept.Add(contour.WithHeights(resolved));
+
+                // One plane, so one lift: every contour says the same thing, once is enough.
+                correction = correction ?? OperationHeights.DescribeCorrections(resolved);
             }
 
             if (kept.Count > 0)
@@ -76,9 +105,36 @@ namespace GCam.Core.Strategies
                 {
                     warnings?.Add(line);
                 }
+
+                if (correction != null)
+                {
+                    warnings?.Add(correction);
+                }
             }
 
             return kept;
+        }
+
+        /// <summary>
+        /// True when the heights are usable for this contour; otherwise records why not.
+        /// </summary>
+        private static bool Usable(
+            OperationHeights heights,
+            HeightContext own,
+            ResolvedContour contour,
+            ICollection<string> skipped,
+            ref string failure)
+        {
+            IReadOnlyList<string> problems = heights.Validate(own);
+
+            if (problems.Count == 0)
+            {
+                return true;
+            }
+
+            failure = failure ?? problems[0];
+            skipped.Add($"The contour at Z {contour.Level:0.###}mm has not been cut: {problems[0]}");
+            return false;
         }
     }
 }

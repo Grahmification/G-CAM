@@ -61,8 +61,18 @@ namespace GCam.SolidWorks.Extraction
             {
                 ResolvedHeights heights = ResolveHeights(operation, heightContext);
 
-                return new GenerationContext(
+                var plain = new GenerationContext(
                     job, operation, tool, heights, stock, ExtractContours(operation, frame));
+
+                // A retract below the feed height is lifted rather than refused, and said so.
+                string correction = OperationHeights.DescribeCorrections(heights);
+
+                if (correction != null)
+                {
+                    plain.Warnings.Add(correction);
+                }
+
+                return plain;
             }
 
             IReadOnlyList<ResolvedContour> contours = ExtractContours(operation, frame);

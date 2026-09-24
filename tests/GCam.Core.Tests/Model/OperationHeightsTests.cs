@@ -49,18 +49,71 @@ namespace GCam.Core.Tests.Model
         }
 
         [Fact]
-        public void A_retract_below_the_feed_height_is_reported()
+        public void A_retract_below_the_feed_height_is_lifted_to_it_rather_than_refused()
         {
+            var heights = new OperationHeights
+            {
+                Retract = new HeightSetting(HeightMode.FromStockTop, 1),   // 31
+                Feed = new HeightSetting(HeightMode.FromStockTop, 2),      // 32
+            };
+
+            Assert.Empty(heights.Validate(Context()));
+            Assert.True(heights.TryResolve(Context(), out ResolvedHeights z));
+
+            Assert.Equal(32, z.Retract, 9);
+            Assert.Equal(31, z.RetractLiftedFrom.Value, 9);
+
+            string warning = OperationHeights.DescribeCorrections(z);
+            Assert.Contains("31mm", warning);
+            Assert.Contains("32mm", warning);
+        }
+
+        [Fact]
+        public void A_retract_at_or_above_the_feed_height_is_used_as_entered()
+        {
+            Assert.True(new OperationHeights().TryResolve(Context(), out ResolvedHeights z));
+
+            Assert.Null(z.RetractLiftedFrom);
+            Assert.Null(OperationHeights.DescribeCorrections(z));
+        }
+
+        [Fact]
+        public void A_clearance_measured_from_the_retract_follows_it_when_it_is_lifted()
+        {
+            // Retract 31 lifted to 32; the default clearance is 5 above whatever retract is
+            // used, so 37 - not the 36 it would have been from the retract as entered.
             var heights = new OperationHeights
             {
                 Retract = new HeightSetting(HeightMode.FromStockTop, 1),
                 Feed = new HeightSetting(HeightMode.FromStockTop, 2),
             };
 
+            heights.TryResolve(Context(), out ResolvedHeights z);
+            Assert.Equal(37, z.Clearance, 9);
+
+            // And the Heights tab, which resolves one at a time, draws the same planes.
+            Assert.True(heights.TryResolve(HeightKind.Retract, Context(), out double retract));
+            Assert.True(heights.TryResolve(HeightKind.Clearance, Context(), out double clearance));
+            Assert.Equal(32, retract, 9);
+            Assert.Equal(37, clearance, 9);
+        }
+
+        [Fact]
+        public void A_fixed_clearance_below_the_lifted_retract_is_still_refused()
+        {
+            // Nothing lifts the clearance: a clearance that does not follow the retract and
+            // ends up below it is a different mistake, and still stops generation.
+            var heights = new OperationHeights
+            {
+                Clearance = new HeightSetting(HeightMode.FromStockTop, 3),   // 33
+                Retract = new HeightSetting(HeightMode.FromStockTop, 1),     // 31, lifted to 35
+                Feed = new HeightSetting(HeightMode.FromStockTop, 5),        // 35
+            };
+
             string problem = Assert.Single(heights.Validate(Context()));
 
-            Assert.Contains("Retract height", problem);
-            Assert.Contains("feed height", problem);
+            Assert.Contains("Clearance height", problem);
+            Assert.Contains("35mm", problem);
         }
 
         [Fact]

@@ -107,6 +107,60 @@ namespace GCam.Core.Tests.Strategies
         }
 
         [Fact]
+        public void A_retract_below_one_contours_feed_is_lifted_to_one_plane_for_all_of_them()
+        {
+            // Feed follows the contour's top here. The high square's feed is 36, above the
+            // retract of 35, so the retract goes to 36 - for the low square as well.
+            var heights = new OperationHeights
+            {
+                Top = new HeightSetting(HeightMode.FromContour),
+                Bottom = new HeightSetting(HeightMode.FromContour, -5),
+            };
+
+            var warnings = new List<string>();
+
+            IReadOnlyList<ResolvedContour> resolved = Resolve(
+                heights, new[] { Square(0, 10), Square(50, 34) }, warnings, out string failure);
+
+            Assert.Equal(2, resolved.Count);
+            Assert.All(resolved, c => Assert.Equal(36, c.Heights.Retract, 9));
+            Assert.All(resolved, c => Assert.Equal(41, c.Heights.Clearance, 9));
+
+            // Each contour keeps its own feed height; only the retract is shared.
+            Assert.Equal(12, resolved[0].Heights.Feed, 9);
+
+            string warning = Assert.Single(warnings);
+            Assert.Contains("35mm", warning);
+            Assert.Contains("36mm", warning);
+            Assert.Null(failure);
+        }
+
+        [Fact]
+        public void A_contour_left_out_does_not_lift_the_retract_for_the_rest()
+        {
+            // The high square's feed is 62, and lifting the retract to it would put it
+            // above a clearance fixed at 50 - so that square is refused, and its feed must
+            // not drag the retract up over the one contour that is cut.
+            var heights = new OperationHeights
+            {
+                Clearance = new HeightSetting(HeightMode.FromStockTop, 20),
+                Top = new HeightSetting(HeightMode.FromContour),
+                Bottom = new HeightSetting(HeightMode.FromModelBottom),
+            };
+
+            var warnings = new List<string>();
+
+            IReadOnlyList<ResolvedContour> resolved = Resolve(
+                heights, new[] { Square(0, 10), Square(50, 60) }, warnings, out string _);
+
+            ResolvedContour kept = Assert.Single(resolved);
+            Assert.Equal(10, kept.Level, 9);
+            Assert.Equal(35, kept.Heights.Retract, 9);
+            Assert.Null(kept.Heights.RetractLiftedFrom);
+            Assert.Contains("Clearance height", Assert.Single(warnings));
+        }
+
+        [Fact]
         public void No_contours_at_all_is_reported_as_a_failure()
         {
             IReadOnlyList<ResolvedContour> resolved = Resolve(
