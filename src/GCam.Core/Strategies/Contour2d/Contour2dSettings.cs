@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using GCam.Core.Model;
+using GCam.Core.Model.Heights;
 using GCam.Core.Strategies.Shared;
 
 namespace GCam.Core.Strategies.Contour2d
@@ -224,6 +225,21 @@ namespace GCam.Core.Strategies.Contour2d
             }
 
             return problems;
+        }
+
+        /// <summary>
+        /// Cutting down to the contour itself rather than to the bottom of the model.
+        /// </summary>
+        /// <remarks>
+        /// The edge picked is the edge to be cut, so the profile's own Z is where the cut
+        /// should stop - and on a part with several levels, each chain stops at its own.
+        /// The model bottom took every profile straight through the part.
+        /// </remarks>
+        public override OperationHeights DefaultHeights()
+        {
+            OperationHeights heights = base.DefaultHeights();
+            heights.Bottom = new HeightSetting(HeightMode.FromContour);
+            return heights;
         }
     }
 }

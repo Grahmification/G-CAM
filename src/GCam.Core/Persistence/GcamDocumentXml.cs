@@ -540,7 +540,7 @@ namespace GCam.Core.Persistence
             };
 
             operation.Cutting = ReadCutting(element.Element("cutting"));
-            operation.Heights = ReadHeights(element.Element("heights"));
+            operation.Heights = ReadHeights(element.Element("heights"), operation.Heights);
             operation.Frame = ReadFrame(element.Element("frame"));
             ReadExtra(element.Element("extra"), operation.Extra);
 
@@ -675,9 +675,14 @@ namespace GCam.Core.Persistence
             return cutting;
         }
 
-        private static OperationHeights ReadHeights(XElement element)
+        /// <summary>
+        /// The stored heights, with anything missing or unreadable taken from
+        /// <paramref name="defaults"/> - the strategy's own, so a gap in a file gives the
+        /// same answer a new operation would.
+        /// </summary>
+        private static OperationHeights ReadHeights(XElement element, OperationHeights defaults)
         {
-            var heights = new OperationHeights();
+            OperationHeights heights = defaults ?? new OperationHeights();
 
             if (element == null)
             {

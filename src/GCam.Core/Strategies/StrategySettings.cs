@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using GCam.Core.Model.Heights;
 
 namespace GCam.Core.Strategies
 {
@@ -69,5 +70,15 @@ namespace GCam.Core.Strategies
         /// here, and both are checked when an operation is generated.
         /// </remarks>
         public virtual IReadOnlyList<string> Validate() => NoProblems;
+
+        /// <summary>
+        /// The heights a new operation of this strategy starts with.
+        /// </summary>
+        /// <remarks>
+        /// The strategy's to decide, because where a cut sensibly stops depends on what
+        /// the cut is: a contour usually stops at the contour, a face at the top of the
+        /// model. A fresh object every call, since the operation goes on to edit it.
+        /// </remarks>
+        public virtual OperationHeights DefaultHeights() => new OperationHeights();
     }
 }

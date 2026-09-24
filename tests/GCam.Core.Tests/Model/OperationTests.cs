@@ -113,10 +113,44 @@ namespace GCam.Core.Tests.Model
         [Fact]
         public void Heights_are_checked_when_the_extents_are_known()
         {
+            // For a contour, because a 2D contour's bottom is measured from one by default.
             Operation operation = Usable();
             operation.Heights.Clearance = new HeightSetting(HeightMode.FromStockTop, -50);
 
-            Assert.Contains(operation.Validate(Context()), p => p.Contains("Clearance height"));
+            Assert.Contains(
+                operation.Validate(Context().ForContour(10)), p => p.Contains("Clearance height"));
+        }
+
+        [Fact]
+        public void A_new_2d_contour_cuts_down_to_the_contour()
+        {
+            OperationHeights heights = new Operation(new Contour2dSettings()).Heights;
+
+            Assert.Equal(HeightMode.FromContour, heights.Bottom.Mode);
+            Assert.Equal(0, heights.Bottom.Offset, 9);
+
+            // Only the bottom changes; the rest are the ordinary defaults.
+            Assert.Equal(new OperationHeights().Top.Mode, heights.Top.Mode);
+            Assert.Equal(new OperationHeights().Clearance.Offset, heights.Clearance.Offset, 9);
+        }
+
+        [Fact]
+        public void Two_new_operations_do_not_share_their_heights()
+        {
+            var first = new Operation(new Contour2dSettings());
+            var second = new Operation(new Contour2dSettings());
+
+            first.Heights.Bottom.Offset = -3;
+
+            Assert.Equal(0, second.Heights.Bottom.Offset, 9);
+        }
+
+        [Fact]
+        public void Heights_measured_from_the_contour_are_not_judged_without_one()
+        {
+            // The operation as a whole has no contour Z, so "cannot be worked out" would
+            // be a problem invented by asking the wrong question.
+            Assert.Empty(Usable().Validate(Context()));
         }
 
         [Fact]

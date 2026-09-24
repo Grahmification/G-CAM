@@ -31,6 +31,7 @@ namespace GCam.Core.Model
         public Operation(StrategySettings settings)
         {
             Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+            Heights = settings.DefaultHeights() ?? new OperationHeights();
         }
 
         public string Id { get; set; } = Guid.NewGuid().ToString("D");
@@ -72,7 +73,8 @@ namespace GCam.Core.Model
         /// </summary>
         public CuttingData Cutting { get; set; } = new CuttingData();
 
-        public OperationHeights Heights { get; set; } = new OperationHeights();
+        /// <summary>Starts as the strategy's own defaults - see <see cref="StrategySettings.DefaultHeights"/>.</summary>
+        public OperationHeights Heights { get; set; }
 
         public OperationFrame Frame { get; set; } = new OperationFrame();
 
@@ -179,7 +181,8 @@ namespace GCam.Core.Model
         /// <param name="heightContext">
         /// The stock and model extents, when they are available. Null skips the height
         /// checks rather than inventing extents - a page being edited before the geometry
-        /// has been resolved is a normal state, not a broken operation.
+        /// has been resolved is a normal state, not a broken operation. The same goes for
+        /// heights measured from the contour when the context is not for one.
         /// </param>
         public IReadOnlyList<string> Validate(HeightContext heightContext = null)
         {
@@ -200,7 +203,11 @@ namespace GCam.Core.Model
                 problems.Add("Tolerance must be greater than zero.");
             }
 
-            if (heightContext != null)
+            // Heights measured from the contour can only be judged for one contour, which
+            // is what generation does - see ContourHeights. Asked about the operation as a
+            // whole, they have no answer yet, which is not the same as a wrong one.
+            if (heightContext != null
+                && (heightContext.ContourLevel.HasValue || !Heights.IsContourRelative))
             {
                 problems.AddRange(Heights.Validate(heightContext));
             }
