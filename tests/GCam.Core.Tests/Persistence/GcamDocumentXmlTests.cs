@@ -172,6 +172,38 @@ namespace GCam.Core.Tests.Persistence
         }
 
         [Fact]
+        public void A_height_measured_from_the_contour_round_trips()
+        {
+            JobDocument document = Sample();
+            document.Jobs.Single().Operations.Single().Heights.Top =
+                new HeightSetting(HeightMode.FromContour, 1.5);
+
+            HeightSetting top = RoundTrip(document).Jobs.Single().Operations.Single().Heights.Top;
+
+            Assert.Equal(HeightMode.FromContour, top.Mode);
+            Assert.Equal(1.5, top.Offset, 9);
+        }
+
+        [Fact]
+        public void A_height_mode_this_build_does_not_know_falls_back_to_the_default()
+        {
+            // What a build from before FromContour does with a file that uses it - and
+            // what this one will do with whatever mode comes next. The load goes on.
+            GcamDocumentXml xml = Xml();
+            XElement root = xml.WriteElement(Sample());
+            XElement top = root.Descendants("heights").Single().Element("top");
+
+            top.SetAttributeValue("mode", "FromSomethingNewer");
+            top.SetAttributeValue("offset", "4");
+
+            HeightSetting read = xml.ReadElement(root)
+                .Document.Jobs.Single().Operations.Single().Heights.Top;
+
+            Assert.Equal(new OperationHeights().Top.Mode, read.Mode);
+            Assert.Equal(4, read.Offset, 9);
+        }
+
+        [Fact]
         public void Strategy_parameters_survive()
         {
             var settings = (Contour2dSettings)RoundTrip(Sample())

@@ -37,9 +37,13 @@ namespace GCam.Core.Model.Heights
             Offset = offset;
         }
 
+        /// <summary>True when this height moves with the contour being cut.</summary>
+        public bool IsContourRelative => Mode == HeightMode.FromContour;
+
         /// <summary>
         /// The Z this height lands on. False when the mode needs a selection and that
-        /// selection is missing or no longer in the model.
+        /// selection is missing or no longer in the model, or it is measured from a
+        /// contour and the context is not for one.
         /// </summary>
         /// <remarks>
         /// Failure is not an exception: a reference that stopped resolving is a warning
@@ -52,6 +56,17 @@ namespace GCam.Core.Model.Heights
             if (context == null)
             {
                 return false;
+            }
+
+            if (Mode == HeightMode.FromContour)
+            {
+                if (!context.ContourLevel.HasValue)
+                {
+                    return false;
+                }
+
+                z = context.ContourLevel.Value + Offset;
+                return true;
             }
 
             if (Mode == HeightMode.FromSelection)
@@ -80,6 +95,11 @@ namespace GCam.Core.Model.Heights
             if (TryResolve(context, out double _))
             {
                 return null;
+            }
+
+            if (Mode == HeightMode.FromContour)
+            {
+                return "it is measured from the contour being cut, and there is none";
             }
 
             if (Mode != HeightMode.FromSelection)

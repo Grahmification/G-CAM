@@ -181,8 +181,9 @@ namespace GCam.SolidWorks.Rendering
 
             if (height == null || !height.TryResolve(context, out z))
             {
-                // A height measured from a selection that is not wired up yet, most
-                // likely - see the gaps in docs/design/operations.md. No plane rather
+                // A height measured from a selection that is not wired up yet, or one
+                // measured from the contour, which has a Z per contour and so none for
+                // the operation - HSMWorks draws nothing for it either. No plane rather
                 // than one at a guessed Z.
                 return new RenderBatch[0];
             }

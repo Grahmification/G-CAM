@@ -107,6 +107,42 @@ namespace GCam.Core.Tests.Model
         }
 
         [Fact]
+        public void A_contour_height_measures_from_the_contour_plus_its_offset()
+        {
+            var height = new HeightSetting(HeightMode.FromContour, -1.5);
+
+            Assert.True(height.TryResolve(Context().ForContour(12), out double z));
+            Assert.Equal(10.5, z, 9);
+        }
+
+        [Fact]
+        public void A_contour_height_does_not_resolve_without_a_contour()
+        {
+            // The operation as a whole has no one contour to measure from - the Heights
+            // tab asks exactly that question, and has to get "no answer" rather than zero.
+            var height = new HeightSetting(HeightMode.FromContour);
+
+            Assert.False(height.TryResolve(Context(), out double _));
+            Assert.Contains("contour", height.DescribeFailure(Context()));
+        }
+
+        [Fact]
+        public void Measuring_for_a_contour_keeps_everything_else_in_the_context()
+        {
+            var selections = new Dictionary<string, double> { ["face-1"] = 12.5 };
+
+            HeightContext context = Context(selections).ForContour(7);
+
+            Assert.Equal(30, context.StockTop, 9);
+            Assert.Equal(-5, context.StockBottom, 9);
+            Assert.Equal(25, context.ModelTop, 9);
+            Assert.Equal(0, context.ModelBottom, 9);
+            Assert.True(context.TryGetSelection("face-1", out double picked));
+            Assert.Equal(12.5, picked, 9);
+            Assert.Equal(7, context.ContourLevel.Value, 9);
+        }
+
+        [Fact]
         public void A_resolvable_height_describes_no_failure()
         {
             Assert.Null(new HeightSetting(HeightMode.FromStockTop, 5).DescribeFailure(Context()));

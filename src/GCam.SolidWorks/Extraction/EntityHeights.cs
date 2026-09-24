@@ -33,8 +33,11 @@ namespace GCam.SolidWorks.Extraction
         /// A tenth of a micron. A genuinely flat edge tessellates to an exactly constant
         /// Z, so this absorbs arithmetic noise rather than sloppiness - anything a user
         /// would call sloped is orders of magnitude above it.
+        ///
+        /// Internal because <see cref="ContourExtraction"/> asks the same question of a
+        /// whole chain.
         /// </remarks>
-        private const double FlatToleranceMillimetres = 1e-4;
+        internal const double FlatToleranceMillimetres = 1e-4;
 
         /// <summary>
         /// How far a face's normal may be off the job's Z axis, as a dot product.

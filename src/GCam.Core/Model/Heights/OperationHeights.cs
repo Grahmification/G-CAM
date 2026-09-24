@@ -32,6 +32,12 @@ namespace GCam.Core.Model.Heights
         public HeightSetting Bottom { get; set; } = new HeightSetting(HeightMode.FromModelBottom);
 
         /// <summary>
+        /// True when the cutting heights move with each contour, so they have to be
+        /// resolved once per contour rather than once for the operation.
+        /// </summary>
+        public bool IsContourRelative => Top.IsContourRelative || Bottom.IsContourRelative;
+
+        /// <summary>
         /// Resolves all five. False when any of them cannot be resolved, which is a
         /// selection that has gone missing.
         /// </summary>
@@ -63,6 +69,18 @@ namespace GCam.Core.Model.Heights
         public IReadOnlyList<string> Validate(HeightContext context)
         {
             var problems = new List<string>();
+
+            // Only the cutting heights may follow a contour. The other three are crossed
+            // on the way from one contour to the next, so they have to be one plane for
+            // all of them; the page never offers it, and a file that says so is refused.
+            RequireNotContourRelative(problems, Clearance, "Clearance height");
+            RequireNotContourRelative(problems, Retract, "Retract height");
+            RequireNotContourRelative(problems, Feed, "Feed height");
+
+            if (problems.Count > 0)
+            {
+                return problems;
+            }
 
             CheckResolves(problems, Clearance, "Clearance height", context);
             CheckResolves(problems, Retract, "Retract height", context);
@@ -100,6 +118,16 @@ namespace GCam.Core.Model.Heights
                 Top = Top.Clone(),
                 Bottom = Bottom.Clone(),
             };
+        }
+
+        private static void RequireNotContourRelative(
+            ICollection<string> problems, HeightSetting height, string label)
+        {
+            if (height.IsContourRelative)
+            {
+                problems.Add(
+                    $"{label} cannot be measured from the contour; only the top and bottom heights can.");
+            }
         }
 
         private static void CheckResolves(

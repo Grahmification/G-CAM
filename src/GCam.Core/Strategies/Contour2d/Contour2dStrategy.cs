@@ -82,29 +82,39 @@ namespace GCam.Core.Strategies.Contour2d
                     $"'{context.Tool.DisplayName}' has no diameter, so its path cannot be offset.");
             }
 
-            IReadOnlyList<double> depths = PassDepths(settings, heights);
+            // Depths are per contour: when the cutting heights are measured from the
+            // contour, two chains in one operation are cut at different depths. Clearance,
+            // retract and feed are never contour-relative, so the rapid in, the links
+            // between contours and the final retract all read the operation's heights.
+            var passes = new List<KeyValuePair<ResolvedContour, IReadOnlyList<double>>>();
+
+            foreach (ResolvedContour profile in profiles)
+            {
+                ResolvedContour extended = Extended(profile, settings, context);
+
+                if (extended != null)
+                {
+                    passes.Add(new KeyValuePair<ResolvedContour, IReadOnlyList<double>>(
+                        extended, PassDepths(settings, HeightsFor(extended, context))));
+                }
+            }
 
             var path = new Toolpath();
             Vec3 first = profiles[0].Path.Points[0];
             path.Add(Move.Rapid(new Vec3(first.X, first.Y, heights.Clearance)));
 
             int step = 0;
-            int total = Math.Max(1, profiles.Count * depths.Count);
+            int total = Math.Max(1, passes.Sum(p => p.Value.Count));
 
-            foreach (ResolvedContour profile in profiles)
+            foreach (KeyValuePair<ResolvedContour, IReadOnlyList<double>> pass in passes)
             {
-                ResolvedContour extended = Extended(profile, settings, context);
-
-                if (extended == null)
-                {
-                    continue;
-                }
-
-                foreach (double depth in depths)
+                foreach (double depth in pass.Value)
                 {
                     cancellation.ThrowIfCancellationRequested();
 
-                    CutOnePass(path, extended, depth, radius, settings, heights, context.Cutting);
+                    CutOnePass(
+                        path, pass.Key, depth, radius, settings,
+                        HeightsFor(pass.Key, context), context.Cutting);
 
                     progress?.Report((double)++step / total);
                 }
@@ -144,7 +154,7 @@ namespace GCam.Core.Strategies.Contour2d
             {
                 return extended == profile.Path
                     ? profile
-                    : new ResolvedContour(extended, profile.Reversed);
+                    : new ResolvedContour(extended, profile.Reversed, profile.Heights);
             }
 
             context.Warnings.Add(
@@ -153,6 +163,12 @@ namespace GCam.Core.Strategies.Contour2d
 
             return null;
         }
+
+        /// <summary>
+        /// A contour's own heights when it has them, otherwise the operation's.
+        /// </summary>
+        private static ResolvedHeights HeightsFor(ResolvedContour profile, GenerationContext context) =>
+            profile.Heights ?? context.Heights;
 
         /// <summary>
         /// The depths each pass cuts at, deepest last.

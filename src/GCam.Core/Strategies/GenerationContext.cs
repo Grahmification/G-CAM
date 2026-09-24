@@ -87,6 +87,12 @@ namespace GCam.Core.Strategies
         public Tool Tool { get; }
 
         /// <summary>The five heights as plain Z values.</summary>
+        /// <remarks>
+        /// The operation's answer. When the cutting heights are measured from the contour,
+        /// each contour carries its own in <see cref="ResolvedContour.Heights"/>, and top
+        /// and bottom here are only the first contour's - clearance, retract and feed are
+        /// one plane for every contour, so those stay right to read from here.
+        /// </remarks>
         public ResolvedHeights Heights { get; }
 
         /// <summary>The stock box, in the operation's frame.</summary>

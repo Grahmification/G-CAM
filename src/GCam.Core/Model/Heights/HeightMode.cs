@@ -36,5 +36,12 @@ namespace GCam.Core.Model.Heights
         /// <see cref="HeightSetting.Reference"/>.
         /// </summary>
         FromSelection = 5,
+
+        /// <summary>
+        /// The Z of the contour being cut, so one operation cuts each of its chains at a
+        /// height of its own. For Top and Bottom only: clearance, retract and feed are
+        /// crossed between contours, and have to be one plane for all of them.
+        /// </summary>
+        FromContour = 6,
     }
 }

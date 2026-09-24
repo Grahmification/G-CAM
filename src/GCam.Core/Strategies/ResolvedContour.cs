@@ -1,5 +1,6 @@
 using System;
 using GCam.Core.Geometry.Primitives;
+using GCam.Core.Model.Heights;
 
 namespace GCam.Core.Strategies
 {
@@ -20,14 +21,26 @@ namespace GCam.Core.Strategies
     /// </remarks>
     public sealed class ResolvedContour
     {
-        public ResolvedContour(Polyline path, bool reversed = false)
+        public ResolvedContour(Polyline path, bool reversed = false, ResolvedHeights heights = null)
         {
             Path = path ?? throw new ArgumentNullException(nameof(path));
             Reversed = reversed;
+            Heights = heights;
         }
 
         /// <summary>Millimetres, in the operation's frame. Open or closed.</summary>
         public Polyline Path { get; }
+
+        /// <summary>
+        /// The Z this contour lies at, which is what a height measured from the contour is
+        /// measured from.
+        /// </summary>
+        /// <remarks>
+        /// Read off the first point because extraction for 2D work flattens every chain
+        /// onto one Z, so any point would give the same answer. A contour built by hand
+        /// that is not flat gets the Z it starts at.
+        /// </remarks>
+        public double Level => Path.Count == 0 ? 0 : Path.Points[0].Z;
 
         /// <summary>
         /// The user asked for this contour the other way round, which puts the cutter on
@@ -35,6 +48,24 @@ namespace GCam.Core.Strategies
         /// hand of an open one.
         /// </summary>
         public bool Reversed { get; }
+
+        /// <summary>
+        /// This contour's own heights, when the operation's cutting heights are measured
+        /// from the contour; null when they are the operation's and
+        /// <see cref="GenerationContext.Heights"/> is the answer.
+        /// </summary>
+        /// <remarks>
+        /// **Here rather than in a list beside the contours**, although it mixes geometry
+        /// with heights on one type. A parallel list can fall out of step with the one it
+        /// shadows - the failure <see cref="Geometry.Chaining.ChainWithSources"/> exists to
+        /// avoid - and a contour dropped or extended would have to remember to drop or
+        /// carry its heights with it. On the contour, it cannot be forgotten.
+        /// </remarks>
+        public ResolvedHeights Heights { get; }
+
+        /// <summary>The same contour, with heights resolved for it.</summary>
+        public ResolvedContour WithHeights(ResolvedHeights heights) =>
+            new ResolvedContour(Path, Reversed, heights);
 
         public override string ToString() =>
             Reversed ? Path + " (reversed)" : Path.ToString();

@@ -29,13 +29,15 @@ namespace GCam.Core.Model.Heights
             double stockBottom,
             double modelTop,
             double modelBottom,
-            IReadOnlyDictionary<string, double> selectionHeights = null)
+            IReadOnlyDictionary<string, double> selectionHeights = null,
+            double? contourLevel = null)
         {
             StockTop = stockTop;
             StockBottom = stockBottom;
             ModelTop = modelTop;
             ModelBottom = modelBottom;
             _selectionHeights = selectionHeights;
+            ContourLevel = contourLevel;
         }
 
         public double StockTop { get; }
@@ -45,6 +47,21 @@ namespace GCam.Core.Model.Heights
         public double ModelTop { get; }
 
         public double ModelBottom { get; }
+
+        /// <summary>
+        /// The Z of the one contour these heights are being resolved for, or null when
+        /// they are being resolved for the operation as a whole.
+        /// </summary>
+        /// <remarks>
+        /// Null is the ordinary case, not a fault: the Heights tab and anything else that
+        /// asks about the operation rather than one of its chains has no single contour to
+        /// name, and <see cref="HeightMode.FromContour"/> then simply does not resolve.
+        /// </remarks>
+        public double? ContourLevel { get; }
+
+        /// <summary>The same context, measured for one contour at the given Z.</summary>
+        public HeightContext ForContour(double level) =>
+            new HeightContext(StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, level);
 
         /// <summary>
         /// Builds a context from the stock and model extents, already expressed in the
@@ -84,8 +101,9 @@ namespace GCam.Core.Model.Heights
 
         /// <summary>The datum for a mode that does not need a selection.</summary>
         /// <exception cref="ArgumentOutOfRangeException">
-        /// For <see cref="HeightMode.FromSelection"/>, which needs a reference and so is
-        /// resolved by <see cref="HeightSetting"/> rather than here.
+        /// For <see cref="HeightMode.FromSelection"/> and <see cref="HeightMode.FromContour"/>,
+        /// which may have nothing to measure from and so are resolved by
+        /// <see cref="HeightSetting"/> rather than here.
         /// </exception>
         public double Datum(HeightMode mode)
         {
@@ -98,7 +116,7 @@ namespace GCam.Core.Model.Heights
                 case HeightMode.FromJobOrigin: return 0;
                 default:
                     throw new ArgumentOutOfRangeException(
-                        nameof(mode), mode, "This mode needs a selection to resolve.");
+                        nameof(mode), mode, "This mode needs a selection or a contour to resolve.");
             }
         }
     }

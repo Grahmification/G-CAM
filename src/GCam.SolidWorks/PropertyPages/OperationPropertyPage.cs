@@ -172,6 +172,11 @@ namespace GCam.SolidWorks.PropertyPages
         /// The height modes offered, in the order they appear. Kept beside the captions so
         /// the two cannot drift.
         /// </summary>
+        /// <remarks>
+        /// Every mode any row can offer. Each row offers its own subset - see
+        /// <see cref="ModesFor"/> - so an index into a row's drop-down is an index into
+        /// that row's list, never into this one.
+        /// </remarks>
         private static readonly HeightMode[] HeightModes =
         {
             HeightMode.FromStockTop,
@@ -180,6 +185,7 @@ namespace GCam.SolidWorks.PropertyPages
             HeightMode.FromModelBottom,
             HeightMode.FromJobOrigin,
             HeightMode.FromSelection,
+            HeightMode.FromContour,
         };
 
         private static readonly string[] HeightModeCaptions =
@@ -190,6 +196,7 @@ namespace GCam.SolidWorks.PropertyPages
             "Model bottom",
             "Job origin",
             "Selection",
+            "Contour",
         };
 
         private static readonly CoolantMode[] Coolants =
@@ -518,10 +525,17 @@ namespace GCam.SolidWorks.PropertyPages
         {
             AddLabel(group, labelId, caption + " — measured from");
 
+            HeightMode[] modes = ModesFor(kind);
+
             _heights[modeId] = new HeightField
             {
                 Kind = kind,
-                Mode = AddCombobox(group, modeId, HeightModeCaptions, tip),
+                Modes = modes,
+                Mode = AddCombobox(
+                    group,
+                    modeId,
+                    modes.Select(m => HeightModeCaptions[Array.IndexOf(HeightModes, m)]).ToArray(),
+                    tip),
                 Selection = AddSelectionbox(
                     group,
                     selectionId,
@@ -545,10 +559,27 @@ namespace GCam.SolidWorks.PropertyPages
             };
         }
 
+        /// <summary>
+        /// The modes one row offers: all of them for the cutting heights, and all but
+        /// Contour for the rest.
+        /// </summary>
+        /// <remarks>
+        /// Clearance, retract and feed are crossed on the way from one contour to the next,
+        /// so they have to be one plane for every contour - which is also the rule
+        /// <see cref="OperationHeights.Validate"/> enforces, for a file that says otherwise.
+        /// </remarks>
+        private static HeightMode[] ModesFor(HeightKind kind) =>
+            kind == HeightKind.Top || kind == HeightKind.Bottom
+                ? HeightModes
+                : HeightModes.Where(m => m != HeightMode.FromContour).ToArray();
+
         /// <summary>A height's controls, kept together so loading cannot mismatch them.</summary>
         private sealed class HeightField
         {
             public HeightKind Kind { get; set; }
+
+            /// <summary>What this row's drop-down offers, in its order.</summary>
+            public HeightMode[] Modes { get; set; }
 
             public IPropertyManagerPageCombobox Mode { get; set; }
 
@@ -745,7 +776,7 @@ namespace GCam.SolidWorks.PropertyPages
         {
             HeightField field = _heights[modeId];
 
-            field.Mode.CurrentSelection = (short)Math.Max(0, Array.IndexOf(HeightModes, height.Mode));
+            field.Mode.CurrentSelection = (short)Math.Max(0, Array.IndexOf(field.Modes, height.Mode));
             field.Offset.Value = ToBoxLength(height.Offset);
         }
 
@@ -1879,12 +1910,14 @@ namespace GCam.SolidWorks.PropertyPages
 
         private void SetMode(HeightSetting height, int modeId, int item)
         {
-            if (item < 0 || item >= HeightModes.Length)
+            HeightField field;
+
+            if (!_heights.TryGetValue(modeId, out field) || item < 0 || item >= field.Modes.Length)
             {
                 return;
             }
 
-            height.Mode = HeightModes[item];
+            height.Mode = field.Modes[item];
             ShowSelectionBoxFor(modeId, height.Mode);
         }
 

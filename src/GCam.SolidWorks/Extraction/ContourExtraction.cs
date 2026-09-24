@@ -62,9 +62,17 @@ namespace GCam.SolidWorks.Extraction
         /// see <see cref="Chaining.ChainWithSources"/>.
         /// </remarks>
         /// <param name="flatten">
-        /// Whether a propagated chain is projected onto the Z of the edge it was picked
-        /// from. True for 2D work, where a chain that has run up a 3D edge still has to be
-        /// cut at one depth; a 3D strategy would take the edges where they actually lie.
+        /// Whether every chain comes back at a single Z. True for 2D work, where a chain
+        /// that runs up a 3D edge still has to be cut at one depth, and a height measured
+        /// from the contour needs that depth to be one number; a 3D strategy would take
+        /// the edges where they actually lie.
+        ///
+        /// <b>Propagated picks are flattened before chaining</b>, onto the Z of the edge
+        /// they were picked from, because the walk may have climbed a riser that has to
+        /// collapse. <b>Everything else is chained in 3D first</b>, and only a chain that
+        /// comes out not flat is projected - onto the level of the first pick in it.
+        /// Flattening each of those picks first instead would pull apart a profile built
+        /// from separate picks at different heights, which today chains as one.
         /// </param>
         public static IReadOnlyList<ResolvedContour> Extract(
             ModelDoc2 model,
@@ -87,6 +95,7 @@ namespace GCam.SolidWorks.Extraction
             // what lets a chain be traced back to the picks that made it.
             var pieces = new List<Polyline>();
             var pieceOwners = new List<ContourSelection>();
+            var pieceLevels = new List<double?>();
             var topology = new ModelEdgeTopology(frame);
 
             foreach (OwnedEdge owned in EdgesOf(model, selections, topology, log))
@@ -94,45 +103,85 @@ namespace GCam.SolidWorks.Extraction
                 // The log is what lets Tessellate report geometry that came back wrong.
                 Polyline piece = Tessellate(owned.Edge, frame, chordToleranceMillimetres, log);
 
-                if (flatten && owned.Level.HasValue)
+                if (flatten && owned.Propagated && owned.Level.HasValue)
                 {
-                    piece = Flattened(piece, owned.Level.Value);
+                    piece = Flattening.Onto(piece, owned.Level.Value);
                 }
 
                 if (piece != null && !piece.IsEmpty)
                 {
                     pieces.Add(piece);
                     pieceOwners.Add(owned.Owner);
+                    pieceLevels.Add(owned.Level);
                 }
             }
 
             foreach (Chaining.Chain chain in Chaining.ChainWithSources(pieces))
             {
+                Polyline path = flatten ? Flat(chain, pieceLevels) : chain.Path;
+
+                if (path == null)
+                {
+                    log.Warn("A selected contour runs straight up and down, so there is nothing of it to cut in 2D.");
+                    continue;
+                }
+
                 bool reversed = chain.Sources.Any(
                     i => i < pieceOwners.Count && pieceOwners[i] != null && pieceOwners[i].Reversed);
 
-                contours.Add(new ResolvedContour(chain.Path, reversed));
+                contours.Add(new ResolvedContour(path, reversed));
             }
 
             return contours;
         }
 
+        /// <summary>
+        /// A chain at one Z: itself when it already is, otherwise projected onto the level
+        /// of the first pick that went into it. Null when projecting leaves nothing.
+        /// </summary>
+        /// <remarks>
+        /// The first pick, because that is the rule a propagated chain already follows -
+        /// the Z of the edge it was picked from - and one rule for both is what makes the
+        /// blue highlight and a height measured from the contour agree. Sources are sorted,
+        /// so the first of them is the earliest pick.
+        /// </remarks>
+        private static Polyline Flat(Chaining.Chain chain, IReadOnlyList<double?> pieceLevels)
+        {
+            Polyline path = chain.Path;
+            int first = chain.Sources.Count > 0 ? chain.Sources[0] : -1;
+
+            double level = first >= 0 && first < pieceLevels.Count && pieceLevels[first].HasValue
+                ? pieceLevels[first].Value
+                : path.Points[0].Z;
+
+            return Flattening.LiesAt(path, level, EntityHeights.FlatToleranceMillimetres)
+                ? path
+                : Flattening.Onto(path, level);
+        }
+
         /// <summary>An edge and the selection it was reached through.</summary>
         private struct OwnedEdge
         {
-            public OwnedEdge(Edge edge, ContourSelection owner, double? level)
+            public OwnedEdge(Edge edge, ContourSelection owner, double? level, bool propagated)
             {
                 Edge = edge;
                 Owner = owner;
                 Level = level;
+                Propagated = propagated;
             }
 
             public Edge Edge { get; }
 
             public ContourSelection Owner { get; }
 
-            /// <summary>The Z of the picked edge, when this one is to be flattened onto it.</summary>
+            /// <summary>The Z of the pick this edge was reached through.</summary>
             public double? Level { get; }
+
+            /// <summary>
+            /// Reached by walking from a picked edge, and so flattened before chaining
+            /// rather than after.
+            /// </summary>
+            public bool Propagated { get; }
         }
 
         /// <summary>
@@ -166,7 +215,9 @@ namespace GCam.SolidWorks.Extraction
                     continue;
                 }
 
-                double? level = LevelOf(entity as Edge, selection, topology);
+                double? level = LevelOf(entity, topology);
+                bool propagated = entity is Edge
+                                  && (selection.PropagateTangent || selection.PropagateAlongZ);
 
                 foreach (Edge edge in EdgesFrom(entity, selection, topology, log))
                 {
@@ -174,25 +225,27 @@ namespace GCam.SolidWorks.Extraction
                     // piece of one chain, and it cannot be walked two ways at once.
                     if (edge != null && seen.Add(edge))
                     {
-                        yield return new OwnedEdge(edge, selection, level);
+                        yield return new OwnedEdge(edge, selection, level, propagated);
                     }
                 }
             }
         }
 
         /// <summary>
-        /// The Z a pick's chain is flattened onto, or null when nothing propagates from it
-        /// and so nothing can have left that level.
+        /// The Z a pick's chain is flattened onto: where the picked edge starts, or for a
+        /// face, where the first of its edges does. Null when there is neither.
         /// </summary>
-        private static double? LevelOf(
-            Edge picked, ContourSelection selection, ModelEdgeTopology topology)
+        /// <remarks>
+        /// A face has no picked edge, so it borrows its first. On a flat face every edge
+        /// is at the face's own Z, so which one is first does not matter; on a sloped one
+        /// it is arbitrary, but it is one Z, which is what 2D work needs.
+        /// </remarks>
+        private static double? LevelOf(object entity, ModelEdgeTopology topology)
         {
-            if (picked == null || !(selection.PropagateTangent || selection.PropagateAlongZ))
-            {
-                return null;
-            }
+            Edge picked = entity as Edge
+                          ?? ((entity as Face2)?.GetEdges() as object[])?.OfType<Edge>().FirstOrDefault();
 
-            return topology.StartOf(topology.Index(picked)).Z;
+            return picked == null ? (double?)null : topology.StartOf(topology.Index(picked)).Z;
         }
 
         private static IEnumerable<Edge> EdgesFrom(
@@ -234,24 +287,6 @@ namespace GCam.SolidWorks.Extraction
             {
                 yield return topology.At(index);
             }
-        }
-
-        /// <summary>
-        /// One piece of a chain projected onto the level it was picked at, or null when
-        /// that leaves nothing of it - which is what happens to a vertical edge the walk
-        /// ran up.
-        /// </summary>
-        private static Polyline Flattened(Polyline piece, double z)
-        {
-            if (piece == null || piece.IsEmpty)
-            {
-                return piece;
-            }
-
-            var flat = new Polyline(
-                piece.Points.Select(p => new Vec3(p.X, p.Y, z)).ToList(), piece.IsClosed);
-
-            return flat.Length > Chaining.DefaultTolerance ? flat : null;
         }
 
         /// <summary>

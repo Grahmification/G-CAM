@@ -55,11 +55,40 @@ namespace GCam.SolidWorks.Extraction
             Bounds model = MeasureModel(job, frame);
             Bounds stock = job.Stock.ComputeBounds(model);
 
-            ResolvedHeights heights = ResolveHeights(operation, model, stock, frame);
+            var heightContext = HeightContext.From(stock, model, SelectionHeights(operation, frame));
+
+            if (!operation.Heights.IsContourRelative)
+            {
+                ResolvedHeights heights = ResolveHeights(operation, heightContext);
+
+                return new GenerationContext(
+                    job, operation, tool, heights, stock, ExtractContours(operation, frame));
+            }
 
             IReadOnlyList<ResolvedContour> contours = ExtractContours(operation, frame);
 
-            return new GenerationContext(job, operation, tool, heights, stock, contours);
+            // Cutting heights that follow the contour are resolved once per contour. The
+            // operation's own answer is then the first contour's: clearance, retract and
+            // feed are the same for all of them, and those are what it is read for.
+            var warnings = new List<string>();
+
+            contours = ContourHeights.Resolve(
+                operation.Heights, heightContext, contours, warnings, out string failure);
+
+            if (contours.Count == 0)
+            {
+                throw new GCamUserException($"'{operation.Name}' cannot be generated: " + failure);
+            }
+
+            var context = new GenerationContext(
+                job, operation, tool, contours[0].Heights, stock, contours);
+
+            foreach (string warning in warnings)
+            {
+                context.Warnings.Add(warning);
+            }
+
+            return context;
         }
 
         private Tool ResolveTool(Operation operation)
@@ -125,11 +154,8 @@ namespace GCam.SolidWorks.Extraction
             return extent.Value;
         }
 
-        private ResolvedHeights ResolveHeights(
-            Operation operation, Bounds model, Bounds stock, JobFrame frame)
+        private static ResolvedHeights ResolveHeights(Operation operation, HeightContext context)
         {
-            var context = HeightContext.From(stock, model, SelectionHeights(operation, frame));
-
             IReadOnlyList<string> problems = operation.Heights.Validate(context);
 
             if (problems.Count > 0)

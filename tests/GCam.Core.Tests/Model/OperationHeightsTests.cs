@@ -194,6 +194,74 @@ namespace GCam.Core.Tests.Model
         }
 
         [Fact]
+        public void Top_and_bottom_measured_from_the_contour_resolve_for_that_contour()
+        {
+            var heights = new OperationHeights
+            {
+                Top = new HeightSetting(HeightMode.FromContour, 3),
+                Bottom = new HeightSetting(HeightMode.FromContour, -2),
+            };
+
+            Assert.True(heights.IsContourRelative);
+            Assert.True(heights.TryResolve(Context().ForContour(10), out ResolvedHeights z));
+            Assert.Equal(13, z.Top, 9);
+            Assert.Equal(8, z.Bottom, 9);
+
+            // The rest are not contour-relative, so they do not move with it.
+            Assert.Equal(40, z.Clearance, 9);
+            Assert.Empty(heights.Validate(Context().ForContour(10)));
+        }
+
+        [Fact]
+        public void Contour_heights_do_not_resolve_for_the_operation_as_a_whole()
+        {
+            var heights = new OperationHeights
+            {
+                Bottom = new HeightSetting(HeightMode.FromContour),
+            };
+
+            Assert.False(heights.TryResolve(Context(), out ResolvedHeights _));
+            Assert.Contains("Bottom height", Assert.Single(heights.Validate(Context())));
+        }
+
+        [Fact]
+        public void The_same_heights_can_be_in_order_for_one_contour_and_not_another()
+        {
+            // Ordering is per contour now: a chain above the stock top puts the top above
+            // the feed height, and that has to condemn that chain, not all of them.
+            var heights = new OperationHeights
+            {
+                Top = new HeightSetting(HeightMode.FromContour),
+                Bottom = new HeightSetting(HeightMode.FromModelBottom),
+            };
+
+            Assert.Empty(heights.Validate(Context().ForContour(20)));
+            Assert.Contains("Feed height", Assert.Single(heights.Validate(Context().ForContour(33))));
+        }
+
+        [Theory]
+        [InlineData(HeightKind.Clearance)]
+        [InlineData(HeightKind.Retract)]
+        [InlineData(HeightKind.Feed)]
+        public void Only_the_cutting_heights_may_be_measured_from_the_contour(HeightKind kind)
+        {
+            var heights = new OperationHeights();
+            var fromContour = new HeightSetting(HeightMode.FromContour, 50);
+
+            switch (kind)
+            {
+                case HeightKind.Clearance: heights.Clearance = fromContour; break;
+                case HeightKind.Retract: heights.Retract = fromContour; break;
+                case HeightKind.Feed: heights.Feed = fromContour; break;
+            }
+
+            string problem = Assert.Single(heights.Validate(Context().ForContour(0)));
+
+            Assert.Contains("only the top and bottom", problem);
+            Assert.False(heights.IsContourRelative);
+        }
+
+        [Fact]
         public void Cloning_copies_every_height_rather_than_sharing_them()
         {
             var original = new OperationHeights();
