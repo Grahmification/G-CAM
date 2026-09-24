@@ -24,10 +24,10 @@ namespace GCam.SolidWorks.Rendering
     /// directly, and the one being edited fills in so there is no counting stacked
     /// outlines to work out which is which.
     ///
-    /// <b>Resolved through Core's own rule</b> - <see cref="HeightSetting.TryResolve"/>,
-    /// the same call generation makes - so a plane cannot sit somewhere the cut will not.
+    /// <b>Resolved through Core's own rule</b> - <see cref="OperationHeights.TryResolve(HeightKind, HeightContext, out double)"/>,
+    /// the same rule generation follows - so a plane cannot sit somewhere the cut will not.
     /// Each height is resolved on its own, so one that cannot be worked out costs only its
-    /// own plane.
+    /// own plane - and that of any height measured from it.
     ///
     /// Only while that tab is open, which is the page's business to decide: the Operation
     /// page calls <see cref="Clear"/> for every other tab.
@@ -120,10 +120,10 @@ namespace GCam.SolidWorks.Rendering
 
                 var batches = new List<RenderBatch>();
 
-                foreach (KeyValuePair<HeightKind, HeightSetting> height in Heights(operation))
+                foreach (HeightKind kind in Kinds)
                 {
                     batches.AddRange(
-                        Plane(height.Value, height.Key, context, extent, frame, filled));
+                        Plane(operation.Heights, kind, context, extent, frame, filled));
                 }
 
                 if (batches.Count == 0)
@@ -153,24 +153,21 @@ namespace GCam.SolidWorks.Rendering
             }
         }
 
-        private static IEnumerable<KeyValuePair<HeightKind, HeightSetting>> Heights(
-            Operation operation)
+        private static readonly HeightKind[] Kinds =
         {
-            OperationHeights heights = operation.Heights;
+            HeightKind.Clearance,
+            HeightKind.Retract,
+            HeightKind.Feed,
+            HeightKind.Top,
+            HeightKind.Bottom,
+        };
 
-            yield return Pair(HeightKind.Clearance, heights.Clearance);
-            yield return Pair(HeightKind.Retract, heights.Retract);
-            yield return Pair(HeightKind.Feed, heights.Feed);
-            yield return Pair(HeightKind.Top, heights.Top);
-            yield return Pair(HeightKind.Bottom, heights.Bottom);
-        }
-
-        private static KeyValuePair<HeightKind, HeightSetting> Pair(
-            HeightKind kind, HeightSetting setting) =>
-            new KeyValuePair<HeightKind, HeightSetting>(kind, setting);
-
+        /// <remarks>
+        /// Resolved through the operation's heights rather than the one setting, because a
+        /// feed height measured from the top needs to know where the top is.
+        /// </remarks>
         private static IEnumerable<RenderBatch> Plane(
-            HeightSetting height,
+            OperationHeights heights,
             HeightKind kind,
             HeightContext context,
             Bounds extent,
@@ -179,12 +176,13 @@ namespace GCam.SolidWorks.Rendering
         {
             double z;
 
-            if (height == null || !height.TryResolve(context, out z))
+            if (heights == null || !heights.TryResolve(kind, context, out z))
             {
                 // A height measured from a selection that is not wired up yet, or one
                 // measured from the contour, which has a Z per contour and so none for
-                // the operation - HSMWorks draws nothing for it either. No plane rather
-                // than one at a guessed Z.
+                // the operation - HSMWorks draws nothing for it either. A height
+                // measured from such a top goes the same way. No plane rather than one
+                // at a guessed Z.
                 return new RenderBatch[0];
             }
 

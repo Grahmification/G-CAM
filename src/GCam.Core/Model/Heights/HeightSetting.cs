@@ -43,9 +43,15 @@ namespace GCam.Core.Model.Heights
         /// <summary>
         /// The Z this height lands on. False when the mode needs a selection and that
         /// selection is missing or no longer in the model, or it is measured from a
-        /// contour and the context is not for one.
+        /// contour and the context is not for one, or from the top or retract height and
+        /// the context does not carry it.
         /// </summary>
         /// <remarks>
+        /// A height measured from the top or the retract can only be resolved by whoever
+        /// knows those - <see cref="OperationHeights"/> - so call it through there. Resolved
+        /// directly, against a context that has not been given them, it fails rather than
+        /// guessing.
+        ///
         /// Failure is not an exception: a reference that stopped resolving is a warning
         /// on the operation naming the entity, not a crash mid-generate.
         /// </remarks>
@@ -66,6 +72,28 @@ namespace GCam.Core.Model.Heights
                 }
 
                 z = context.ContourLevel.Value + Offset;
+                return true;
+            }
+
+            if (Mode == HeightMode.FromTop)
+            {
+                if (!context.Top.HasValue)
+                {
+                    return false;
+                }
+
+                z = context.Top.Value + Offset;
+                return true;
+            }
+
+            if (Mode == HeightMode.FromRetract)
+            {
+                if (!context.Retract.HasValue)
+                {
+                    return false;
+                }
+
+                z = context.Retract.Value + Offset;
                 return true;
             }
 
@@ -100,6 +128,16 @@ namespace GCam.Core.Model.Heights
             if (Mode == HeightMode.FromContour)
             {
                 return "it is measured from the contour being cut, and there is none";
+            }
+
+            if (Mode == HeightMode.FromTop)
+            {
+                return "it is measured from the top height, which cannot be worked out";
+            }
+
+            if (Mode == HeightMode.FromRetract)
+            {
+                return "it is measured from the retract height, which cannot be worked out";
             }
 
             if (Mode != HeightMode.FromSelection)

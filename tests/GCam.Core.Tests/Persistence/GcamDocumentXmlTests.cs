@@ -162,8 +162,8 @@ namespace GCam.Core.Tests.Persistence
             OperationHeights heights =
                 RoundTrip(Sample()).Jobs.Single().Operations.Single().Heights;
 
-            Assert.Equal(HeightMode.FromStockTop, heights.Clearance.Mode);
-            Assert.Equal(10, heights.Clearance.Offset, 9);
+            Assert.Equal(HeightMode.FromRetract, heights.Clearance.Mode);
+            Assert.Equal(5, heights.Clearance.Offset, 9);
 
             Assert.Equal(HeightMode.FromSelection, heights.Bottom.Mode);
             Assert.Equal(-0.5, heights.Bottom.Offset, 9);

@@ -43,5 +43,18 @@ namespace GCam.Core.Model.Heights
         /// crossed between contours, and have to be one plane for all of them.
         /// </summary>
         FromContour = 6,
+
+        /// <summary>
+        /// The operation's own top height, so the feed height stays a fixed distance above
+        /// wherever cutting starts. For Feed only. When the top follows the contour, so
+        /// does a feed height measured from it.
+        /// </summary>
+        FromTop = 7,
+
+        /// <summary>
+        /// The operation's own retract height, so the clearance stays a fixed distance
+        /// above it and the two cannot cross. For Clearance only.
+        /// </summary>
+        FromRetract = 8,
     }
 }

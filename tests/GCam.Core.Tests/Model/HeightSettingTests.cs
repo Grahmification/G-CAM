@@ -127,6 +127,51 @@ namespace GCam.Core.Tests.Model
         }
 
         [Fact]
+        public void A_height_measured_from_the_top_needs_the_top_resolved_into_the_context()
+        {
+            var height = new HeightSetting(HeightMode.FromTop, 2);
+
+            Assert.True(height.TryResolve(Context().WithTop(12), out double z));
+            Assert.Equal(14, z, 9);
+
+            // Only OperationHeights knows which setting is the top; resolved without it,
+            // this fails rather than guessing.
+            Assert.False(height.TryResolve(Context(), out double _));
+            Assert.Contains("top height", height.DescribeFailure(Context()));
+        }
+
+        [Fact]
+        public void A_height_measured_from_the_retract_needs_the_retract_resolved_into_the_context()
+        {
+            var height = new HeightSetting(HeightMode.FromRetract, 5);
+
+            Assert.True(height.TryResolve(Context().WithRetract(35), out double z));
+            Assert.Equal(40, z, 9);
+
+            Assert.False(height.TryResolve(Context(), out double _));
+            Assert.Contains("retract height", height.DescribeFailure(Context()));
+        }
+
+        [Fact]
+        public void Resolving_the_top_and_the_retract_keeps_both()
+        {
+            HeightContext context = Context().WithTop(30).WithRetract(35);
+
+            Assert.Equal(30, context.Top.Value, 9);
+            Assert.Equal(35, context.Retract.Value, 9);
+        }
+
+        [Fact]
+        public void Measuring_for_a_contour_forgets_a_top_resolved_for_another()
+        {
+            // A top measured from the contour moves with it, so carrying the old one over
+            // would put the feed height where the last contour wanted it.
+            HeightContext context = Context().WithTop(12).ForContour(7);
+
+            Assert.Null(context.Top);
+        }
+
+        [Fact]
         public void Measuring_for_a_contour_keeps_everything_else_in_the_context()
         {
             var selections = new Dictionary<string, double> { ["face-1"] = 12.5 };

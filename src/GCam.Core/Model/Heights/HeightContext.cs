@@ -31,6 +31,19 @@ namespace GCam.Core.Model.Heights
             double modelBottom,
             IReadOnlyDictionary<string, double> selectionHeights = null,
             double? contourLevel = null)
+            : this(stockTop, stockBottom, modelTop, modelBottom, selectionHeights, contourLevel, null, null)
+        {
+        }
+
+        private HeightContext(
+            double stockTop,
+            double stockBottom,
+            double modelTop,
+            double modelBottom,
+            IReadOnlyDictionary<string, double> selectionHeights,
+            double? contourLevel,
+            double? top,
+            double? retract)
         {
             StockTop = stockTop;
             StockBottom = stockBottom;
@@ -38,6 +51,8 @@ namespace GCam.Core.Model.Heights
             ModelBottom = modelBottom;
             _selectionHeights = selectionHeights;
             ContourLevel = contourLevel;
+            Top = top;
+            Retract = retract;
         }
 
         public double StockTop { get; }
@@ -59,9 +74,43 @@ namespace GCam.Core.Model.Heights
         /// </remarks>
         public double? ContourLevel { get; }
 
+        /// <summary>
+        /// The operation's resolved top height, for <see cref="HeightMode.FromTop"/>; null
+        /// until <see cref="OperationHeights"/> has resolved it.
+        /// </summary>
+        /// <remarks>
+        /// Set by <see cref="OperationHeights"/> rather than by whoever builds the context,
+        /// because it is not an extent of anything - it is the answer to another height,
+        /// and only the owner of all five knows which one that is.
+        /// </remarks>
+        public double? Top { get; }
+
+        /// <summary>
+        /// The operation's resolved retract height, for <see cref="HeightMode.FromRetract"/>;
+        /// null until <see cref="OperationHeights"/> has resolved it. Set there for the same
+        /// reason as <see cref="Top"/>.
+        /// </summary>
+        public double? Retract { get; }
+
         /// <summary>The same context, measured for one contour at the given Z.</summary>
+        /// <remarks>
+        /// Drops any resolved top and retract: a top measured from the contour moves with
+        /// it, so the old answer would be for the wrong contour. The retract cannot follow
+        /// a contour, but it is re-resolved with the top rather than trusted separately.
+        /// </remarks>
         public HeightContext ForContour(double level) =>
-            new HeightContext(StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, level);
+            new HeightContext(
+                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, level, null, null);
+
+        /// <summary>The same context, with the operation's top height resolved.</summary>
+        public HeightContext WithTop(double top) =>
+            new HeightContext(
+                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, ContourLevel, top, Retract);
+
+        /// <summary>The same context, with the operation's retract height resolved.</summary>
+        public HeightContext WithRetract(double retract) =>
+            new HeightContext(
+                StockTop, StockBottom, ModelTop, ModelBottom, _selectionHeights, ContourLevel, Top, retract);
 
         /// <summary>
         /// Builds a context from the stock and model extents, already expressed in the
@@ -101,8 +150,9 @@ namespace GCam.Core.Model.Heights
 
         /// <summary>The datum for a mode that does not need a selection.</summary>
         /// <exception cref="ArgumentOutOfRangeException">
-        /// For <see cref="HeightMode.FromSelection"/> and <see cref="HeightMode.FromContour"/>,
-        /// which may have nothing to measure from and so are resolved by
+        /// For <see cref="HeightMode.FromSelection"/>, <see cref="HeightMode.FromContour"/>,
+        /// <see cref="HeightMode.FromTop"/> and <see cref="HeightMode.FromRetract"/>, which
+        /// may have nothing to measure from and so are resolved by
         /// <see cref="HeightSetting"/> rather than here.
         /// </exception>
         public double Datum(HeightMode mode)
@@ -116,7 +166,7 @@ namespace GCam.Core.Model.Heights
                 case HeightMode.FromJobOrigin: return 0;
                 default:
                     throw new ArgumentOutOfRangeException(
-                        nameof(mode), mode, "This mode needs a selection or a contour to resolve.");
+                        nameof(mode), mode, "This mode needs a selection, a contour or another height to resolve.");
             }
         }
     }

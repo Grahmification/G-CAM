@@ -30,11 +30,15 @@ namespace GCam.Core.Tests.Strategies
                 closed: true));
         }
 
-        /// <summary>Cutting from 2mm above each contour to 5mm below it.</summary>
+        /// <summary>
+        /// Cutting from 2mm above each contour to 5mm below it, under a feed height fixed
+        /// at 32 - so a contour high enough puts its top above the feed.
+        /// </summary>
         private static OperationHeights FromTheContour()
         {
             return new OperationHeights
             {
+                Feed = new HeightSetting(HeightMode.FromStockTop, 2),
                 Top = new HeightSetting(HeightMode.FromContour, 2),
                 Bottom = new HeightSetting(HeightMode.FromContour, -5),
             };

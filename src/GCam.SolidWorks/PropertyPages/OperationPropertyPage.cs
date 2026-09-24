@@ -186,6 +186,8 @@ namespace GCam.SolidWorks.PropertyPages
             HeightMode.FromJobOrigin,
             HeightMode.FromSelection,
             HeightMode.FromContour,
+            HeightMode.FromTop,
+            HeightMode.FromRetract,
         };
 
         private static readonly string[] HeightModeCaptions =
@@ -197,6 +199,8 @@ namespace GCam.SolidWorks.PropertyPages
             "Job origin",
             "Selection",
             "Contour",
+            "Top height",
+            "Retract height",
         };
 
         private static readonly CoolantMode[] Coolants =
@@ -560,18 +564,26 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         /// <summary>
-        /// The modes one row offers: all of them for the cutting heights, and all but
-        /// Contour for the rest.
+        /// The modes one row offers: Contour for the cutting heights only, Top height for
+        /// the feed height only, Retract height for the clearance only, and the rest
+        /// everywhere.
         /// </summary>
         /// <remarks>
-        /// Clearance, retract and feed are crossed on the way from one contour to the next,
-        /// so they have to be one plane for every contour - which is also the rule
-        /// <see cref="OperationHeights.Validate"/> enforces, for a file that says otherwise.
+        /// Clearance and retract are crossed on the way from one contour to the next, so
+        /// they have to be one plane for every contour; feed follows the contour only by
+        /// way of the top. The same rules <see cref="OperationHeights.Validate"/> enforces,
+        /// for a file that says otherwise.
         /// </remarks>
-        private static HeightMode[] ModesFor(HeightKind kind) =>
-            kind == HeightKind.Top || kind == HeightKind.Bottom
-                ? HeightModes
-                : HeightModes.Where(m => m != HeightMode.FromContour).ToArray();
+        private static HeightMode[] ModesFor(HeightKind kind)
+        {
+            bool cutting = kind == HeightKind.Top || kind == HeightKind.Bottom;
+
+            return HeightModes
+                .Where(m => m != HeightMode.FromContour || cutting)
+                .Where(m => m != HeightMode.FromTop || kind == HeightKind.Feed)
+                .Where(m => m != HeightMode.FromRetract || kind == HeightKind.Clearance)
+                .ToArray();
+        }
 
         /// <summary>A height's controls, kept together so loading cannot mismatch them.</summary>
         private sealed class HeightField
@@ -1804,18 +1816,7 @@ namespace GCam.SolidWorks.PropertyPages
             ShowHeights();
         }
 
-        private HeightSetting SettingFor(HeightKind kind)
-        {
-            switch (kind)
-            {
-                case HeightKind.Clearance: return _working.Heights.Clearance;
-                case HeightKind.Retract: return _working.Heights.Retract;
-                case HeightKind.Feed: return _working.Heights.Feed;
-                case HeightKind.Top: return _working.Heights.Top;
-                case HeightKind.Bottom: return _working.Heights.Bottom;
-                default: return null;
-            }
-        }
+        private HeightSetting SettingFor(HeightKind kind) => _working.Heights.For(kind);
 
         /// <remarks>
         /// Committing first and clearing the selection last, as

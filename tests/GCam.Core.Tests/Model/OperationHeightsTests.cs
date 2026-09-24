@@ -228,9 +228,11 @@ namespace GCam.Core.Tests.Model
         public void The_same_heights_can_be_in_order_for_one_contour_and_not_another()
         {
             // Ordering is per contour now: a chain above the stock top puts the top above
-            // the feed height, and that has to condemn that chain, not all of them.
+            // a feed height fixed to the stock, and that has to condemn that chain, not
+            // all of them.
             var heights = new OperationHeights
             {
+                Feed = new HeightSetting(HeightMode.FromStockTop, 2),
                 Top = new HeightSetting(HeightMode.FromContour),
                 Bottom = new HeightSetting(HeightMode.FromModelBottom),
             };
@@ -262,6 +264,178 @@ namespace GCam.Core.Tests.Model
         }
 
         [Fact]
+        public void The_feed_height_is_measured_from_the_top_by_default()
+        {
+            HeightSetting feed = new OperationHeights().Feed;
+
+            Assert.Equal(HeightMode.FromTop, feed.Mode);
+            Assert.Equal(2, feed.Offset, 9);
+        }
+
+        [Fact]
+        public void A_feed_height_measured_from_the_top_follows_it()
+        {
+            // Move where cutting starts, and where the plunge slows down moves with it.
+            var heights = new OperationHeights
+            {
+                Top = new HeightSetting(HeightMode.FromModelTop),
+            };
+
+            Assert.True(heights.TryResolve(Context(), out ResolvedHeights z));
+            Assert.Equal(25, z.Top, 9);
+            Assert.Equal(27, z.Feed, 9);
+            Assert.Empty(heights.Validate(Context()));
+        }
+
+        [Fact]
+        public void One_height_resolves_on_its_own_including_a_feed_measured_from_the_top()
+        {
+            // What the Heights tab's planes ask: one height at a time.
+            var heights = new OperationHeights();
+
+            Assert.True(heights.TryResolve(HeightKind.Feed, Context(), out double feed));
+            Assert.Equal(32, feed, 9);
+        }
+
+        [Fact]
+        public void A_feed_height_measured_from_the_contours_top_moves_with_each_contour()
+        {
+            var heights = new OperationHeights
+            {
+                Top = new HeightSetting(HeightMode.FromContour),
+                Bottom = new HeightSetting(HeightMode.FromContour, -5),
+            };
+
+            heights.TryResolve(Context().ForContour(10), out ResolvedHeights low);
+            heights.TryResolve(Context().ForContour(20), out ResolvedHeights high);
+
+            Assert.Equal(12, low.Feed, 9);
+            Assert.Equal(22, high.Feed, 9);
+
+            // Retract is still one plane for every contour.
+            Assert.Equal(low.Retract, high.Retract, 9);
+        }
+
+        [Fact]
+        public void A_top_that_cannot_be_worked_out_is_reported_once_not_again_for_the_feed()
+        {
+            // The feed height fails only because the top did, and naming it too would
+            // send someone to the wrong row to fix it.
+            var heights = new OperationHeights
+            {
+                Top = new HeightSetting(HeightMode.FromSelection),
+            };
+
+            string problem = Assert.Single(heights.Validate(Context()));
+
+            Assert.Contains("Top height", problem);
+            Assert.False(heights.TryResolve(HeightKind.Feed, Context(), out double _));
+        }
+
+        [Theory]
+        [InlineData(HeightKind.Clearance)]
+        [InlineData(HeightKind.Retract)]
+        [InlineData(HeightKind.Top)]
+        [InlineData(HeightKind.Bottom)]
+        public void Only_the_feed_height_may_be_measured_from_the_top(HeightKind kind)
+        {
+            var heights = new OperationHeights();
+            var fromTop = new HeightSetting(HeightMode.FromTop, 1);
+
+            switch (kind)
+            {
+                case HeightKind.Clearance: heights.Clearance = fromTop; break;
+                case HeightKind.Retract: heights.Retract = fromTop; break;
+                case HeightKind.Top: heights.Top = fromTop; break;
+                case HeightKind.Bottom: heights.Bottom = fromTop; break;
+            }
+
+            string problem = Assert.Single(heights.Validate(Context()));
+
+            Assert.Contains("only the feed height", problem);
+        }
+
+        [Fact]
+        public void The_clearance_height_is_measured_from_the_retract_by_default()
+        {
+            HeightSetting clearance = new OperationHeights().Clearance;
+
+            Assert.Equal(HeightMode.FromRetract, clearance.Mode);
+            Assert.Equal(5, clearance.Offset, 9);
+        }
+
+        [Fact]
+        public void A_clearance_measured_from_the_retract_follows_it()
+        {
+            // Raise the retract and the clearance goes up with it, so the two cannot cross.
+            var heights = new OperationHeights
+            {
+                Retract = new HeightSetting(HeightMode.FromStockTop, 20),
+            };
+
+            Assert.True(heights.TryResolve(Context(), out ResolvedHeights z));
+            Assert.Equal(50, z.Retract, 9);
+            Assert.Equal(55, z.Clearance, 9);
+            Assert.Empty(heights.Validate(Context()));
+
+            Assert.True(heights.TryResolve(HeightKind.Clearance, Context(), out double clearance));
+            Assert.Equal(55, clearance, 9);
+        }
+
+        [Fact]
+        public void A_retract_that_cannot_be_worked_out_is_reported_once_not_again_for_the_clearance()
+        {
+            var heights = new OperationHeights
+            {
+                Retract = new HeightSetting(HeightMode.FromSelection),
+            };
+
+            string problem = Assert.Single(heights.Validate(Context()));
+
+            Assert.Contains("Retract height", problem);
+            Assert.False(heights.TryResolve(HeightKind.Clearance, Context(), out double _));
+        }
+
+        [Fact]
+        public void The_clearance_stays_one_plane_when_the_cutting_heights_follow_the_contour()
+        {
+            var heights = new OperationHeights
+            {
+                Top = new HeightSetting(HeightMode.FromContour),
+                Bottom = new HeightSetting(HeightMode.FromContour, -5),
+            };
+
+            heights.TryResolve(Context().ForContour(10), out ResolvedHeights low);
+            heights.TryResolve(Context().ForContour(20), out ResolvedHeights high);
+
+            Assert.Equal(40, low.Clearance, 9);
+            Assert.Equal(40, high.Clearance, 9);
+        }
+
+        [Theory]
+        [InlineData(HeightKind.Retract)]
+        [InlineData(HeightKind.Feed)]
+        [InlineData(HeightKind.Top)]
+        [InlineData(HeightKind.Bottom)]
+        public void Only_the_clearance_height_may_be_measured_from_the_retract(HeightKind kind)
+        {
+            var heights = new OperationHeights();
+            var fromRetract = new HeightSetting(HeightMode.FromRetract, 1);
+
+            switch (kind)
+            {
+                case HeightKind.Retract: heights.Retract = fromRetract; break;
+                case HeightKind.Feed: heights.Feed = fromRetract; break;
+                case HeightKind.Top: heights.Top = fromRetract; break;
+                case HeightKind.Bottom: heights.Bottom = fromRetract; break;
+            }
+
+            string problem = Assert.Single(heights.Validate(Context()));
+
+            Assert.Contains("only the clearance height", problem);
+        }
+
+        [Fact]
         public void Cloning_copies_every_height_rather_than_sharing_them()
         {
             var original = new OperationHeights();
@@ -270,7 +444,7 @@ namespace GCam.Core.Tests.Model
             copy.Clearance.Offset = 99;
             copy.Bottom.Mode = HeightMode.FromStockBottom;
 
-            Assert.Equal(10, original.Clearance.Offset, 9);
+            Assert.Equal(5, original.Clearance.Offset, 9);
             Assert.Equal(HeightMode.FromModelBottom, original.Bottom.Mode);
         }
 
