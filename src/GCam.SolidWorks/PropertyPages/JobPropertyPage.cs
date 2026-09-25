@@ -16,12 +16,10 @@ namespace GCam.SolidWorks.PropertyPages
     /// system.
     /// </summary>
     /// <remarks>
-    /// Edits a clone and commits it on OK, the same arrangement as the tool editor. That
-    /// is what makes Cancel free: the job the tree is showing has not been touched.
+    /// Edits a clone and commits it on OK, so Cancel leaves the tree's job untouched.
     ///
-    /// Every control is created once in <see cref="BuildControls"/> because SOLIDWORKS
-    /// will not accept new controls on a page that is already showing. Changing the
-    /// stock mode therefore hides and shows controls that already exist.
+    /// SOLIDWORKS will not accept new controls on a shown page, so changing the stock
+    /// mode hides and shows controls that already exist.
     /// </remarks>
     public sealed class JobPropertyPage : GCamPropertyPage
     {
@@ -32,9 +30,8 @@ namespace GCam.SolidWorks.PropertyPages
         private const int GroupStock = 4;
         private const int GroupMachine = 5;
 
-        // Controls. Ids are page-local, and must be unique across the whole page -
-        // duplicates are accepted in silence and the page then misbehaves. Left in
-        // blocks with gaps so a field can gain a label without renumbering.
+        // Controls. Unique across the whole page - duplicates are accepted in silence.
+        // Gaps let a field gain a label without renumbering.
         private const int IdName = 10;
         private const int IdBodies = 20;
         private const int IdBodiesHint = 21;
@@ -61,8 +58,7 @@ namespace GCam.SolidWorks.PropertyPages
         private const int IdWorkOffsetLabel = 60;
         private const int IdWorkOffset = 61;
 
-        // Selection box marks. Each box needs its own so the selection manager can tell
-        // a body picked into Model from a coordinate system picked into the box below.
+        // One mark per box, each a power of two - see AddSelectionbox.
         private const int MarkBodies = 1;
         private const int MarkCoordinateSystem = 2;
 
@@ -95,24 +91,20 @@ namespace GCam.SolidWorks.PropertyPages
         private Job _target;
         private Job _working;
 
-        // True while LoadControls is assigning. Assigning to a combobox or number box
-        // fires its change callback, which would write the value straight back and, in
-        // the stock mode's case, re-toggle control visibility mid-load.
+        // True while LoadControls assigns: each assignment fires the change callback,
+        // which would write the value back and, for the stock mode, toggle visibility
+        // mid-load.
         private bool _loading;
 
-        // True from the moment the page starts closing. ClearSelections fires the
-        // selection callback on its way out - the comment there says why it has to run
-        // last - and without this the preview would be handed the clone again after it
-        // had been cleared, leaving a cancelled job's stock box on screen.
+        // Set as the page starts closing. ClearSelections fires the selection callback
+        // on the way out, which would otherwise put a cancelled job's stock box back.
         private bool _closing;
 
         private readonly Func<IJobPreview> _preview;
 
         /// <param name="preview">
-        /// Where to show the stock while it is being edited. A function rather than an
-        /// instance because the preview belongs to a document and this page is built once
-        /// for the session - it has to find the one for whichever part is in front when
-        /// the page opens. Null simply means no preview.
+        /// Where to show the stock while it is edited. A function because the preview
+        /// belongs to a document and this object outlives any one. Null means no preview.
         /// </param>
         public JobPropertyPage(
             SldWorks swApp, ErrorHandler errors, IGCamLog log, Func<IJobPreview> preview = null)
@@ -158,9 +150,7 @@ namespace GCam.SolidWorks.PropertyPages
 
             AddLabel(model, IdBodiesHint, "Empty machines every solid body.");
 
-            // Its own group rather than a second box under Model: a selection box has no
-            // caption of its own, so without a group header there is nothing on screen
-            // saying what it is for.
+            // Its own group because a selection box has no caption; the header names it.
             var csys = AddGroup(page, GroupCoordinateSystem, "Coordinate system");
             _coordinateSystem = AddSelectionbox(
                 csys, IdCoordinateSystem, MarkCoordinateSystem,
@@ -183,9 +173,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// The stock fields, with only the current mode's showing.
         /// </summary>
         /// <remarks>
-        /// Each field is created already visible or already hidden. The page is rebuilt
-        /// for every show, so the right ones are chosen here rather than by toggling
-        /// Visible afterwards - which is the call that kills SOLIDWORKS.
+        /// Each field is created visible or hidden for the current mode, never toggled
+        /// afterwards - see <see cref="GCamPropertyPage.Show"/>.
         /// </remarks>
         private void BuildStockGroup(IPropertyManagerPage2 page)
         {
@@ -296,20 +285,12 @@ namespace GCam.SolidWorks.PropertyPages
         /// Vets a candidate before it is allowed into a selection box, and names it.
         /// </summary>
         /// <remarks>
-        /// Clicking a coordinate system in the graphics area can land on one of its
-        /// parts, and the box then reads "CoordinateSystem1\Point". That is only ever
-        /// cosmetic here - the object behind it is the coordinate system feature, which
-        /// is why the job stores the right name regardless - but it reads like the wrong
-        /// thing was picked.
+        /// Clicking a coordinate system can land on one of its parts, so the box reads
+        /// "CoordinateSystem1\Point" - only cosmetic, since the feature is still what is
+        /// stored. Returning the feature's name as <paramref name="itemText"/>, which the
+        /// help says the selection box then displays, fixes it.
         ///
-        /// <paramref name="itemText"/> is the cure. The help buries it: "ItemText is
-        /// returned to SOLIDWORKS and stored on the selected object and can be used by
-        /// your PropertyManager page selection list boxes for the life of that
-        /// selection." Returning the feature's own name makes the box show
-        /// "CoordinateSystem1" whichever part of it was clicked.
-        ///
-        /// Fires on every pre-select hover, so it stays cheap, takes no action and says
-        /// nothing.
+        /// Fires on every pre-select hover, so it stays cheap and silent.
         /// </remarks>
         protected override bool OnSubmitSelection(
             int id, object selection, int selectionType, out string itemText)
@@ -352,11 +333,8 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected override void PageClosed(swPropertyManagerPageCloseReasons_e reason)
         {
-            // The clone the preview has been showing is about to be dropped, so clear it
-            // before anything else, and shut the preview off for the rest of the close.
-            // On OK the tree reselects the committed job a moment later and the box comes
-            // back from the real one; on Cancel there is nothing to come back to, which
-            // is exactly right - a cancelled new job never existed.
+            // The previewed clone is about to be dropped, so clear the preview first and
+            // keep it off. On OK the tree reselects the job and the box comes back from it.
             _closing = true;
             _preview?.Invoke()?.Show(PreviewSelection.Empty);
 
@@ -366,12 +344,8 @@ namespace GCam.SolidWorks.PropertyPages
                 Committed?.Invoke(this, _target);
             }
 
-            // Cancel, Escape, or the document closing underneath the page all land here
-            // too; the clone is simply dropped.
-            //
-            // Clearing last, not first: the edits are read from _working, which the
-            // selection callbacks have already filled in, and clearing the selection
-            // could otherwise fire one of those callbacks and empty it again.
+            // Last: clearing can fire a selection callback that would empty _working before
+            // the commit read it.
             ClearSelections();
         }
 
@@ -379,10 +353,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// Drops what the page's selection boxes put on screen.
         /// </summary>
         /// <remarks>
-        /// The page selects the job's bodies and coordinate system so they are visible
-        /// while editing. Those are the page's selections, not the user's, and leaving
-        /// them behind means a part still lit up in the graphics area and a coordinate
-        /// system still highlighted in the feature tree after the page has gone.
+        /// These are the page's selections, not the user's. Left behind, the part stays lit
+        /// up and the coordinate system highlighted after the page has gone.
         /// </remarks>
         private void ClearSelections()
         {
@@ -409,9 +381,8 @@ namespace GCam.SolidWorks.PropertyPages
             var missing = JobSelections.SelectBodies(model, _working.ModelBodies, MarkBodies);
             if (missing.Count > 0)
             {
-                // Not an error dialog: the user is looking at the page and will see the
-                // box is short. Selecting by name is why this can happen at all, and the
-                // note at Job.ModelBodies says how they are identified.
+                // A log line, not a dialog: the user can see the box is short. See
+                // Job.ModelBodies for how bodies are identified.
                 Log.Warn(
                     "Job '{0}' refers to {1} body/bodies this part no longer has: {2}.",
                     _working.Name,
@@ -490,9 +461,7 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected override void OnSelectionboxListChanged(int id, int count)
         {
-            // Read as the selection changes rather than at OK. By the time the page is
-            // closing the selection manager has been cleared, and the callback is the
-            // only moment the contents are reliably there.
+            // Read now, not at OK: by then the selection manager has been cleared.
             var model = SwApp.ActiveDoc as ModelDoc2;
             if (model == null)
             {
@@ -522,15 +491,11 @@ namespace GCam.SolidWorks.PropertyPages
         /// Redraws the stock box from the edits made so far.
         /// </summary>
         /// <remarks>
-        /// The clone is what gets previewed, not the job. That is the same arrangement
-        /// that makes Cancel free everywhere else on this page: what is on screen follows
-        /// what has been typed, and the job the tree is showing is not touched until OK.
+        /// Previews the clone, so the tree's job is untouched until OK.
         ///
-        /// Called from the change callbacks rather than from a timer, so it runs on every
-        /// keystroke in a stock field. That is affordable because measuring the model is
-        /// six IBody2::GetExtremePoint calls per body and the redraw is a dozen
-        /// triangles - but it is the reason the preview path is quiet on failure and
-        /// caches nothing that a repaint has to rebuild.
+        /// Runs on every keystroke in a stock field. That is cheap - six
+        /// IBody2::GetExtremePoint calls per body and a dozen triangles - but it is why the
+        /// preview path is quiet on failure and caches nothing a repaint must rebuild.
         /// </remarks>
         private void UpdatePreview()
         {
@@ -539,8 +504,7 @@ namespace GCam.SolidWorks.PropertyPages
                 return;
             }
 
-            // Stock and origin, never the job's toolpaths: this is the job being set up,
-            // and the operations under it are not what the user is looking at.
+            // Stock and origin, not toolpaths: the job is being set up.
             _preview?.Invoke()?.Show(PreviewSelection.ForJob(_working));
         }
 
@@ -550,15 +514,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// Shows the stock fields that belong to a mode and hides the rest.
         /// </summary>
         /// <remarks>
-        /// <b>Only ever called when the user changes the mode on a live page.</b> It is
-        /// deliberately not called when a page is loaded or shown.
-        ///
-        /// IPropertyManagerPageControl.Visible is the single most dangerous call in this
-        /// file. Setting it on each show killed SOLIDWORKS outright - reproducibly on
-        /// the fourth show, from any trigger, with no exception and nothing in the log.
-        /// Something accumulates; four was the limit. The page is now rebuilt for every
-        /// show and each control is created with the visibility it needs, so the normal
-        /// path never touches this property at all.
+        /// <b>Only called when the user changes the mode on a live page</b>, never on load
+        /// or show: <c>Visible</c> on a page about to be shown kills SOLIDWORKS - see
+        /// <see cref="GCamPropertyPage.Show"/>.
         /// </remarks>
         private void ShowControlsFor(StockMode mode)
         {
@@ -598,13 +556,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// Millimetres into whatever a length number box wants.
         /// </summary>
         /// <remarks>
-        /// A swNumberBox_Length control exchanges **metres** - SOLIDWORKS' system units,
-        /// not the document's display units, even though the box shows and accepts mm.
-        /// Measured, not assumed: typing 1 mm read back as 0.001. The help says nothing
-        /// either way, so this pair of methods is the one place that knowledge lives.
-        ///
-        /// This is the conversion the units rule in docs/architecture.md is about. Core
-        /// is millimetres throughout; only the edge converts.
+        /// A swNumberBox_Length control exchanges **metres**, not the document's display
+        /// units, even though it shows mm - measured: typing 1 mm read back as 0.001. The
+        /// help is silent, so this pair is where that knowledge lives.
         /// </remarks>
         private static double ToBoxLength(double millimetres) => Units.MillimetresToMetres(millimetres);
 

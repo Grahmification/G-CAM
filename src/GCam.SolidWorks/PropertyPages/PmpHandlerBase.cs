@@ -10,26 +10,18 @@ namespace GCam.SolidWorks.PropertyPages
     /// thirty-seven handler methods with the try/catch once, so no page can forget one.
     /// </summary>
     /// <remarks>
-    /// Each interface method is implemented *explicitly* and does nothing but call a
-    /// protected virtual of the same name. That is what lets a page override
-    /// <c>OnButtonPress</c> with no error handling of its own while SOLIDWORKS still
-    /// only ever reaches the wrapped version - the explicit implementation is not
-    /// visible to derived classes, so an override cannot shadow the boundary.
+    /// Each interface method is implemented explicitly and only calls a protected virtual
+    /// of the same name, so an override needs no error handling and cannot bypass the
+    /// wrapper.
     ///
-    /// Two things are deliberately not defaulted to "failure":
+    /// After an exception, navigation handlers return <c>true</c>, since refusing would
+    /// strand the user on a page that has already gone wrong. <see cref="OnSubmitSelection"/>
+    /// rejects, since a check that threw has not shown the selection is usable.
     ///
-    /// * The page-navigation handlers return <c>true</c> even after an exception. They
-    ///   are asking permission to move; refusing would strand the user on a page that
-    ///   has already gone wrong.
-    /// * <see cref="OnSubmitSelection"/> does the opposite and rejects, because a
-    ///   validation check that threw has not established that the selection is usable,
-    ///   and accepting unvalidated geometry is how a toolpath ends up cutting air.
-    ///
-    /// COM visibility: this assembly carries no assembly-level
-    /// <c>[ComVisible(false)]</c>, so its public types are COM-visible by default and
-    /// SOLIDWORKS can QueryInterface a handler for IPropertyManagerPage2Handler9
-    /// without any attributes here. Derived pages must therefore never have a public
-    /// parameterless constructor, or regasm will register them as creatable classes.
+    /// Public types in this assembly are COM-visible by default, which is how SOLIDWORKS
+    /// can QueryInterface a handler for IPropertyManagerPage2Handler9. Derived pages must
+    /// therefore never have a public parameterless constructor, or regasm registers them
+    /// as creatable classes.
     /// </remarks>
     public abstract class PmpHandlerBase : IPropertyManagerPage2Handler9
     {
@@ -44,8 +36,7 @@ namespace GCam.SolidWorks.PropertyPages
         protected ErrorHandler Errors => _errors;
 
         /// <param name="quiet">
-        /// Log only. Used for the handlers SOLIDWORKS fires continuously - pre-select
-        /// hover, keystrokes, slider drags, menu repaints - where a dialog would be an
+        /// Log only, for handlers SOLIDWORKS fires continuously, where a dialog would be an
         /// unkillable modal storm.
         /// </param>
         private void Handle(Exception ex, string member, bool quiet = false)
@@ -76,9 +67,8 @@ namespace GCam.SolidWorks.PropertyPages
         protected virtual void AfterActivation() { }
 
         /// <summary>
-        /// The page is about to close. SOLIDWORKS allows almost no real work here -
-        /// the page and its command are already going away. Do it in
-        /// <see cref="AfterClose"/> instead.
+        /// The page is about to close. SOLIDWORKS allows almost no real work here; do it
+        /// in <see cref="AfterClose"/>.
         /// </summary>
         protected virtual void OnClose(swPropertyManagerPageCloseReasons_e reason) { }
 
@@ -267,15 +257,13 @@ namespace GCam.SolidWorks.PropertyPages
 
         // ---- Selection -----------------------------------------------------
 
-        // ItemText is `ref`, not `out`: the interop declares it [In, Out] even though
-        // the help documents it as an output. The virtual below takes `out`, which is
-        // what an override actually wants, and the local bridges the two.
+        // ItemText is `ref` because the interop declares it [In, Out], though the help
+        // calls it an output. The virtual takes `out`, which is what an override wants.
         bool IPropertyManagerPage2Handler9.OnSubmitSelection(
             int Id, object Selection, int SelType, ref string ItemText)
         {
-            // This is the signature that killed the Boundary.Run() wrapper idea: C#
-            // cannot capture a ref or out parameter in a lambda. See
-            // docs/error-handling.md.
+            // Why there is no lambda-based wrapper: C# cannot capture a ref parameter.
+            // See docs/error-handling.md.
             try
             {
                 string itemText;
@@ -285,8 +273,7 @@ namespace GCam.SolidWorks.PropertyPages
             }
             catch (Exception ex)
             {
-                // Fires on every pre-select hover, so quiet. Reject rather than
-                // accept: a check that threw has proved nothing about the selection.
+                // Quiet: fires on every pre-select hover.
                 Handle(ex, nameof(OnSubmitSelection), quiet: true);
                 ItemText = null;
                 return false;
@@ -397,9 +384,8 @@ namespace GCam.SolidWorks.PropertyPages
             }
             catch (Exception ex)
             {
-                // Called whenever Windows repaints the menu, so quiet. 0 is
-                // "unchecked and greyed out": a menu item we cannot describe is one
-                // the user should not be able to pick.
+                // Quiet: fires on every menu repaint. 0 is unchecked and greyed out, so
+                // an item we cannot describe cannot be picked.
                 Handle(ex, nameof(OnPopupMenuItemUpdate), quiet: true);
                 retval = 0;
             }

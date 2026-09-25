@@ -20,18 +20,16 @@ namespace GCam.SolidWorks.PropertyPages
     /// Creating and editing a 2D contour operation.
     /// </summary>
     /// <remarks>
-    /// Groups in the order HSMWorks uses - Tool, Geometry, Heights, Passes, Linking - so
-    /// anyone coming from it finds things where they expect. Tool and Heights are common
-    /// to every strategy; Geometry, Passes and Linking are contour2d's own.
+    /// Tabs follow HSMWorks' order - Tool, Geometry, Heights, Passes, Linking. Tool and
+    /// Heights are common to every strategy; the rest are contour2d's own.
     ///
-    /// **The strategy-specific halves are built by their own methods here rather than
-    /// through a seam.** docs/design/operations.md sketches an `IPageBuilder` the strategy
-    /// would contribute through; with one strategy that would be an abstraction with a
-    /// single implementation, which the project's own rule says to wait on. The methods are
-    /// named and grouped so extracting it when the second strategy lands is mechanical.
+    /// The contour2d halves are built by methods here rather than through the
+    /// <c>IPageBuilder</c> seam in docs/design/operations.md, which would have a single
+    /// implementation until a second strategy lands. They are grouped so extracting it
+    /// then is mechanical.
     ///
-    /// Edits a clone and commits on OK, like <see cref="JobPropertyPage"/>: Cancel leaves
-    /// nothing behind, and a new operation that is cancelled was never added to the job.
+    /// Edits a clone and commits on OK, like <see cref="JobPropertyPage"/>, so Cancel
+    /// leaves nothing behind.
     /// </remarks>
     public sealed class OperationPropertyPage : GCamPropertyPage
     {
@@ -44,9 +42,8 @@ namespace GCam.SolidWorks.PropertyPages
         private const int GroupFeeds = 7;
         private const int GroupStockToLeave = 8;
 
-        // Tabs, numbered well clear of the groups and controls. Nothing documents whether
-        // tab ids share a namespace with control ids, and duplicate control ids are
-        // accepted in silence here - so the ranges are kept apart rather than trusted.
+        // Tabs, numbered clear of the groups and controls: nothing documents whether they
+        // share a namespace, and duplicate ids are accepted in silence.
         private const int TabTool = 100;
         private const int TabGeometry = 101;
         private const int TabHeights = 102;
@@ -133,16 +130,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// A mark for each of the five height boxes: 2, 4, 8, 16, 32.
         /// </summary>
         /// <remarks>
-        /// <b>Marks must be powers of two.</b> The help says so outright under
-        /// IPropertyManagerPageSelectionbox::Mark, and they are matched bitwise - so the
-        /// obvious 2, 3, 4, 5, 6 silently overlaps: 3 shares a bit with both 1 and 2, and
-        /// a face picked into that box was counted as a contour as well. What that looked
-        /// like was an operation refusing to generate for having no contour selected,
-        /// while the page plainly showed some. See
-        /// docs/solidworks-api/property-manager-pages.md.
-        ///
-        /// A mark each rather than one between them, because only one box is visible at a
-        /// time but a hidden box with the same mark still answers.
+        /// Powers of two, as every mark must be - see
+        /// <see cref="GCamPropertyPage.AddSelectionbox"/>. One each rather than shared,
+        /// because a hidden box with the same mark still answers.
         /// </remarks>
         private static int MarkFor(HeightKind kind) => 1 << ((int)kind + 1);
 
@@ -150,11 +140,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// What the tool header reads when the operation has no tool.
         /// </summary>
         /// <remarks>
-        /// An operation with no tool has to be shown as such: it is the state every new
-        /// operation starts in, and on a part with no tools it is the only state until
-        /// Browse is used. A control that cannot say "none" ends up displaying a tool the
-        /// operation is not using, which is how the first version of this page came to
-        /// show one while <see cref="Operation.ToolId"/> was still null.
+        /// Every new operation starts with no tool, so the header must be able to say so
+        /// rather than show a tool the operation is not using.
         /// </remarks>
         private const string NoToolCaption = "No tool chosen";
 
@@ -162,9 +149,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// The least time between two checks of the contour box, milliseconds.
         /// </summary>
         /// <remarks>
-        /// Idle fires continuously, so this is what keeps the check to a couple of COM
-        /// reads a second. Fast enough that a stale highlight is never up long enough to
-        /// be believed.
+        /// Idle fires continuously; this keeps the check to a couple of COM reads a second,
+        /// yet fast enough that a stale highlight is not believed.
         /// </remarks>
         private const int SelectionWatchInterval = 400;
 
@@ -173,9 +159,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// the two cannot drift.
         /// </summary>
         /// <remarks>
-        /// Every mode any row can offer. Each row offers its own subset - see
-        /// <see cref="ModesFor"/> - so an index into a row's drop-down is an index into
-        /// that row's list, never into this one.
+        /// Each row offers a subset (see <see cref="ModesFor"/>), so a drop-down's index
+        /// is into that row's list, never this one.
         /// </remarks>
         private static readonly HeightMode[] HeightModes =
         {
@@ -251,8 +236,7 @@ namespace GCam.SolidWorks.PropertyPages
 
         /// <summary>The tabs of the page as currently built, by tab id.</summary>
         /// <remarks>
-        /// Rebuilt with the page, like every other control reference here - a tab from a
-        /// previous build belongs to a page that has been released.
+        /// Rebuilt with the page; a tab from a previous build belongs to a released page.
         /// </remarks>
         private readonly Dictionary<int, IPropertyManagerPageTab> _tabs =
             new Dictionary<int, IPropertyManagerPageTab>();
@@ -300,27 +284,23 @@ namespace GCam.SolidWorks.PropertyPages
 
         private bool _closing;
 
-        // True while LoadControls is assigning. Setting a combobox or number box fires its
-        // change callback, which would write the value straight back - and for the tool
-        // combo would re-seed the feeds over the ones just loaded.
+        // True while LoadControls assigns: each assignment fires the control's change
+        // callback, which would write the value straight back.
         private bool _loading;
 
         /// <param name="pickToolIntoPart">
-        /// Chooses a tool from a library and puts it in the active part, returning the
-        /// part's own copy or null if nothing was picked. A delegate rather than a call,
-        /// because the browser is WPF in GCam.UI and this project cannot reference it -
-        /// the add-in is the only place that sees both halves. Null simply means the page
-        /// offers no Browse button.
+        /// Chooses a library tool and puts it in the active part, returning the part's copy
+        /// or null. A delegate because the browser is WPF in GCam.UI, which this project
+        /// cannot reference. Null means no Browse button.
         /// </param>
         /// <param name="cutDirection">
-        /// Draws which side of the selected contours the cutter will run on. A function
-        /// for the same reason as the document and its tools: the preview belongs to a
-        /// document and this page is built once for the session. Null simply means no
-        /// arrows.
+        /// Draws which side of the selected contours the cutter runs on. A function because
+        /// the preview belongs to a document and this object outlives any one. Null means
+        /// no arrows.
         /// </param>
         /// <param name="heightsPreview">
-        /// Draws the machining heights as planes while the Heights tab is open. A function
-        /// for the same reason as <paramref name="cutDirection"/>; null means no planes.
+        /// Draws the heights as planes while the Heights tab is open. A function for the
+        /// same reason as <paramref name="cutDirection"/>; null means no planes.
         /// </param>
         public OperationPropertyPage(
             SldWorks swApp,
@@ -348,14 +328,10 @@ namespace GCam.SolidWorks.PropertyPages
         /// The operation's own name, so the panel says which one is being edited.
         /// </summary>
         /// <remarks>
-        /// Read from the clone rather than the target, so it is right for a new operation
-        /// that the job has not been given yet. The title is fixed when the page is built,
-        /// which is every show - and the name is not editable here, so it cannot go stale
-        /// while the page is up.
+        /// Read from the clone, so a new operation not yet in the job is named too. Fixed
+        /// at build time, which is safe because the name is not editable here.
         ///
-        /// Falls back to a generic title rather than an empty one: a nameless panel looks
-        /// broken, and <see cref="GCamPropertyPage"/> puts this string into its failure
-        /// messages too.
+        /// Never empty: a nameless panel looks broken, and failure messages use it too.
         /// </remarks>
         protected override string Title =>
             string.IsNullOrWhiteSpace(_working?.Name) ? "G-CAM Operation" : _working.Name;
@@ -374,24 +350,18 @@ namespace GCam.SolidWorks.PropertyPages
             JobDocument jobs = _jobsForActiveDocument();
             _currentTool = jobs?.FindTool(_working.ToolId);
 
-            // A fresh edit starts at the tab with the work on it; only a rebuild keeps its
-            // place, which is why this is here rather than in BuildControls.
-            //
-            // Which tab that is depends on why the page is open. A new operation has no
-            // tool, and nothing else on the page means much until it has one. An operation
-            // the job already holds is being opened to change what it cuts far more often
-            // than to change its cutter. The same test as OnOperationCommitted's, and it
-            // holds for the same reason: a new operation does not reach the job until OK.
+            // A fresh show opens where the work is: Tool for a new operation, which means
+            // little until it has one (and is not in the job until OK), and Geometry for an
+            // existing one, which is usually reopened to change what it cuts. Here rather
+            // than in BuildControls because a rebuild keeps its place.
             _activeTab = job.Operations.Contains(operation) ? TabGeometry : TabTool;
 
             Show();
         }
 
         /// <remarks>
-        /// Five tabs, in HSMWorks' order, so anyone coming from it finds things where they
-        /// expect - and nothing above them. The operation's name is the panel
-        /// <see cref="Title"/> rather than a field, and renaming happens in the job tree,
-        /// which already does it in place.
+        /// Nothing above the tabs: the name is the panel <see cref="Title"/>, and renaming
+        /// happens in the job tree.
         /// </remarks>
         protected override void BuildControls(IPropertyManagerPage2 page)
         {
@@ -411,10 +381,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// Opens the page on the tab the user was last on.
         /// </summary>
         /// <remarks>
-        /// <see cref="IPropertyManagerPageTab.Activate"/> is build-time only, like the
-        /// rest of a page's shape, so this is the only moment it can be done - and it is
-        /// the moment that matters, because a rebuild would otherwise throw the user back
-        /// to the first tab every time they picked a tool.
+        /// <see cref="IPropertyManagerPageTab.Activate"/> is build-time only. Without it a
+        /// rebuild would throw the user back to the first tab every time they picked a tool.
         /// </remarks>
         private void ActivateRememberedTab()
         {
@@ -433,20 +401,15 @@ namespace GCam.SolidWorks.PropertyPages
             IPropertyManagerPageTab tab = AddTab(page, TabTool, "Tool");
             _tabs[TabTool] = tab;
 
-            // The cutter and the numbers it runs at are two things, and HSMWorks splits
-            // them the same way: one physical tool, shared across the part, but feeds and
-            // speeds that belong to this operation alone.
+            // Split as in HSMWorks: one physical tool shared across the part, but feeds and
+            // speeds that belong to this operation.
             IPropertyManagerPageGroup group = AddGroup(tab, GroupTool, "Tool");
 
-            // The tool's name as a header with Browse under it - HSMWorks' shape, and the
-            // only shape available: a combobox's item list cannot change while the page is
-            // shown, and the list of part tools does change, because Browse is what
-            // changes it. See the remarks on BrowseForTool.
+            // A header and Browse rather than a combobox: Browse changes the list of part
+            // tools, and a combobox's items cannot change while the page is shown.
             //
-            // Not bolded: IPropertyManagerPageLabel.Bold takes a character range, so it
-            // would have to be re-applied every time the caption changes length - more
-            // calls on a shown page, which is the thing that keeps killing SOLIDWORKS,
-            // bought for nothing but weight.
+            // Not bold: Label.Bold takes a character range, so it would need re-applying on
+            // every caption change - more writes to a shown page, for nothing but weight.
             _toolName = AddLabel(group, IdToolName, NoToolCaption);
 
             if (_pickToolIntoPart != null)
@@ -510,11 +473,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// is a piece of geometry, and how far off.
         /// </summary>
         /// <remarks>
-        /// The selection box is created at the visibility it needs rather than shown
-        /// afterwards, because a page is rebuilt for every show and
-        /// <see cref="GCamPropertyPage.SetVisible"/> on a page about to be shown is the
-        /// call that kills SOLIDWORKS. Only a live change of the drop-down toggles it -
-        /// see <see cref="ShowSelectionBoxFor"/>.
+        /// The selection box is created at the visibility it needs - see
+        /// <see cref="GCamPropertyPage.Show"/>. Only a live drop-down change toggles it
+        /// (<see cref="ShowSelectionBoxFor"/>).
         /// </remarks>
         private void AddHeight(
             IPropertyManagerPageGroup group,
@@ -569,10 +530,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// everywhere.
         /// </summary>
         /// <remarks>
-        /// Clearance and retract are crossed on the way from one contour to the next, so
-        /// they have to be one plane for every contour; feed follows the contour only by
-        /// way of the top. The same rules <see cref="OperationHeights.Validate"/> enforces,
-        /// for a file that says otherwise.
+        /// Clearance and retract are crossed between contours, so they must be one plane
+        /// for all of them; feed follows the contour only through the top. The same rules
+        /// <see cref="OperationHeights.Validate"/> enforces on a file.
         /// </remarks>
         private static HeightMode[] ModesFor(HeightKind kind)
         {
@@ -686,10 +646,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// Stock to leave, in a group of its own so the header checkbox can turn it off.
         /// </summary>
         /// <remarks>
-        /// A group rather than a checkbox above the boxes, because SOLIDWORKS collapses a
-        /// checked group when it is cleared - so the amounts go away with the thing that
-        /// uses them, and come back holding what was typed. The model keeps them either
-        /// way; see <see cref="Contour2dSettings.StockToLeaveEnabled"/>.
+        /// A checked group because SOLIDWORKS collapses it when cleared, so the amounts
+        /// hide with the setting and come back as typed. The model keeps them either way;
+        /// see <see cref="Contour2dSettings.StockToLeaveEnabled"/>.
         /// </remarks>
         private void BuildStockToLeaveGroup(IPropertyManagerPageTab tab)
         {
@@ -797,8 +756,7 @@ namespace GCam.SolidWorks.PropertyPages
         /// </summary>
         /// <remarks>
         /// Selections need a live page: SelectByID2 routes by mark, and the marks belong to
-        /// selection boxes on a page that actually exists. Values are safe to set while the
-        /// page is closed, which is why LoadControls still runs before Show2.
+        /// selection boxes on a page that actually exists.
         /// </remarks>
         protected override void PageShown()
         {
@@ -817,14 +775,11 @@ namespace GCam.SolidWorks.PropertyPages
         /// one in front.
         /// </summary>
         /// <remarks>
-        /// The tab is the whole trigger: these planes are large and span the part, and
-        /// leaving them up behind the Geometry tab would bury the contours that tab is
-        /// about. <see cref="_activeTab"/> is already tracked for the rebuild, so there is
-        /// nothing new to watch.
+        /// Only for the Heights tab: the planes span the part and would bury the contours
+        /// the Geometry tab is about.
         ///
-        /// Called on every show, every tab click, every height edit and every move of the
-        /// focus between the offset boxes - all of which change either what is drawn or
-        /// which plane is filled.
+        /// Called on every show, tab click, height edit and focus move between the offset
+        /// boxes - each changes what is drawn or which plane is filled.
         /// </remarks>
         private void ShowHeights()
         {
@@ -853,14 +808,11 @@ namespace GCam.SolidWorks.PropertyPages
         /// Redraws the arrows saying which side of each contour will be cut.
         /// </summary>
         /// <remarks>
-        /// Driven from the working clone, like everything else on this page: what is on
-        /// screen follows what has been picked, and Cancel leaves nothing behind because
-        /// the operation in the tree was never touched.
+        /// Drawn from the working clone, so Cancel leaves the tree's operation untouched.
         ///
-        /// Called from <see cref="PageShown"/> rather than from LoadControls because the
-        /// contours are restored there, and from the three callbacks that can change what
-        /// the arrows say - the picks themselves, the cut direction, and Reverse. A
-        /// rebuild comes back through PageShown, so Reverse needs nothing of its own.
+        /// Called from <see cref="PageShown"/>, where the contours are restored, and from
+        /// whatever changes the arrows: the picks, the cut direction, the propagation
+        /// checkboxes and Reverse.
         /// </remarks>
         private void ShowCutDirection()
         {
@@ -890,21 +842,16 @@ namespace GCam.SolidWorks.PropertyPages
 
             var missing = new List<string>();
 
-            // Assigning, not reacting. Everything below changes the selection, and the
-            // callbacks that causes would rebuild the contour list out of a box that is
-            // half way through being filled.
+            // Assigning, not reacting: the selection callbacks this fires would rebuild the
+            // contour list from a half-filled box.
             _loading = true;
 
             try
             {
-                // **Clear first, or nothing restores.** While a PropertyManager page with
-                // a selection box is up, IEntity::Select4 *deselects* an entity that is
-                // already selected - the help says so plainly and returns false when it
-                // happens. The picks are still selected from last time, because closing
-                // this page leaves them behind, so restoring onto a live selection turned
-                // every contour off again and left the box empty. That looked for all the
-                // world like the operation had forgotten its geometry, when the references
-                // had resolved perfectly well a line earlier.
+                // **Clear first, or nothing restores.** With a selection-box page up,
+                // IEntity::Select4 *deselects* an already-selected entity (per the help),
+                // and the picks are still selected from the last close - so restoring onto
+                // them empties the box.
                 model.ClearSelection2(true);
 
                 foreach (ContourSelection contour in Settings().Contours)
@@ -953,11 +900,9 @@ namespace GCam.SolidWorks.PropertyPages
 
         /// <summary>What the line under the Reverse button says.</summary>
         /// <remarks>
-        /// Contours are numbered from 1, counting down the selection box, because that is
-        /// what someone reading the list will count. The rows themselves cannot be
-        /// annotated - their text belongs to SOLIDWORKS - so this line is the only place
-        /// that can say which contour the checkboxes are describing, and which contours
-        /// are reversed.
+        /// Numbered from 1, down the box. The rows' text belongs to SOLIDWORKS, so this line
+        /// is the only place to say which contour the checkboxes describe and which are
+        /// reversed.
         /// </remarks>
         private string ContourStatus()
         {
@@ -993,25 +938,18 @@ namespace GCam.SolidWorks.PropertyPages
         /// Watches the contour box for a change SOLIDWORKS did not report.
         /// </summary>
         /// <remarks>
-        /// <b>Deleting rows from a selection box does not always raise
-        /// <c>OnSelectionboxListChanged</c></b> - measured on 2025 SP3, where deleting both
-        /// rows through the box's own right-click menu produced no callback at all. Without
-        /// this the page goes on holding contours the user has deleted: their chains stay
-        /// highlighted in the graphics area over an empty box, and OK commits geometry that
-        /// is no longer selected.
+        /// <b>Deleting rows does not always raise <c>OnSelectionboxListChanged</c></b> -
+        /// measured on 2025 SP3 with the box's own right-click menu. Without this the page
+        /// keeps deleted contours highlighted, and OK commits them.
         ///
-        /// Comparing counts rather than contents, and against what this page last *read*
-        /// rather than against its own contour list: an entity the list legitimately drops
-        /// - anything that is not an edge or a face - would otherwise read as a change on
-        /// every check and re-read for ever.
+        /// Compares the count with what this page last read, not with its contour list,
+        /// which legitimately drops anything but edges and faces and would otherwise
+        /// re-read for ever.
         ///
-        /// <b>Driven by SOLIDWORKS' idle notification, never by a timer.</b> A
-        /// <c>System.Windows.Forms.Timer</c> ticks inside the nested message loop a
-        /// right-click menu runs, so the check landed in the middle of SOLIDWORKS' own
-        /// handling of the deletion and re-entered it to read the model and force a
-        /// repaint - which killed SOLIDWORKS outright. <c>OnIdleNotify</c> fires "after
-        /// all of the messages have been processed, including posted repaints", which is
-        /// exactly the moment this work is safe.
+        /// <b>Driven by idle, never a timer.</b> A WinForms timer ticks inside the
+        /// right-click menu's nested message loop and re-enters SOLIDWORKS mid-deletion,
+        /// which kills it. <c>OnIdleNotify</c> fires "after all of the messages have been
+        /// processed, including posted repaints".
         /// </remarks>
         private void StartSelectionWatch()
         {
@@ -1048,14 +986,12 @@ namespace GCam.SolidWorks.PropertyPages
         /// everything it had to do.
         /// </summary>
         /// <remarks>
-        /// Quiet, and cheap: idle fires continuously, so nothing happens here beyond a
-        /// clock comparison until <see cref="SelectionWatchInterval"/> has passed, and
-        /// nothing happens then beyond reading one count.
+        /// Cheap, since idle fires continuously: a clock comparison until
+        /// <see cref="SelectionWatchInterval"/> has passed, then one count.
         ///
-        /// Only while the Geometry tab is in front, because that is the only time the
-        /// contour box can be picked into - and only when no dialog of ours is over the
-        /// page, since re-reading redraws, and redrawing from under a modal window is the
-        /// one thing <see cref="BrowseForTool"/> proves is dangerous here.
+        /// Checks only on the Geometry tab, the one time the contour box can be picked
+        /// into, and never with a dialog of ours over the page - redrawing from under a
+        /// modal window is what <see cref="BrowseForTool"/> shows to be dangerous.
         /// </remarks>
         private int OnIdle()
         {
@@ -1132,11 +1068,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// most recent pick when no row is highlighted.
         /// </summary>
         /// <remarks>
-        /// <see cref="IPropertyManagerPageSelectionbox.CurrentSelection"/> is -1 whenever
-        /// nothing is highlighted, which is the state the box is in straight after a pick.
-        /// Falling back to the last row means the checkboxes describe the edge just
-        /// picked, which is the one being thought about; the status line names it either
-        /// way, so the controls are never about a contour nobody can identify.
+        /// <see cref="IPropertyManagerPageSelectionbox.CurrentSelection"/> is -1 straight
+        /// after a pick, so falling back to the last row makes the checkboxes describe the
+        /// edge just picked. The status line names it either way.
         /// </remarks>
         private ContourSelection TargetContour(out int row)
         {
@@ -1156,10 +1090,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// Brings the propagation checkboxes up to date with the contour they describe.
         /// </summary>
         /// <remarks>
-        /// <b>Written only when the value actually changes.</b> Writing to a control on a
-        /// shown page is the call that has killed SOLIDWORKS three times over, and while a
-        /// checkbox has not been measured, the cheapest insurance is to make the write
-        /// rare: moving between rows that agree costs nothing.
+        /// <b>Written only when the value changes.</b> A checkbox write on a shown page has
+        /// not been measured, so it is kept rare: moving between rows that agree writes
+        /// nothing.
         /// </remarks>
         private void ShowContourModifiers()
         {
@@ -1184,9 +1117,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// redraws what that changes.
         /// </summary>
         /// <remarks>
-        /// With nothing selected there is no contour to write to and the box is left as
-        /// the user set it; the next pick takes the defaults and
-        /// <see cref="ShowContourModifiers"/> puts the box back in step.
+        /// With nothing selected the box keeps what the user set; the next pick takes the
+        /// defaults and <see cref="ShowContourModifiers"/> brings the box back in step.
         /// </remarks>
         private void SetContourModifier(bool tangent, bool value)
         {
@@ -1226,22 +1158,14 @@ namespace GCam.SolidWorks.PropertyPages
         /// the cutter on its other side.
         /// </summary>
         /// <remarks>
-        /// <see cref="IPropertyManagerPageSelectionbox.CurrentSelection"/> is the row the
-        /// user has highlighted, or -1 when none is. A button press does not deactivate
-        /// the box - verified on 2025 SP3 - so the row is there to be read whenever one is
-        /// highlighted. With none, the ask is refused with something actionable rather
-        /// than guessing at a contour or silently reversing them all.
+        /// A button press does not deactivate the box (verified on 2025 SP3), so the
+        /// highlighted row can be read here. With none highlighted the request is refused,
+        /// rather than guessing or reversing them all.
         ///
-        /// <b>The page stays open, and the status line is written in place.</b> It used to
-        /// rebuild for that one caption, on the rule that a shown page cannot be written
-        /// to at all. Verified false on 2025 SP3: the crash behind that rule was bisected
-        /// inside <see cref="BrowseForTool"/>, which puts a modal WPF window over the page
-        /// first, and a caption written from an ordinary button press is fine. See
-        /// docs/solidworks-api/property-manager-pages.md.
-        ///
-        /// Not rebuilding also keeps the highlighted row highlighted, so the same contour
-        /// can be reversed twice without picking it again - which the rebuild made
-        /// impossible.
+        /// <b>The status line is written in place, not by a rebuild</b> - a label caption is
+        /// safe from a button press (verified on 2025 SP3; see
+        /// docs/solidworks-api/property-manager-pages.md). That also keeps the row
+        /// highlighted, so the same contour can be reversed again.
         /// </remarks>
         private void ReverseHighlightedContour()
         {
@@ -1292,42 +1216,22 @@ namespace GCam.SolidWorks.PropertyPages
         /// Picks a tool from a library, puts it in the part, and selects it here.
         /// </summary>
         /// <remarks>
-        /// **Nothing here writes to a control once the browser has been over the page.**
-        /// Three separate calls each killed SOLIDWORKS outright on their first use here -
-        /// `Combobox.Clear`, `Combobox.InsertItem` and `Label.Caption` - with no
-        /// exception, no log line and no crash report, exactly like
-        /// `IPropertyManagerPageControl.Visible`. Verified on 2025 SP3 by bisecting this
-        /// method with log lines. The two combobox calls are fatal anywhere, but the
-        /// caption is safe from an ordinary callback, so what kills it here is something
-        /// about the modal WPF window and is still unmeasured; see
-        /// property-manager-pages.md.
+        /// **Nothing is written to the page after the browser closes; it is rebuilt
+        /// instead** (<see cref="GCamPropertyPage.RebuildAfterHandlerReturns"/>). Bisected
+        /// on 2025 SP3, <c>Combobox.Clear</c>, <c>Combobox.InsertItem</c> and even
+        /// <c>Label.Caption</c> each killed SOLIDWORKS silently here on first use. The
+        /// caption is safe elsewhere, so the modal WPF window is implicated and the exact
+        /// cause is unmeasured; see property-manager-pages.md.
         ///
-        /// So the tool is shown as a header label with a Browse button under it -
-        /// HSMWorks' shape - and picking one **rebuilds the page** through
-        /// <see cref="GCamPropertyPage.RebuildAfterHandlerReturns"/> rather than updating
-        /// it in place. A drop-down would not have worked whatever the refresh mechanism:
-        /// Browse is what adds a tool to the part, so the list of tools necessarily
-        /// changes while the page is up.
+        /// Only a tool reachable through a library can be chosen; a part tool whose library
+        /// has gone cannot. See docs/design/operations.md.
         ///
-        /// The cost is that only a tool reachable through a library can be chosen. Tools
-        /// already in the part are re-picked from the library they came from, which
-        /// works because <see cref="JobDocument.AddTool"/> is idempotent - but a part
-        /// tool whose library has gone cannot be selected at all. The fix is the
-        /// part-tool list the browser is meant to grow; see docs/design/operations.md.
+        /// **The tool stays in the part even on Cancel**, like any unused tool (see
+        /// <see cref="JobDocument.RemoveTool"/>). Holding it on the clone would lose it
+        /// whenever someone picked a cutter and then cancelled.
         ///
-        /// **The tool reaches the part as soon as it is picked, and Cancel does not take
-        /// it back.** That is deliberate, and it is what the tool list already means: a
-        /// tool is in the carousel whether or not an operation uses it, and an unused one
-        /// stays until somebody removes it deliberately
-        /// (<see cref="JobDocument.RemoveTool"/>). The same reasoning makes creating a
-        /// tool library write immediately - see architecture.md. Holding the tool on the
-        /// clone instead would throw it away whenever someone chose a cutter, thought
-        /// better of the operation, and cancelled.
-        ///
-        /// The part's list is re-read rather than appended to, because
-        /// <see cref="JobDocument.AddTool"/> is idempotent by <see cref="Tool.Id"/>:
-        /// picking a tool the part already has selects the copy that is here rather than
-        /// adding a second one, and the returned tool is that copy.
+        /// <see cref="JobDocument.AddTool"/> is idempotent by <see cref="Tool.Id"/>, so
+        /// re-picking a tool the part already has returns the part's copy.
         /// </remarks>
         private void BrowseForTool()
         {
@@ -1353,9 +1257,7 @@ namespace GCam.SolidWorks.PropertyPages
             _currentTool = partTool;
             _working.UseTool(partTool);
 
-            // Nothing is written into the controls - the header caption and the feed
-            // boxes are set by LoadControls when the page is built again. Writing them
-            // now is what kills SOLIDWORKS; see the remarks above.
+            // LoadControls fills the header and feeds on the rebuild - see the remarks above.
             RebuildAfterHandlerReturns();
         }
 
@@ -1365,9 +1267,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// Remembers which tab the user moved to, so a rebuild comes back to it.
         /// </summary>
         /// <remarks>
-        /// Returning true lets the click through; this only watches. The id is recorded
-        /// rather than the tab object because the object belongs to the build that is
-        /// about to be thrown away.
+        /// Returning true lets the click through. The id is kept rather than the tab
+        /// object, which belongs to a build about to be thrown away.
         /// </remarks>
         protected override bool OnTabClicked(int id)
         {
@@ -1387,17 +1288,13 @@ namespace GCam.SolidWorks.PropertyPages
         /// click in the graphics area lands where the user is looking.
         /// </summary>
         /// <remarks>
-        /// <b>A selection box stays active across a tab change unless something says
-        /// otherwise.</b> Every control on the page exists whichever tab is in front -
-        /// tabs hide controls, they do not create them - so the contour box went on
-        /// collecting clicks while the Heights tab was up, and picking a face for a height
-        /// added it to the contours instead.
+        /// <b>A selection box stays active across a tab change</b>, because tabs hide
+        /// controls rather than create them - so a face picked for a height would land in
+        /// the contour box.
         ///
-        /// There is no call for "no box is active": <c>SetSelectionFocus</c> only ever
-        /// makes one active. So a tab with a box of its own claims the focus, and a tab
-        /// without one pushes the focus onto an ordinary control and relies on SOLIDWORKS
-        /// dropping the box - which is what it does when the user clicks into a number box
-        /// by hand.
+        /// Nothing deactivates a box (see <see cref="GCamPropertyPage.FocusControl"/>), so a
+        /// tab without a box of its own parks the focus on an ordinary control, which makes
+        /// SOLIDWORKS drop the box.
         /// </remarks>
         private void ActivateSelectionForTab()
         {
@@ -1419,9 +1316,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// Activates the box of the first height measured from geometry, if there is one.
         /// </summary>
         /// <remarks>
-        /// Only one of the five is ever visible at a time in practice, and with none of
-        /// them set to Selection there is nothing on this tab to pick into - which is the
-        /// case the caller handles by moving the focus instead.
+        /// In practice at most one is visible. With none, the caller moves the focus
+        /// instead.
         /// </remarks>
         private bool ActivateHeightSelection()
         {
@@ -1456,14 +1352,11 @@ namespace GCam.SolidWorks.PropertyPages
         /// Fills the plane of whichever height offset box the user is in.
         /// </summary>
         /// <remarks>
-        /// The offset box only, not the mode drop-down beside it: a number box is the
-        /// control SOLIDWORKS reports focus for most predictably, and the box is what
-        /// "editing this height" means to someone tabbing down the page.
+        /// The offset box only, not the mode drop-down: number boxes report focus most
+        /// predictably, and the offset is what "editing this height" means.
         ///
-        /// Moving between two boxes raises both a loss and a gain, and the order is
-        /// SOLIDWORKS' business - which is why the loss only clears the fill if it is
-        /// still the height that lost it. Without that, a gain arriving first would be
-        /// undone by the loss that followed.
+        /// Moving between boxes raises a loss and a gain in no guaranteed order, so a loss
+        /// clears the fill only if it is still that height's.
         /// </remarks>
         protected override void OnGainedFocus(int id)
         {
@@ -1515,9 +1408,7 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         /// <remarks>
-        /// Only the flag is written. The amounts are deliberately left as they are - that
-        /// is what the header checkbox is for - and SOLIDWORKS does the collapsing itself,
-        /// so there is nothing to do to the page.
+        /// Only the flag: the amounts are kept, and SOLIDWORKS collapses the group itself.
         /// </remarks>
         protected override void OnGroupCheck(int id, bool isChecked)
         {
@@ -1558,10 +1449,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// are about a different contour too.
         /// </summary>
         /// <remarks>
-        /// Reaches a *selection* box only because it was created with
-        /// <c>swPropMgrPageSelectionBoxStyle_WantListboxSelectionChanged</c>; the help
-        /// documents this callback for "a list box or selection list box", and without
-        /// that style nothing reports a row change at all.
+        /// Reaches a selection box only because it was created with
+        /// <c>swPropMgrPageSelectionBoxStyle_WantListboxSelectionChanged</c>; without it
+        /// nothing reports a row change.
         /// </remarks>
         protected override void OnListboxSelectionChanged(int id, int item)
         {
@@ -1664,14 +1554,11 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         /// <remarks>
-        /// **A callback is only the user's doing while the page is up and staying up.**
-        /// SOLIDWORKS empties a page's selection boxes as it takes the page apart, and
-        /// during a rebuild it does that on the way to showing the page again. Those
-        /// callbacks are indistinguishable from the user clearing the box, and taking them
-        /// at face value destroys the operation's geometry: on OK an empty list is
-        /// committed over the real one, and on a rebuild there is nothing left for
-        /// <see cref="PageShown"/> to put back. The selections are already held on the
-        /// clone, so there is nothing to lose by ignoring them.
+        /// **Only the user's doing while the page is up and staying up.** SOLIDWORKS
+        /// empties the boxes as it takes a page apart, rebuilds included, and those
+        /// callbacks look exactly like the user clearing them. Taken at face value they
+        /// would commit an empty list on OK, or leave <see cref="PageShown"/> nothing to
+        /// restore. The clone already holds the selections, so ignoring them loses nothing.
         /// </remarks>
         protected override void OnSelectionboxListChanged(int id, int count)
         {
@@ -1680,11 +1567,9 @@ namespace GCam.SolidWorks.PropertyPages
                 return;
             }
 
-            // **Nothing is done here but a note of which box changed.** The help is
-            // explicit that this arrives in the middle of SOLIDWORKS' own selection
-            // processing, is neither a pre- nor a post-notification, and that an add-in
-            // may only query, never act. Reading the model and redrawing from here is
-            // acting. It is done at idle instead - see OnIdle.
+            // **Only a note of which box changed.** The help says this arrives mid-way
+            // through SOLIDWORKS' own selection processing and an add-in may only query,
+            // never act - so the work happens at idle. See OnIdle.
             _pendingSelections.Add(id);
         }
 
@@ -1732,14 +1617,10 @@ namespace GCam.SolidWorks.PropertyPages
 
             Contour2dSettings settings = Settings();
 
-            // Replaced wholesale rather than diffed: the box is the truth about *what* is
-            // selected, and matching up what changed would only be a way to get it wrong.
-            //
-            // The modifiers are a different matter. They are this page's own state and the
-            // box knows nothing about them, so they are carried across by entity - without
-            // this, picking one more edge would silently un-reverse every contour already
-            // set, and a rebuild would do it too, because restoring the selection fires
-            // this callback.
+            // Replaced wholesale: the box is the truth about what is selected. The modifiers
+            // are this page's own state, so they are carried across by entity - otherwise
+            // picking one more edge, or a rebuild restoring the selection, would un-reverse
+            // every contour.
             Dictionary<string, ContourSelection> before = settings.Contours
                 .Where(c => !string.IsNullOrEmpty(c?.Entity?.PersistentId))
                 .GroupBy(c => c.Entity.PersistentId, StringComparer.Ordinal)
@@ -1759,10 +1640,8 @@ namespace GCam.SolidWorks.PropertyPages
                 }
                 else if (picked != null)
                 {
-                    // A new pick takes whatever the checkboxes are showing, so picking a
-                    // run of edges the same way does not mean setting each one afterwards.
-                    // The class defaults are then what a new operation starts from, and
-                    // nothing else.
+                    // A new pick takes what the checkboxes show, so a run of edges picked
+                    // the same way needs no setting afterwards.
                     picked.PropagateTangent = _shownTangent ?? picked.PropagateTangent;
                     picked.PropagateAlongZ = _shownAlongZ ?? picked.PropagateAlongZ;
                 }
@@ -1772,12 +1651,9 @@ namespace GCam.SolidWorks.PropertyPages
 
             _syncedContours = JobSelections.CountWithMark(model, MarkContours);
 
-            // **The 3D view first, the page's own controls afterwards and on another turn
-            // of the pump.** Reading or writing a control in the same turn as a deletion
-            // SOLIDWORKS never reported takes the call chain out from under us - no
-            // exception, nothing in the log, execution simply stops - and whatever came
-            // after it is lost. What matters is the graphics, so it goes first, and the
-            // controls are left to OnIdle by which time SOLIDWORKS has finished.
+            // **The 3D view now, the controls on a later turn of the pump.** Touching a
+            // control in the same turn as an unreported deletion silently stops execution,
+            // losing whatever follows - so the graphics go first and OnIdle does the rest.
             ShowCutDirection();
 
             _controlsOutOfStep = true;
@@ -1799,10 +1675,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// Records what a height is now measured from, and redraws its plane.
         /// </summary>
         /// <remarks>
-        /// An emptied box leaves the reference null, which is the same state a height
-        /// switched to Selection starts in: the mode will not resolve, so no plane appears
-        /// and generation refuses the operation by name. Better than holding a stale pick
-        /// the box no longer shows.
+        /// An emptied box leaves the reference null, as for a height just switched to
+        /// Selection: no plane appears and generation refuses the operation by name -
+        /// better than keeping a pick the box no longer shows.
         /// </remarks>
         private void HeightReferencePicked(ModelDoc2 model, HeightField field)
         {
@@ -1821,16 +1696,11 @@ namespace GCam.SolidWorks.PropertyPages
         private HeightSetting SettingFor(HeightKind kind) => _working.Heights.For(kind);
 
         /// <remarks>
-        /// Committing first and clearing the selection last, as
-        /// <see cref="JobPropertyPage"/> does: the edits are read from the clone, which the
-        /// selection callbacks filled in, and clearing could otherwise fire one of those
-        /// and empty it again. <c>_closing</c> guards that in any case.
+        /// Commits first and clears the selection last, as <see cref="JobPropertyPage"/>
+        /// does: clearing can fire a selection callback that would empty the clone
+        /// (<c>_closing</c> guards that too).
         ///
-        /// **The selection is dropped rather than left behind.** These are the page's
-        /// picks, not the user's, and the next thing they do should not start from a
-        /// selection they did not make. It also keeps the *next* show honest: leaving them
-        /// selected is what made <see cref="RestoreContourSelection"/> restore onto a live
-        /// selection and turn every contour back off.
+        /// The selection is dropped because these are the page's picks, not the user's.
         /// </remarks>
         protected override void PageClosed(swPropertyManagerPageCloseReasons_e reason)
         {
@@ -1843,10 +1713,8 @@ namespace GCam.SolidWorks.PropertyPages
 
             StopSelectionWatch();
 
-            // Before the commit, like the job page's stock box: the arrows describe the
-            // clone that is about to be dropped. On OK the tree reselects the operation a
-            // moment later and its toolpath comes up; on Cancel there is nothing to come
-            // back to, which is right - the arrows were about an edit that never happened.
+            // Before the commit: the previews describe the clone about to be dropped. On OK
+            // the tree reselects the operation and its toolpath comes up.
             _cutDirection?.Invoke()?.Clear();
             _heightsPreview?.Invoke()?.Clear();
 
@@ -1886,9 +1754,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// Copies the strategy's parameters across.
         /// </summary>
         /// <remarks>
-        /// <see cref="Operation.Settings"/> is fixed at construction and cannot be
-        /// swapped, which is what stops an operation's strategy changing underneath its
-        /// stored parameters - so the values move rather than the object.
+        /// <see cref="Operation.Settings"/> cannot be swapped - that is what keeps the
+        /// strategy fixed - so the values move rather than the object.
         /// </remarks>
         private static void CopySettings(Contour2dSettings from, Contour2dSettings to)
         {
@@ -1928,17 +1795,14 @@ namespace GCam.SolidWorks.PropertyPages
         /// Shows or hides one height's selection box, to match the datum just chosen.
         /// </summary>
         /// <remarks>
-        /// <b>Only ever reached from a live drop-down change</b>, because
-        /// <see cref="OnComboboxSelectionChanged"/> returns early while
-        /// <see cref="_loading"/> is held. That restriction is the whole safety argument:
-        /// <c>IPropertyManagerPageControl.Visible</c> on a page that has been shown and
-        /// closed kills SOLIDWORKS outright, so the initial state is settled when the
-        /// control is created and only the user's own change touches this. The same
-        /// arrangement as <c>JobPropertyPage.ShowControlsFor</c>, which has held up.
+        /// <b>Only reached from a live drop-down change</b>
+        /// (<see cref="OnComboboxSelectionChanged"/> returns early while
+        /// <see cref="_loading"/>), which is what makes <c>Visible</c> safe here - see
+        /// <see cref="GCamPropertyPage.Show"/>. The same arrangement as
+        /// <c>JobPropertyPage.ShowControlsFor</c>.
         ///
-        /// The reference is deliberately kept when the mode moves away from Selection and
-        /// back - so does the box's own contents, since the page is not rebuilt - which
-        /// means changing your mind twice does not cost the pick.
+        /// The reference and the box's contents survive switching away from Selection and
+        /// back, so changing your mind twice does not cost the pick.
         /// </remarks>
         private void ShowSelectionBoxFor(int modeId, HeightMode mode)
         {
@@ -1955,15 +1819,13 @@ namespace GCam.SolidWorks.PropertyPages
 
             if (wanted)
             {
-                // Choosing Selection is the ask to pick something, so the box that just
-                // appeared takes the clicks - otherwise the next one would go to whichever
-                // box was active before, which is the contour box.
+                // Choosing Selection is the ask to pick, so the new box takes the clicks
+                // rather than whichever box was active before.
                 field.Selection?.SetSelectionFocus();
             }
             else
             {
-                // The box has gone; the focus must not stay on it or the graphics area
-                // would keep picking into something nobody can see.
+                // Off the hidden box, or the graphics area would keep picking into it.
                 FocusControl(modeId);
             }
         }
@@ -1972,9 +1834,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// Millimetres into whatever a length number box wants, and back.
         /// </summary>
         /// <remarks>
-        /// A swNumberBox_Length control exchanges metres, whatever the document displays.
-        /// Measured, not assumed - see <see cref="JobPropertyPage"/>, where the same pair
-        /// lives for the same reason.
+        /// A swNumberBox_Length control exchanges metres whatever the document displays -
+        /// measured; see <see cref="JobPropertyPage"/>, which has the same pair.
         /// </remarks>
         private static double ToBoxLength(double millimetres) => Units.MillimetresToMetres(millimetres);
 

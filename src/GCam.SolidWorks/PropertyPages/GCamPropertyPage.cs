@@ -9,30 +9,21 @@ using SolidWorks.Interop.swconst;
 namespace GCam.SolidWorks.PropertyPages
 {
     /// <summary>
-    /// Shared shape of a G-CAM PropertyManager page: build once, show on demand, and
-    /// put the user back on the Manager Pane tab they came from afterwards.
+    /// Shared shape of a G-CAM PropertyManager page: rebuilt for every show, and putting
+    /// the user back on the Manager Pane tab they came from afterwards.
     /// </summary>
     /// <remarks>
-    /// A PropertyManager page cannot be drawn inside our own Manager Pane tab -
-    /// CreatePropertyManagerPage takes no parent, and SOLIDWORKS always renders the page
-    /// on the PropertyManager tab. So editing looks like this:
+    /// SOLIDWORKS always draws a page on the PropertyManager tab, never inside ours, so
+    /// <see cref="RestoreManagerPaneTab"/> returns to whichever tab was active before the
+    /// show - not necessarily ours, since a page can be opened from elsewhere.
     ///
-    ///     G-CAM tab  ->  (edit)  ->  PropertyManager tab  ->  (OK/Cancel)  ->  G-CAM tab
-    ///
-    /// The last hop is the only one that is ours to arrange, and
-    /// <see cref="RestoreManagerPaneTab"/> does it by remembering which tab was active
-    /// before the page was shown rather than by hunting for our own tab's index. That
-    /// also does the right thing when the page was opened from somewhere else.
-    ///
-    /// Derived pages supply a title, a message and their controls. The page lifecycle
-    /// callbacks are sealed here so a page cannot silently skip the tab restore by
-    /// overriding AfterClose; <see cref="PageShown"/> and <see cref="PageClosed"/> are
-    /// the hooks to use instead.
+    /// The lifecycle callbacks are sealed so a page cannot skip the tab restore by
+    /// overriding AfterClose; override <see cref="PageShown"/> and <see cref="PageClosed"/>
+    /// instead.
     /// </remarks>
     public abstract class GCamPropertyPage : PmpHandlerBase, IDisposable
     {
-        // Selection box heights, in dialog units rather than pixels. A box that can only
-        // ever hold one thing should not reserve three rows of empty space.
+        // Dialog units, not pixels. A single-entity box should not reserve three rows.
         private const short SingleRowSelectionHeight = 14;
         private const short ListSelectionHeight = 50;
 
@@ -42,13 +33,12 @@ namespace GCam.SolidWorks.PropertyPages
         private IPropertyManagerPage2 _page;
         private bool _isOpen;
 
-        // A rebuild is a close and a show that the derived page must not see as either:
-        // no commit, no tab restore, no reloading of what it is editing.
+        // A rebuild is a close and a show the derived page must not see: no commit, no
+        // tab restore, no reload of what it is editing.
         private bool _rebuilding;
         private System.Windows.Forms.Timer _rebuildTimer;
 
-        // The document the page was shown against, and the Manager Pane tab that was
-        // active at the time. Borrowed, never released - see manager-pane-tabs.md.
+        // Borrowed, never released - see manager-pane-tabs.md.
         private ModelDoc2 _shownAgainst;
         private int _returnToTab = -1;
 
@@ -72,10 +62,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// True while the page is being closed and shown again to change what it displays.
         /// </summary>
         /// <remarks>
-        /// Callbacks still arrive during a rebuild, and they describe SOLIDWORKS taking the
-        /// page apart rather than anything the user did. A page that reads its state back
-        /// out of its controls has to ignore them - see
-        /// <see cref="RebuildAfterHandlerReturns"/>.
+        /// Callbacks still arrive during a rebuild, describing SOLIDWORKS taking the page
+        /// apart rather than anything the user did. A page that reads state back out of its
+        /// controls must ignore them.
         /// </remarks>
         protected bool IsRebuilding => _rebuilding;
 
@@ -86,16 +75,14 @@ namespace GCam.SolidWorks.PropertyPages
         /// The blue explanatory box at the top of the page. Null or empty for no box.
         /// </summary>
         /// <remarks>
-        /// Worth leaving empty once a page explains itself: the box costs a chunk of the
-        /// panel's height on every show, and a caption nobody reads twice is worse than
-        /// the space it takes.
+        /// Leave it empty once a page explains itself: the box costs panel height on every
+        /// show.
         /// </remarks>
         protected virtual string Message => null;
 
         /// <summary>
-        /// Adds the page's groups and controls. Called before every show, on a freshly
-        /// created page - SOLIDWORKS ignores controls added to a page that is already on
-        /// screen.
+        /// Adds the page's groups and controls to a freshly created page, before every
+        /// show. SOLIDWORKS ignores controls added to a page already on screen.
         /// </summary>
         protected abstract void BuildControls(IPropertyManagerPage2 page);
 
@@ -104,10 +91,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// the page is closed.
         /// </summary>
         /// <remarks>
-        /// Deliberately not called from AfterActivation. Assigning to a combobox or a
-        /// number box fires that control's change callback, and a page that reacts to
-        /// those by showing and hiding controls would be rearranging itself while
-        /// SOLIDWORKS is still building it.
+        /// Not from AfterActivation, which runs inside Show2: assigning a value fires the
+        /// control's change callback while SOLIDWORKS is still assembling the page, and
+        /// doing so left the page blank.
         /// </remarks>
         protected virtual void LoadControls() { }
 
@@ -125,29 +111,20 @@ namespace GCam.SolidWorks.PropertyPages
                 return;
             }
 
-            // Rebuilt every time rather than cached.
-            //
-            // A reused page has to be reshaped before each show, and reshaping means
-            // setting IPropertyManagerPageControl.Visible - which kills SOLIDWORKS after
-            // a handful of shows, silently. Building afresh lets every control be
-            // created with the visibility it needs, so that property is never touched on
-            // the way in. Building a page is a dozen API calls; it is not worth caching
-            // at this price.
+            // Rebuilt rather than cached. Reusing a page means reshaping it with
+            // IPropertyManagerPageControl.Visible, which silently kills SOLIDWORKS after a
+            // few shows. A fresh page creates each control at the visibility it needs, for
+            // the price of a dozen API calls.
             ReleasePage();
             _page = Build();
 
-            // Populated while the page is still closed. The help is explicit that a page
-            // is configured before it is displayed, and doing it from AfterActivation
-            // instead - nested inside Show2 - left the page blank: setting a combobox
-            // fires its change callback while SOLIDWORKS is still assembling the page.
             LoadControls();
 
             RememberManagerPaneTab();
 
-            // Counted *before* Show2 rather than from AfterActivation. Showing a page moves
-            // the Manager Pane onto the PropertyManager's tab, and whether that arrives
-            // before or after AfterActivation is SOLIDWORKS' business - the job tree reads
-            // this from that notification, so it has to be true for the whole of Show2.
+            // Counted before Show2, not in AfterActivation: Show2 moves the Manager Pane to
+            // the PropertyManager tab, and the job tree reads AnyOpen when that happens,
+            // which may be before AfterActivation.
             bool counted = !_rebuilding;
 
             if (counted)
@@ -157,8 +134,8 @@ namespace GCam.SolidWorks.PropertyPages
 
             try
             {
-                // 0 rather than a named value: swPropertyManagerPageShowOptions_e defines
-                // only StackPage, and these pages do not stack.
+                // swPropertyManagerPageShowOptions_e defines only StackPage, and these
+                // pages do not stack.
                 int status = _page.Show2(0);
 
                 switch ((swPropertyManagerPageStatus_e)status)
@@ -177,8 +154,7 @@ namespace GCam.SolidWorks.PropertyPages
             }
             catch
             {
-                // A page that never opened will never close, so nothing else would put the
-                // count back down.
+                // A page that never opened never closes, so nothing else would decrement.
                 if (counted)
                 {
                     _openPages--;
@@ -194,13 +170,12 @@ namespace GCam.SolidWorks.PropertyPages
                 (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_OkayButton |
                 (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_CancelButton |
                 (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_LockedPage |
-                // Pages here show and hide controls from inside their own handlers - the
-                // stock mode dropdown does it on every change. Without this the page
-                // repaints per control and visibly flickers.
+                // Handlers here show and hide controls; without this the page repaints per
+                // control and flickers.
                 (int)swPropertyManagerPageOptions_e.swPropertyManagerOptions_DisablePageBuildDuringHandlers;
 
-            // `ref`, not `out`, despite the help documenting it as an output parameter -
-            // the interop declares it [In, Out]. Initialise it rather than trusting it.
+            // `ref` because the interop declares it [In, Out], though the help calls it an
+            // output. Initialise it.
             int errors = 0;
             var page = _swApp.CreatePropertyManagerPage(Title, pageOptions, this, ref errors)
                        as IPropertyManagerPage2;
@@ -215,8 +190,7 @@ namespace GCam.SolidWorks.PropertyPages
                     " with status " + errors + ".");
             }
 
-            // Skipped entirely rather than set to "", so a page with nothing to say gets
-            // no box rather than an empty one.
+            // Skipped rather than set to "", which would show an empty box.
             if (!string.IsNullOrEmpty(Message))
             {
                 page.SetMessage3(
@@ -234,27 +208,20 @@ namespace GCam.SolidWorks.PropertyPages
         // ---- Manager Pane tab -----------------------------------------------
 
         /// <summary>
-        /// Rebuilds and re-shows the page once the current handler has returned, so it
-        /// displays content that changed while it was up.
+        /// Closes and re-shows the page once the current handler has returned, for content
+        /// that cannot be written to a shown page.
         /// </summary>
         /// <remarks>
-        /// **This is the only way to change what a shown page cannot take writes to.** A
-        /// combobox's item list is fixed once the page is displayed: <c>Clear</c> and
-        /// <c>InsertItem</c> each kill SOLIDWORKS outright, with nothing in any log. Not
-        /// every write is fatal - a label's caption is safe from an ordinary callback - so
-        /// check the measured table in docs/solidworks-api/property-manager-pages.md
-        /// before reaching for this. Since the page is
-        /// rebuilt for every show anyway, building it again is cheap and is the sanctioned
-        /// shape rather than a workaround.
+        /// A combobox's item list is the known case: <c>Clear</c> and <c>InsertItem</c> each
+        /// kill SOLIDWORKS silently on a shown page. Other writes, such as a label's caption,
+        /// are safe - check the measured table in docs/solidworks-api/property-manager-pages.md
+        /// before reaching for this.
         ///
-        /// **Deferred, never immediate.** Closing the page inside a handler leaves it gone
-        /// when the handler returns control to SOLIDWORKS, which the help says may crash -
-        /// the same warning that makes these pages `LockedPage`. A one-shot timer moves
-        /// the work to a later turn of the message pump, by which time the handler has
-        /// returned normally.
+        /// Deferred to a later turn of the message pump because the help warns that closing
+        /// a page inside its own handler may crash - the same warning behind `LockedPage`.
         ///
-        /// The derived page sees nothing: no <see cref="PageClosed"/>, no tab restore, and
-        /// <see cref="LoadControls"/> repopulates from whatever it is editing, so edits in
+        /// The derived page sees no <see cref="PageClosed"/> or tab restore, and
+        /// <see cref="LoadControls"/> repopulates from what it is editing, so edits in
         /// progress survive.
         /// </remarks>
         protected void RebuildAfterHandlerReturns()
@@ -294,8 +261,8 @@ namespace GCam.SolidWorks.PropertyPages
 
             try
             {
-                // Cancel, not Okay: this is not the user accepting anything. AfterClose
-                // sees _rebuilding and skips PageClosed, so nothing is committed or lost.
+                // Cancel, not OK: the user accepted nothing. AfterClose skips PageClosed
+                // while _rebuilding, so nothing is committed or lost.
                 _page.Close(false);
                 Show();
             }
@@ -322,9 +289,7 @@ namespace GCam.SolidWorks.PropertyPages
 
         private void RememberManagerPaneTab()
         {
-            // A rebuild must keep the tab the page was originally opened from. By now
-            // the active tab is the PropertyManager's own, so re-reading it would make
-            // OK land somewhere the user never was.
+            // Keep the original tab: mid-rebuild, the active one is the PropertyManager's.
             if (_rebuilding)
             {
                 return;
@@ -356,8 +321,8 @@ namespace GCam.SolidWorks.PropertyPages
             }
             catch (Exception ex)
             {
-                // Expected if the document was closed while the page was up. Quiet
-                // because landing on the wrong tab is a blemish, not a failure.
+                // Expected if the document closed while the page was up. Quiet: the wrong
+                // tab is a blemish, not a failure.
                 Errors.Handle(ex, nameof(RestoreManagerPaneTab), quiet: true);
             }
             finally
@@ -373,18 +338,13 @@ namespace GCam.SolidWorks.PropertyPages
         /// True while any G-CAM page is on screen.
         /// </summary>
         /// <remarks>
-        /// Static because it describes something there is only one of: SOLIDWORKS has one
-        /// Manager Pane, so "a G-CAM page has it" is a fact about the application rather
-        /// than about any page.
+        /// Static because SOLIDWORKS has one Manager Pane.
         ///
-        /// It exists for <c>JobTreeTabs</c>, which clears the job tree's selection when the
-        /// pane moves off the G-CAM tab. Showing a page moves the pane onto the
-        /// PropertyManager's own tab - that is why <see cref="RememberManagerPaneTab"/>
-        /// exists - so without this, opening an operation for editing would take that
-        /// operation's toolpath off the screen at exactly the wrong moment.
+        /// For <c>JobTreeTabs</c>, which clears the job tree's selection when the pane
+        /// leaves the G-CAM tab. Showing a page moves the pane, so without this, opening an
+        /// operation would hide its toolpath just as it is being edited.
         ///
-        /// A rebuild closes and re-shows a page, and <see cref="_rebuilding"/> keeps the
-        /// count from dipping through zero on the way.
+        /// A rebuild leaves the count alone - see <see cref="_rebuilding"/>.
         /// </remarks>
         public static bool AnyOpen => _openPages > 0;
 
@@ -398,13 +358,12 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected sealed override void OnClose(swPropertyManagerPageCloseReasons_e reason)
         {
-            // SOLIDWORKS permits no real work here - the page and its command are
-            // already closing. Record what happened and act on it in AfterClose.
+            // No real work is allowed here - the page is already closing. Record what
+            // happened and act on it in AfterClose.
             _isOpen = false;
 
-            // Both ends skip a rebuild, which closes and re-shows inside one call with
-            // _rebuilding held true throughout. Counting one end of it and not the other is
-            // how a counter like this ends up stuck above zero for the session.
+            // Both ends of a rebuild are skipped; counting only one would leave the count
+            // stuck above zero.
             if (!_rebuilding && _openPages > 0)
             {
                 _openPages--;
@@ -415,9 +374,8 @@ namespace GCam.SolidWorks.PropertyPages
 
         protected sealed override void AfterClose()
         {
-            // A rebuild closes the page on its way to showing it again. It is not a close
-            // the page is entitled to react to: committing here would accept edits the
-            // user has not finished, and restoring the tab would fight the re-show.
+            // Not a real close: committing would accept unfinished edits, and restoring the
+            // tab would fight the re-show.
             if (_rebuilding)
             {
                 return;
@@ -461,14 +419,12 @@ namespace GCam.SolidWorks.PropertyPages
         /// without being cleared. Changes arrive at <c>OnGroupCheck</c>.
         /// </summary>
         /// <remarks>
-        /// SOLIDWORKS collapses the group when the box is cleared and expands it when it
-        /// is set - its own behaviour, documented under IPropertyManagerPageGroup::Checked
-        /// - so the contents hide themselves and nothing here writes to a shown page. It
-        /// leaves the controls' own states alone, which is exactly what is wanted: the
-        /// numbers keep what was typed into them.
+        /// SOLIDWORKS collapses the group when the box is cleared and expands it when set
+        /// (IPropertyManagerPageGroup::Checked), so nothing here writes to a shown page and
+        /// the controls keep their values.
         ///
-        /// The initial state is an option here rather than an assignment afterwards,
-        /// because it is part of the page's shape like everything else.
+        /// The initial state is an option rather than a later assignment because it is
+        /// part of the page's shape.
         /// </remarks>
         protected static IPropertyManagerPageGroup AddCheckedGroup(
             IPropertyManagerPageTab tab, int id, string caption, bool isChecked)
@@ -504,13 +460,10 @@ namespace GCam.SolidWorks.PropertyPages
         /// A tab across the top of the page. Groups go inside it rather than on the page.
         /// </summary>
         /// <remarks>
-        /// Build-time only, like every other part of a page's shape - the help is explicit
-        /// that AddTab "cannot be used if the page is already displayed", which costs
-        /// nothing here because these pages are rebuilt for every show anyway.
+        /// Build-time only: the help says AddTab "cannot be used if the page is already
+        /// displayed".
         ///
-        /// No bitmap. The help wants a 16x18 file on disk and treats an empty string as
-        /// "no bitmap", which is the behaviour wanted: text tabs, no image assets to
-        /// deploy and find at runtime.
+        /// No bitmap: the help wants a 16x18 file on disk, and an empty string means none.
         /// </remarks>
         protected static IPropertyManagerPageTab AddTab(
             IPropertyManagerPage2 page, int id, string caption)
@@ -534,15 +487,12 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         /// <summary>
-        /// A length box. Values are in whatever units SOLIDWORKS hands back - see
-        /// <see cref="JobPropertyPage"/> for the conversion and why it is measured
-        /// rather than assumed.
+        /// A length box, in whatever units SOLIDWORKS exchanges - see
+        /// <see cref="JobPropertyPage"/> for the conversion.
         /// </summary>
         /// <param name="allowNegative">
-        /// Lets the box take a value below zero. Off by default, because most lengths on a
-        /// page are sizes or radii and a negative one is meaningless - but an *offset*
-        /// measures from a datum in both directions, and a box that will not accept a
-        /// minus sign silently contradicts a tip that says "negative goes below".
+        /// Off by default, since most lengths are sizes or radii; on for offsets, which
+        /// measure both ways from a datum.
         /// </param>
         protected static IPropertyManagerPageNumberbox AddLengthbox(
             IPropertyManagerPageGroup group,
@@ -555,8 +505,8 @@ namespace GCam.SolidWorks.PropertyPages
             var box = AddControl<IPropertyManagerPageNumberbox>(
                 group, id, swPropertyManagerPageControlType_e.swControlType_Numberbox, caption, tip, visible);
 
-            // Units cannot be changed once the page is shown, so this has to happen here.
-            // The bound is deliberately generous rather than a guess at machine capacity.
+            // Units cannot change once the page is shown. The bound is generous, not a
+            // machine limit.
             box.SetRange2(
                 (int)swNumberboxUnitType_e.swNumberBox_Length,
                 Minimum: allowNegative ? -LengthLimit : 0,
@@ -573,9 +523,7 @@ namespace GCam.SolidWorks.PropertyPages
         /// How far a length box will go, either side of zero.
         /// </summary>
         /// <remarks>
-        /// In the units the box exchanges, which for a length box is metres - so this is
-        /// not the kilometre-ish limit it reads as. It is here to keep the two ends
-        /// symmetrical rather than to police anything.
+        /// Metres, as the box exchanges them. Only there to keep the range symmetrical.
         /// </remarks>
         private const double LengthLimit = 10000;
 
@@ -584,9 +532,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// angle.
         /// </summary>
         /// <remarks>
-        /// Unitless on purpose. A length box exchanges metres whatever the document shows
-        /// (see <see cref="JobPropertyPage"/>), and there is no equivalent unit type for
-        /// mm/min or rpm - so these boxes carry the plain number and nothing converts.
+        /// Unitless: there is no number box unit for mm/min or rpm, so the plain number
+        /// goes through unconverted.
         /// </remarks>
         protected static IPropertyManagerPageNumberbox AddNumberbox(
             IPropertyManagerPageGroup group,
@@ -616,11 +563,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// A push button. Presses arrive at <c>OnButtonPress</c> with this id.
         /// </summary>
         /// <remarks>
-        /// The caption is set explicitly as well as passed to <c>AddControl2</c>. A
-        /// button is the one control here whose caption really is its visible text -
-        /// <see cref="AddLabel"/> records that the boxes ignore theirs - and leaving it
-        /// to the shared path invites the wrong conclusion about which of the two is
-        /// doing the work.
+        /// The caption is set explicitly as well as through <c>AddControl2</c>, to make
+        /// clear that a button, unlike the boxes (see <see cref="AddLabel"/>), displays it.
         /// </remarks>
         protected static IPropertyManagerPageButton AddButton(
             IPropertyManagerPageGroup group, int id, string caption, string tip)
@@ -657,21 +601,16 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         /// <param name="height">
-        /// Height in <b>dialog units</b>, not pixels. Zero picks a sensible default: one
-        /// row for a single-entity box, three for a list.
+        /// In <b>dialog units</b>, not pixels. Zero means one row for a single-entity box,
+        /// three for a list.
         /// </param>
         /// <param name="mark">
-        /// Distinguishes this box from every other selection box on the page. It is how
-        /// SOLIDWORKS decides which box a click belongs to, and how
-        /// ISelectionMgr::GetSelectedObject6 later tells them apart, so each box on a
-        /// page needs its own.
+        /// Tells SOLIDWORKS, and later ISelectionMgr::GetSelectedObject6, which box a pick
+        /// belongs to, so each box on a page needs its own.
         ///
-        /// <b>Must be a power of two.</b> The help requires it and marks are matched
-        /// bitwise, so 3 overlaps both 1 and 2 - a pick lands in several boxes at once and
-        /// reads back as whichever of them answers first. Checked here because the failure
-        /// is silent and turns up somewhere else entirely: the first time this was got
-        /// wrong, an operation refused to generate for having no contours while its
-        /// contour box plainly showed some.
+        /// <b>Must be a power of two.</b> Marks match bitwise, so 3 overlaps 1 and 2 and a
+        /// pick lands in several boxes. Checked here because the failure is silent and
+        /// surfaces elsewhere - as an operation with no contours while its box shows some.
         /// </param>
         protected static IPropertyManagerPageSelectionbox AddSelectionbox(
             IPropertyManagerPageGroup group,
@@ -711,9 +650,8 @@ namespace GCam.SolidWorks.PropertyPages
 
             if (wantRowChanges)
             {
-                // The only way to hear that the user has highlighted a different row: with
-                // this style, OnListboxSelectionChanged reports a selection box as well as
-                // a list box. Style is build-time only, which suits a page rebuilt per show.
+                // The only way to hear the highlighted row change: with this style,
+                // OnListboxSelectionChanged reports selection boxes too. Build-time only.
                 box.Style |= (int)swPropMgrPageSelectionBoxStyle_e
                     .swPropMgrPageSelectionBoxStyle_WantListboxSelectionChanged;
             }
@@ -732,9 +670,8 @@ namespace GCam.SolidWorks.PropertyPages
                 swPropertyManagerPageControlLeftAlign_e.swControlAlign_Indent)
             where T : class
         {
-            // AddControl2, not AddControl: since 2014 the newer overload requires
-            // swControlOptions_Visible explicitly, so an omitted option produces an
-            // invisible control rather than a missing one.
+            // AddControl2 requires swControlOptions_Visible explicitly; without it the
+            // control is invisible rather than missing.
             var control = group.AddControl2(
                 id,
                 (short)type,
@@ -757,15 +694,10 @@ namespace GCam.SolidWorks.PropertyPages
         /// Puts the keyboard focus on a control of the shown page.
         /// </summary>
         /// <remarks>
-        /// <b>The only way to stop a selection box being the active one.</b>
-        /// <see cref="IPropertyManagerPageSelectionbox.SetSelectionFocus"/> makes a box
-        /// active and there is no call that makes none active, so a page that wants
-        /// clicks in the graphics area to stop landing in a box has to give the focus to
-        /// something else.
+        /// <b>The only way to stop a selection box being the active one</b> - no call
+        /// deactivates a box, so the focus has to go elsewhere.
         ///
-        /// False when the page is not up, or SOLIDWORKS declined - neither is worth
-        /// throwing over, because the focus is an convenience and the page works without
-        /// it.
+        /// False when the page is not up or SOLIDWORKS declined; not worth throwing over.
         /// </remarks>
         protected bool FocusControl(int controlId)
         {
@@ -773,9 +705,8 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         /// <summary>
-        /// Shows or hides a control. Every control is created up front, because they
-        /// cannot be added to a page that is already on screen; this is how a page
-        /// changes shape afterwards.
+        /// Shows or hides a control on a page already on screen. <b>Never on a page about
+        /// to be shown</b> - see <see cref="Show"/>.
         /// </summary>
         protected static void SetVisible(object control, bool visible)
         {
@@ -790,10 +721,8 @@ namespace GCam.SolidWorks.PropertyPages
         /// A line of static text.
         /// </summary>
         /// <remarks>
-        /// Number boxes, comboboxes, text boxes and selection boxes do **not** display
-        /// the caption passed to AddControl2 - the caption is accepted and ignored, and
-        /// SOLIDWORKS' own example passes an empty string for all of them. A label
-        /// control is the only way to put a name next to one.
+        /// Number boxes, comboboxes, text boxes and selection boxes accept a caption and
+        /// ignore it, so a label is the only way to name one.
         /// </remarks>
         protected static IPropertyManagerPageLabel AddLabel(
             IPropertyManagerPageGroup group, int id, string text, bool visible = true)
@@ -809,8 +738,8 @@ namespace GCam.SolidWorks.PropertyPages
         }
 
         /// <summary>
-        /// Releases the page. Called from DisconnectFromSW, never from a handler -
-        /// closing a page from inside its own callback is what the API help warns about.
+        /// Releases the page. Called from DisconnectFromSW, never from a handler - the
+        /// help warns against closing a page from its own callback.
         /// </summary>
         public void Dispose()
         {
