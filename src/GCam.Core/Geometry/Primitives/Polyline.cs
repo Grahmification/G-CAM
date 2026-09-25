@@ -68,9 +68,9 @@ namespace GCam.Core.Geometry.Primitives
         /// </summary>
         /// <remarks>
         /// The shoelace sum, left undivided because only its sign is ever wanted: which way
-        /// round a contour runs decides which side of it the cutter ends up on, and halving
-        /// it to get a real area would only add a rounding step to a comparison against
-        /// zero.
+        /// round a contour runs decides the direction of travel, and with it climb or
+        /// conventional, and halving it to get a real area would only add a rounding step
+        /// to a comparison against zero.
         /// </remarks>
         public double SignedAreaXy2
         {

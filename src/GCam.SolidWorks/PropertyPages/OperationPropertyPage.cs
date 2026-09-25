@@ -1292,12 +1292,15 @@ namespace GCam.SolidWorks.PropertyPages
         /// Picks a tool from a library, puts it in the part, and selects it here.
         /// </summary>
         /// <remarks>
-        /// **Nothing here writes to a control, because a shown page does not accept it.**
-        /// Three separate calls have each killed SOLIDWORKS outright on their first use -
+        /// **Nothing here writes to a control once the browser has been over the page.**
+        /// Three separate calls each killed SOLIDWORKS outright on their first use here -
         /// `Combobox.Clear`, `Combobox.InsertItem` and `Label.Caption` - with no
         /// exception, no log line and no crash report, exactly like
-        /// `IPropertyManagerPageControl.Visible`. All verified on 2025 SP3 by bisecting
-        /// this method with log lines; see property-manager-pages.md.
+        /// `IPropertyManagerPageControl.Visible`. Verified on 2025 SP3 by bisecting this
+        /// method with log lines. The two combobox calls are fatal anywhere, but the
+        /// caption is safe from an ordinary callback, so what kills it here is something
+        /// about the modal WPF window and is still unmeasured; see
+        /// property-manager-pages.md.
         ///
         /// So the tool is shown as a header label with a Browse button under it -
         /// HSMWorks' shape - and picking one **rebuilds the page** through
@@ -1330,8 +1333,7 @@ namespace GCam.SolidWorks.PropertyPages
         {
             Tool partTool;
 
-            // Nothing of ours may run while the browser is over the page - see
-            // OnSelectionWatchTick.
+            // Nothing of ours may run while the browser is over the page - see OnIdle.
             _browsing = true;
 
             try

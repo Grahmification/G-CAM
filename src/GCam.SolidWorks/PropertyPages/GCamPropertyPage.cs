@@ -93,8 +93,9 @@ namespace GCam.SolidWorks.PropertyPages
         protected virtual string Message => null;
 
         /// <summary>
-        /// Adds the page's groups and controls. Called once, while the page is closed -
-        /// SOLIDWORKS ignores controls added to a page that is already on screen.
+        /// Adds the page's groups and controls. Called before every show, on a freshly
+        /// created page - SOLIDWORKS ignores controls added to a page that is already on
+        /// screen.
         /// </summary>
         protected abstract void BuildControls(IPropertyManagerPage2 page);
 
@@ -111,7 +112,7 @@ namespace GCam.SolidWorks.PropertyPages
         protected virtual void LoadControls() { }
 
         /// <summary>
-        /// Displays the page, building it on first use.
+        /// Builds the page afresh and displays it.
         /// </summary>
         /// <exception cref="GCamUserException">
         /// No part is open. A page can be created with no document, but not shown.
@@ -237,10 +238,12 @@ namespace GCam.SolidWorks.PropertyPages
         /// displays content that changed while it was up.
         /// </summary>
         /// <remarks>
-        /// **This is the only way to change what a shown page shows.** A control's
-        /// contents are fixed once the page is displayed: a combobox's item list and a
-        /// label's caption both kill SOLIDWORKS outright if written to, with nothing in
-        /// any log - see docs/solidworks-api/property-manager-pages.md. Since the page is
+        /// **This is the only way to change what a shown page cannot take writes to.** A
+        /// combobox's item list is fixed once the page is displayed: <c>Clear</c> and
+        /// <c>InsertItem</c> each kill SOLIDWORKS outright, with nothing in any log. Not
+        /// every write is fatal - a label's caption is safe from an ordinary callback - so
+        /// check the measured table in docs/solidworks-api/property-manager-pages.md
+        /// before reaching for this. Since the page is
         /// rebuilt for every show anyway, building it again is cheap and is the sanctioned
         /// shape rather than a workaround.
         ///

@@ -289,27 +289,9 @@ namespace GCam.SolidWorks.PropertyPages
                 _loading = false;
             }
 
-            // Visibility is deliberately NOT set here. See PageShown.
+            // Visibility is deliberately NOT set here. See BuildStockGroup.
         }
 
-        /// <summary>
-        /// Runs once the page is on screen. Only work that needs a live page belongs
-        /// here.
-        /// </summary>
-        /// <remarks>
-        /// Two things do, for different reasons.
-        ///
-        /// <b>Visibility must be set on a live page.</b> Setting
-        /// IPropertyManagerPageControl.Visible on a page that has been shown and then
-        /// closed terminates SOLIDWORKS - no exception, no log, the process simply goes.
-        /// The help documents no such restriction; this was found by logging each
-        /// statement until one of them stopped coming back. Values are safe to set while
-        /// closed, which is why LoadControls still runs before Show2; only the show/hide
-        /// waits.
-        ///
-        /// <b>Selections need the page up too</b>, because SelectByID2 routes by mark and
-        /// the marks belong to selection boxes on a page that actually exists.
-        /// </remarks>
         /// <summary>
         /// Vets a candidate before it is allowed into a selection box, and names it.
         /// </summary>
@@ -352,9 +334,17 @@ namespace GCam.SolidWorks.PropertyPages
             return true;
         }
 
+        /// <summary>
+        /// Runs once the page is on screen. Only work that needs a live page belongs
+        /// here.
+        /// </summary>
+        /// <remarks>
+        /// Selections do, because SelectByID2 routes by mark and the marks belong to
+        /// selection boxes on a page that actually exists. Visibility does not - it was
+        /// settled when the controls were created; see <see cref="BuildStockGroup"/>.
+        /// </remarks>
         protected override void PageShown()
         {
-            // Selections only. Visibility was settled when the controls were created.
             RestoreSelections();
 
             UpdatePreview();

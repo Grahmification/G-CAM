@@ -50,8 +50,8 @@ namespace GCam.Core.Geometry.Offset
         /// </summary>
         /// <remarks>
         /// A separate method rather than a flag on <see cref="Offset"/>, because the two
-        /// are not the same operation. Offsetting a closed contour is driven by its
-        /// orientation and can legitimately return several contours or none. Offsetting an
+        /// are not the same operation. Offsetting a closed contour is driven by the
+        /// sign of the distance and can legitimately return several contours or none. Offsetting an
         /// open path is driven by an explicit side and returns a single parallel curve -
         /// and no general-purpose offsetting library provides it directly, because the
         /// usual meaning of "offset an open path" is the closed ribbon around it.

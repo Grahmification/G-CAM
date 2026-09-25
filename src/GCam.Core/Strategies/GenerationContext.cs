@@ -13,17 +13,12 @@ namespace GCam.Core.Strategies
     /// </summary>
     /// <remarks>
     /// **The point of this type is that a strategy touches no COM.** Heights are already
-    /// numbers, the tool has already been looked up, the stock is already a box in the
-    /// operation's frame. Whoever builds one of these has done all the work that needs
-    /// SOLIDWORKS, so generation itself runs on a worker thread and a test can construct a
-    /// context by hand.
+    /// numbers, the tool has already been looked up, the stock is already a box and the
+    /// selected contours are already chains of points in the operation's frame. Whoever
+    /// builds one of these has done all the work that needs SOLIDWORKS, so generation
+    /// itself runs on a worker thread and a test can construct a context by hand.
     ///
     /// Millimetres, in the operation's frame.
-    ///
-    /// **Geometry is not here yet.** Selections resolve to real curves and faces only once
-    /// `SolidWorks/Extraction` can walk a BRep, which is the slice after the first
-    /// strategy. It arrives as another property on this type; nothing about the shape has
-    /// to change to admit it.
     /// </remarks>
     public sealed class GenerationContext
     {
