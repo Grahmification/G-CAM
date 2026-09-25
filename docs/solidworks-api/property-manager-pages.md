@@ -131,7 +131,8 @@ What is actually known, as opposed to inferred:
 | `Combobox.InsertItem` | **Fatal**, measured |
 | `Label.Caption` | **Safe**, measured — from an ordinary callback; see below |
 | `IPropertyManagerPageControl.Visible` | **Safe** from a live user change; **fatal** on a page about to be shown (section below) |
-| `IPropertyManagerPageSelectionbox.SetSelectionFocus`, `IPropertyManagerPage2.SetFocus` | **Safe**, measured |
+| `IPropertyManagerPageSelectionbox.SetSelectionFocus`, `IPropertyManagerPage2.SetFocus` | **Safe**, measured — from ordinary callbacks; not measured on its own inside `OnTabClicked` |
+| `ModelView.GraphicsRedraw` (with COM reads before it) from inside `OnTabClicked` | **Breaks tab switching**, intermittently — see "Do nothing in `OnTabClicked`" |
 | `Numberbox.Value`, `Combobox.CurrentSelection` | **Unknown** — assume fatal |
 
 **Generalising from this table has been wrong three times.** Each entry is worth what it
@@ -262,6 +263,28 @@ worth knowing before using it:
 - **Whether tab ids share a namespace with control ids is not documented.** Given that
   duplicate *control* ids are accepted in silence here (below), G-CAM keeps tab ids in a
   range well clear of the groups and controls rather than relying on an answer.
+
+### Do nothing in `OnTabClicked` but take a note — **Verified (2025 SP3), cause Assumed**
+
+`OnTabClicked` arrives partway through SOLIDWORKS' own tab switch. The Operation page used
+to redraw its height planes from there — COM reads of the part's bodies and heights, then
+a synchronous `ModelView.GraphicsRedraw` — and once in a while that **left the page stuck
+on the tab it was leaving, for good.** The strip went on highlighting whichever tab was
+clicked, and `OnTabClicked` went on arriving for every click, but the controls beneath
+never changed again until the page was closed. Nothing threw and nothing was logged.
+
+Found by elimination, with a `Log.Debug` at entry and exit of the handler: every click
+entered and returned in under 10 ms, so the handler was not hanging or throwing. Taking
+the focus move (`SetFocus` / `SetSelectionFocus`) out did not fix it; taking the redraw out
+as well did. The one logged failure was a click *into* Heights, the only tab where the
+redraw did real work, and the same transition had worked many times before it.
+
+Which half of the redraw is to blame — the COM reads or the repaint — is not separated,
+and the mechanism is a guess: a synchronous repaint re-entering the panel's painting or
+layout mid-switch. The fix covers both, so neither was pursued. `OnTabClicked` now records
+the tab and sets a flag, and the page's `OnIdleNotify` watch does the drawing and the focus
+move on a later turn of the pump. The focus move was not shown to be harmful, but it was not
+shown to be safe mid-switch either, and idle costs nothing.
 
 **A page-level group and tabs can be mixed** — the group renders above the tab strip.
 Verified on 2025 SP3 with the Operation page's name field, which sat there and worked
@@ -598,4 +621,5 @@ Run in SOLIDWORKS 2025 SP3 (revision 33.3.0) on 2026-09-12:
 | Numberbox `Value` and combobox `CurrentSelection` on a shown page | **Not yet exercised** — assume fatal |
 | `RebuildAfterHandlerReturns` — deferred close and re-show | **Confirmed** — Browse rebuilds the Operation page, edits and selections survive |
 | Tabs, and a page-level group above the tab strip | **Confirmed** — the Operation page's five tabs, and the name group that sat above them |
+| Redrawing the 3D view from inside `OnTabClicked` | **Confirmed broken**, intermittently — the page stops switching tabs; deferred to idle instead |
 | A page title that changes per show | **Confirmed** — the Operation page titles itself with the operation's name |

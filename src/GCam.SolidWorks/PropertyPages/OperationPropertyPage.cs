@@ -276,6 +276,12 @@ namespace GCam.SolidWorks.PropertyPages
         /// </summary>
         private bool _controlsOutOfStep;
 
+        /// <summary>
+        /// True when the tab in front has changed and the planes and the active selection
+        /// box have not caught up. Cleared by <see cref="ApplyTabChange"/>, at idle.
+        /// </summary>
+        private bool _tabChanged;
+
         /// <summary>Selection boxes that have changed and not yet been read.</summary>
         private readonly HashSet<int> _pendingSelections = new HashSet<int>();
 
@@ -760,6 +766,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// </remarks>
         protected override void PageShown()
         {
+            // What a pending tab change would do is done below, for the tab being shown.
+            _tabChanged = false;
+
             RestoreContourSelection();
             StartSelectionWatch();
             ShowCutDirection();
@@ -778,8 +787,9 @@ namespace GCam.SolidWorks.PropertyPages
         /// Only for the Heights tab: the planes span the part and would bury the contours
         /// the Geometry tab is about.
         ///
-        /// Called on every show, tab click, height edit and focus move between the offset
-        /// boxes - each changes what is drawn or which plane is filled.
+        /// Called on every show, tab change, height edit and focus move between the offset
+        /// boxes - each changes what is drawn or which plane is filled. A tab change reaches
+        /// it at idle, never from inside the click (<see cref="OnTabClicked"/>).
         /// </remarks>
         private void ShowHeights()
         {
@@ -1013,6 +1023,12 @@ namespace GCam.SolidWorks.PropertyPages
                 if (_controlsOutOfStep)
                 {
                     RefreshContourControls();
+                    return 0;
+                }
+
+                if (_tabChanged)
+                {
+                    ApplyTabChange();
                     return 0;
                 }
 
@@ -1269,6 +1285,11 @@ namespace GCam.SolidWorks.PropertyPages
         /// <remarks>
         /// Returning true lets the click through. The id is kept rather than the tab
         /// object, which belongs to a build about to be thrown away.
+        ///
+        /// <b>Only a note of the new tab; the planes and the focus follow at idle</b>
+        /// (<see cref="ApplyTabChange"/>). Redrawing the planes from in here left the page
+        /// stuck on the tab it was leaving, intermittently: the strip kept moving but the
+        /// controls never changed again. See docs/solidworks-api/property-manager-pages.md.
         /// </remarks>
         protected override bool OnTabClicked(int id)
         {
@@ -1278,9 +1299,20 @@ namespace GCam.SolidWorks.PropertyPages
             // filled the next time the tab came back.
             _focusedHeight = null;
 
+            _tabChanged = true;
+            return true;
+        }
+
+        /// <summary>
+        /// Catches the planes and the active selection box up with the tab now in front,
+        /// once SOLIDWORKS has finished switching to it.
+        /// </summary>
+        private void ApplyTabChange()
+        {
+            _tabChanged = false;
+
             ShowHeights();
             ActivateSelectionForTab();
-            return true;
         }
 
         /// <summary>

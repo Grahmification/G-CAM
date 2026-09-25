@@ -941,6 +941,11 @@ these planes span the part, and left up behind the Geometry tab they would bury 
 that tab is about. `_activeTab` is tracked for the rebuild already, so there is nothing new
 to watch.
 
+**Redrawn at idle after a tab click, never from inside it.** `OnTabClicked` only records the
+tab; the planes and the active selection box catch up on the next idle. Drawing from the
+click itself intermittently left the page stuck on the previous tab — see
+[property-manager-pages.md](../solidworks-api/property-manager-pages.md).
+
 **Outlines always, and a fill on the one being edited** — which is also how you tell five
 stacked outlines apart, so the fill is the labelling rather than decoration. The trigger is
 focus on that height's offset box, through `OnGainedFocus`/`OnLostFocus`. Moving between two
