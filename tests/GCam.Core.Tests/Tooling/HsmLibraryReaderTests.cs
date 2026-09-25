@@ -15,7 +15,6 @@ namespace GCam.Core.Tests.Tooling
     {
         private static string ExampleFilePath()
         {
-            // Walk up from the test binary to the repo root.
             var dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
             while (dir != null && !File.Exists(Path.Combine(dir.FullName, "G-CAM.sln")))
             {

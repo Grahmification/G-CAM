@@ -176,7 +176,6 @@ namespace GCam.UI.ViewModels
             _settings.ToolLibraryFolders.Remove(match);
             _settings.Save();
 
-            // Clear the list if the library on screen came from the folder being removed.
             if (_selectedLibrary != null &&
                 _selectedLibrary.FullPath.StartsWith(node.FullPath, StringComparison.OrdinalIgnoreCase))
             {

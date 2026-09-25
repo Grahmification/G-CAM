@@ -95,8 +95,6 @@ namespace GCam.SolidWorks.Selection
                     continue;
                 }
 
-                // SOLIDWORKS addresses a body by name plus type through SelectByID2. The
-                // empty strings are the unused callout/config arguments.
                 bool selected = extension.SelectByID2(
                     name, "SOLIDBODY", 0, 0, 0, true, mark, null,
                     (int)swSelectOption_e.swSelectOptionDefault);

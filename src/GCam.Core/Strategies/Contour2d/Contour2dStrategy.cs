@@ -236,8 +236,8 @@ namespace GCam.Core.Strategies.Contour2d
             Polyline atDepth = cutterPath.AtZ(depth);
             Vec3 profileStart = atDepth.Points[0];
 
-            // Which way the leads may swing. Worked out once per pass from where the wall
-            // is, and used by both the entry and the exit arc.
+            // Worked out once per pass from where the wall is, and used by both the entry
+            // and the exit arc.
             bool turnLeft = LeadTurnsLeft(profile.Path, cutterPath)
                             != CutterHasCrossedOver(radius, settings);
 
@@ -410,8 +410,8 @@ namespace GCam.Core.Strategies.Contour2d
 
             if (profile.IsClosed)
             {
-                // Back to where it started. A closed contour does not repeat its first
-                // point, so the closing move has to be added rather than walked to.
+                // A closed contour does not repeat its first point, so the closing move
+                // has to be added rather than walked to.
                 yield return Move.Cut(profile[0], feed);
             }
         }

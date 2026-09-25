@@ -271,7 +271,6 @@ namespace GCam.Core.Tests.Rendering
                     .Add(Move.Cut(P(0, 0, 5), 500)),
                 toPart));
 
-            // Job +Z is part -Y under that frame.
             Vec3 end = batch.Vertices.Last();
 
             Assert.Equal(0, end.X, 6);

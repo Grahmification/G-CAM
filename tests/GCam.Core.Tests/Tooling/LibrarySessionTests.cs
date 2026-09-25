@@ -65,7 +65,6 @@ namespace GCam.Core.Tests.Tooling
             library.Tools.Add(SampleTool());
             session.MarkDirty(path);
 
-            // The file exists but does not yet contain the tool.
             using (FileStream stream = File.OpenRead(path))
             {
                 Assert.Empty(new GcamXmlLibraryReader().Read(stream, path).Library.Tools);
@@ -95,7 +94,6 @@ namespace GCam.Core.Tests.Tooling
             Assert.True(File.Exists(path));
             Assert.False(session.HasUnsavedChanges);
 
-            // The tool added afterwards does not.
             using (FileStream stream = File.OpenRead(path))
             {
                 Assert.Empty(new GcamXmlLibraryReader().Read(stream, path).Library.Tools);

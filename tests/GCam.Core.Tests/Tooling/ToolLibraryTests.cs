@@ -42,7 +42,6 @@ namespace GCam.Core.Tests.Tooling
             ToolLibrary library = SampleLibrary();
             Tool embedded = library.CheckOut("t1");
 
-            // Someone edits the library afterwards.
             library.Tools[0].Geometry.Diameter = 12;
             library.Tools[0].Cutting.CuttingFeed = 99;
             library.Tools[0].Name = "changed";

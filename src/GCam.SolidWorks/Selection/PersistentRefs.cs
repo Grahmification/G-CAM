@@ -141,8 +141,7 @@ namespace GCam.SolidWorks.Selection
                 return null;
             }
 
-            // No id at all, so this came from a part saved before references. Find it by
-            // name and stamp the identity in.
+            // No id at all, so this came from a part saved before references.
             object byName = findByName?.Invoke(reference.DisplayName);
             if (byName == null)
             {

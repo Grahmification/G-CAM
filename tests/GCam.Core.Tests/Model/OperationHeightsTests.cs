@@ -365,7 +365,6 @@ namespace GCam.Core.Tests.Model
             Assert.Equal(12, low.Feed, 9);
             Assert.Equal(22, high.Feed, 9);
 
-            // Retract is still one plane for every contour.
             Assert.Equal(low.Retract, high.Retract, 9);
         }
 

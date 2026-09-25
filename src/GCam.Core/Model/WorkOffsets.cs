@@ -20,7 +20,7 @@ namespace GCam.Core.Model
         /// <summary>G59.</summary>
         public const int Last = 6;
 
-        // G54 is the first work offset G-code. Offset 1 means G54, 2 means G55, and so on.
+        // Offset 1 means G54, 2 means G55, and so on.
         private const int FirstGCode = 54;
 
         /// <summary>The G-code word for an offset number, e.g. 1 becomes "G54".</summary>

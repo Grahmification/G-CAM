@@ -24,7 +24,6 @@ namespace GCam.AddIn
         /// <summary>
         /// Registers the addin with SolidWorks via the Windows Registry
         /// </summary>
-        /// <param name="t"></param>
         [ComRegisterFunction]
         public static void RegisterFunction(Type t)
         {
@@ -78,7 +77,6 @@ namespace GCam.AddIn
         /// <summary>
         /// Unregisters the addin with SolidWorks via the Windows Registry
         /// </summary>
-        /// <param name="t"></param>
         [ComUnregisterFunction]
         public static void UnregisterFunction(Type t)
         {

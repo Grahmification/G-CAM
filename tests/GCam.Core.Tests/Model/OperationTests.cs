@@ -129,7 +129,6 @@ namespace GCam.Core.Tests.Model
             Assert.Equal(HeightMode.FromContour, heights.Bottom.Mode);
             Assert.Equal(0, heights.Bottom.Offset, 9);
 
-            // Only the bottom changes; the rest are the ordinary defaults.
             Assert.Equal(new OperationHeights().Top.Mode, heights.Top.Mode);
             Assert.Equal(new OperationHeights().Clearance.Offset, heights.Clearance.Offset, 9);
         }
