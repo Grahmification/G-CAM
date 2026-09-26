@@ -26,6 +26,36 @@ namespace GCam.Core.Strategies.Contour2d
     }
 
     /// <summary>
+    /// What <see cref="Contour2dMerging.CutterPaths"/> works out for one set of contours.
+    /// </summary>
+    internal sealed class MergedContours
+    {
+        public MergedContours(IReadOnlyList<MergedCutterPath> paths, IReadOnlyList<Polyline> keepOut)
+        {
+            Paths = paths;
+            KeepOut = keepOut;
+        }
+
+        /// <summary>
+        /// Ordered by the earliest contour each was cut from, so the cut follows the
+        /// selection.
+        /// </summary>
+        public IReadOnlyList<MergedCutterPath> Paths { get; }
+
+        /// <summary>
+        /// Everywhere a cutter centre would cut into one of the walls - a region, for
+        /// checking a move that is not on a cutter path, such as a lead. Empty when the
+        /// cutter is carried into the material on purpose, and nothing is kept out.
+        /// </summary>
+        /// <remarks>
+        /// Every wall that is really there, the contours' own included, and none that
+        /// pockets merged away: a lead of one pocket crossing where another's wall would
+        /// have been is in the air of the pocket they make together.
+        /// </remarks>
+        public IReadOnlyList<Polyline> KeepOut { get; }
+    }
+
+    /// <summary>
     /// The cutter paths for several contours cut at the same depths, merged where they
     /// would cut into one another.
     /// </summary>
@@ -64,8 +94,8 @@ namespace GCam.Core.Strategies.Contour2d
     internal static class Contour2dMerging
     {
         /// <summary>
-        /// The cutter paths for <paramref name="contours"/>, merged. Ordered by the
-        /// earliest contour each was cut from, so the cut follows the selection.
+        /// The cutter paths for <paramref name="contours"/>, merged, and the region no
+        /// cutter centre may enter.
         /// </summary>
         /// <param name="distance">
         /// How far the cutter centre runs from each contour. At zero or below - stock to
@@ -73,7 +103,7 @@ namespace GCam.Core.Strategies.Contour2d
         /// paths are not merged: the cutter is inside the material on purpose, so there is
         /// nothing it should be kept out of.
         /// </param>
-        public static IReadOnlyList<MergedCutterPath> CutterPaths(
+        public static MergedContours CutterPaths(
             IReadOnlyList<ResolvedContour> contours,
             bool climb,
             double distance,
@@ -84,14 +114,18 @@ namespace GCam.Core.Strategies.Contour2d
                 .Select(c => Contour2dOffsetting.OffsetAll(c, climb, distance, offsetter, arcTolerance))
                 .ToList();
 
-            if (contours.Count < 2 || distance <= Precision.Epsilon)
+            if (distance <= Precision.Epsilon)
             {
-                return own
-                    .SelectMany((paths, i) => paths.Select(p => new MergedCutterPath(p, i)))
-                    .ToList();
+                return new MergedContours(Unmerged(own), new Polyline[0]);
             }
 
             var forbids = new Forbidden(contours, climb, distance, offsetter, arcTolerance);
+
+            if (contours.Count < 2)
+            {
+                return new MergedContours(Unmerged(own), forbids.Everywhere());
+            }
+
             var pieces = new List<MergedCutterPath>();
 
             for (int i = 0; i < contours.Count; i++)
@@ -107,10 +141,15 @@ namespace GCam.Core.Strategies.Contour2d
                 }
             }
 
-            return Joined(pieces)
+            List<MergedCutterPath> merged = Joined(pieces)
                 .OrderBy(p => p.Source)
                 .ToList();
+
+            return new MergedContours(merged, forbids.Everywhere());
         }
+
+        private static IReadOnlyList<MergedCutterPath> Unmerged(IEnumerable<IReadOnlyList<Polyline>> own) =>
+            own.SelectMany((paths, i) => paths.Select(p => new MergedCutterPath(p, i))).ToList();
 
         /// <summary>What the kind of contour it is makes it forbid.</summary>
         private enum Kind
@@ -179,6 +218,39 @@ namespace GCam.Core.Strategies.Contour2d
                     }
 
                     region.AddRange(By(j, _kinds[contour]));
+                }
+
+                return region;
+            }
+
+            /// <summary>Everything any of the contours forbids any cutter.</summary>
+            /// <remarks>
+            /// A boss its shape and an open contour its band, as they forbid the others.
+            /// A pocket its band - the cutter inside it must not reach its own wall either -
+            /// less whatever other pockets' shapes cover, because where two pockets overlap
+            /// the wall between them is not there.
+            /// </remarks>
+            public IReadOnlyList<Polyline> Everywhere()
+            {
+                var region = new List<Polyline>();
+                List<int> pockets = Enumerable.Range(0, _contours.Count)
+                    .Where(j => _kinds[j] == Kind.Pocket)
+                    .ToList();
+
+                for (int j = 0; j < _contours.Count; j++)
+                {
+                    if (_kinds[j] != Kind.Pocket)
+                    {
+                        region.AddRange(By(j, Kind.Boss));
+                        continue;
+                    }
+
+                    List<Polyline> merged = pockets
+                        .Where(k => k != j)
+                        .SelectMany(Shape)
+                        .ToList();
+
+                    region.AddRange(merged.Count == 0 ? Band(j) : _offsetter.Subtract(Band(j), merged));
                 }
 
                 return region;

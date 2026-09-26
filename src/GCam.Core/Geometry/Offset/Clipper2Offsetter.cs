@@ -220,10 +220,7 @@ namespace GCam.Core.Geometry.Offset
                 return new Polyline[0];
             }
 
-            var clip = new PathsD(
-                (region ?? new Polyline[0])
-                .Where(r => r != null && r.Count >= 3)
-                .Select(r => new PathD(r.Points.Select(p => new PointD(p.X, p.Y)))));
+            PathsD clip = ToPaths(region);
 
             if (clip.Count == 0)
             {
@@ -264,6 +261,34 @@ namespace GCam.Core.Geometry.Offset
 
             return pieces.Select(p => RunsWith(path, p) ? p : p.Reversed()).ToList();
         }
+
+        public IReadOnlyList<Polyline> Subtract(IReadOnlyList<Polyline> region, IReadOnlyList<Polyline> minus)
+        {
+            List<Polyline> outlines = (region ?? new Polyline[0]).Where(r => r != null && r.Count >= 3).ToList();
+
+            if (outlines.Count == 0)
+            {
+                return new Polyline[0];
+            }
+
+            double z = outlines[0].Points[0].Z;
+
+            // A boolean's solution has outlines counter-clockwise and holes clockwise
+            // whatever it was given, which is the convention everything here returns.
+            PathsD difference = Clipper.Difference(
+                ToPaths(outlines), ToPaths(minus), FillRule.NonZero, Precision);
+
+            return difference
+                .Where(p => p.Count >= 3)
+                .Select(p => new Polyline(p.Select(q => new Vec3(q.x, q.y, z)), closed: true))
+                .ToList();
+        }
+
+        private static PathsD ToPaths(IEnumerable<Polyline> region) =>
+            new PathsD(
+                (region ?? new Polyline[0])
+                .Where(r => r != null && r.Count >= 3)
+                .Select(r => new PathD(r.Points.Select(p => new PointD(p.X, p.Y)))));
 
         /// <summary>
         /// Whether a piece clipped from a path runs the same way as it, judged on the

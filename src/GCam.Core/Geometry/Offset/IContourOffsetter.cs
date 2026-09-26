@@ -112,5 +112,11 @@ namespace GCam.Core.Geometry.Offset
         /// everything.
         /// </returns>
         IReadOnlyList<Polyline> Outside(Polyline path, IReadOnlyList<Polyline> region);
+
+        /// <summary>
+        /// One region with another taken out of it.
+        /// </summary>
+        /// <returns>A region in the same form as the two it was given.</returns>
+        IReadOnlyList<Polyline> Subtract(IReadOnlyList<Polyline> region, IReadOnlyList<Polyline> minus);
     }
 }

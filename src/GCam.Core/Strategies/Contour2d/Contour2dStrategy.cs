@@ -102,7 +102,7 @@ namespace GCam.Core.Strategies.Contour2d
                 {
                     cancellation.ThrowIfCancellationRequested();
 
-                    CutOnePass(path, pass, depth, radius, settings, context.Cutting);
+                    CutOnePass(path, pass, depth, context.Cutting);
 
                     progress?.Report((double)++step / total);
                 }
@@ -119,32 +119,56 @@ namespace GCam.Core.Strategies.Contour2d
         }
 
         /// <summary>
-        /// One cutter path, with the depths it is cut at and the walls it runs beside.
+        /// One cutter path, with the depths it is cut at and the leads onto and off it.
         /// </summary>
         private sealed class Pass
         {
             public Pass(
                 Polyline cutterPath,
-                IReadOnlyList<Polyline> walls,
+                Leads leads,
                 ResolvedHeights heights,
                 IReadOnlyList<double> depths)
             {
                 CutterPath = cutterPath;
-                Walls = walls;
+                Leads = leads;
                 Heights = heights;
                 Depths = depths;
             }
 
             public Polyline CutterPath { get; }
 
-            /// <summary>
-            /// Every profile cut at these depths - a merged path runs beside more than one.
-            /// </summary>
-            public IReadOnlyList<Polyline> Walls { get; }
+            /// <summary>At the cutter path's own Z; each depth moves them down to it.</summary>
+            public Leads Leads { get; }
 
             public ResolvedHeights Heights { get; }
 
             public IReadOnlyList<double> Depths { get; }
+        }
+
+        /// <summary>
+        /// The lead arcs of one pass, and which way they turn.
+        /// </summary>
+        /// <remarks>
+        /// Worked out once per pass rather than once per depth, because every depth has the
+        /// same leads in plan - and so that the arcs checked for a collision are the arcs
+        /// that are cut.
+        /// </remarks>
+        private sealed class Leads
+        {
+            public Leads(bool turnLeft, LeadArc? entry, LeadArc? exit)
+            {
+                TurnLeft = turnLeft;
+                Entry = entry;
+                Exit = exit;
+            }
+
+            public bool TurnLeft { get; }
+
+            /// <summary>Null when there is no lead-in.</summary>
+            public LeadArc? Entry { get; }
+
+            /// <summary>Null when there is no lead-out.</summary>
+            public LeadArc? Exit { get; }
         }
 
         /// <summary>
@@ -164,6 +188,12 @@ namespace GCam.Core.Strategies.Contour2d
         ///
         /// A contour the cutter does not fit, or whose path another's swallows, simply has
         /// no pass. HSMWorks says nothing either.
+        ///
+        /// **A pass whose lead would cut into a wall is not cut at all**, at any depth, and
+        /// the operation says how many were left out. Every selected wall at those depths
+        /// counts, the pass's own included - a lead-in in a small pocket can swing into the
+        /// wall opposite. Walls nobody selected cannot be checked: nothing here knows about
+        /// them.
         /// </remarks>
         private IReadOnlyList<Pass> Passes(
             IReadOnlyList<ResolvedContour> contours,
@@ -172,6 +202,7 @@ namespace GCam.Core.Strategies.Contour2d
             GenerationContext context)
         {
             var ordered = new List<KeyValuePair<int, Pass>>();
+            int collided = 0;
 
             foreach (List<int> group in SameDepths(contours, context))
             {
@@ -180,28 +211,165 @@ namespace GCam.Core.Strategies.Contour2d
                 IReadOnlyList<double> depths = PassDepths(settings, heights);
                 List<Polyline> walls = members.Select(c => c.Path).ToList();
 
-                IReadOnlyList<MergedCutterPath> paths = Contour2dMerging.CutterPaths(
+                MergedContours merged = Contour2dMerging.CutterPaths(
                     members,
                     settings.Direction == CutDirection.Climb,
                     CutterOffset(radius, settings),
                     _offsetter,
                     ArcTolerance);
 
-                foreach (MergedCutterPath merged in paths)
+                foreach (MergedCutterPath piece in merged.Paths)
                 {
-                    Polyline cutterPath = StartAwayFromCorners(merged.Path);
+                    Polyline cutterPath = StartAwayFromCorners(piece.Path);
 
-                    if (cutterPath != null && !cutterPath.IsEmpty)
+                    if (cutterPath == null || cutterPath.IsEmpty)
                     {
-                        ordered.Add(new KeyValuePair<int, Pass>(
-                            group[merged.Source], new Pass(cutterPath, walls, heights, depths)));
+                        continue;
                     }
+
+                    Leads leads = LeadsFor(cutterPath, walls, radius, settings);
+
+                    if (LeadsCollide(cutterPath, leads, merged.KeepOut))
+                    {
+                        collided++;
+                        continue;
+                    }
+
+                    ordered.Add(new KeyValuePair<int, Pass>(
+                        group[piece.Source], new Pass(cutterPath, leads, heights, depths)));
                 }
+            }
+
+            if (collided > 0)
+            {
+                context.Warnings.Add(collided == 1
+                    ? "One toolpath was not cut, because its lead-in or lead-out would cut into a selected wall. A smaller lead radius, or no lead, would let it be cut."
+                    : $"{collided} toolpaths were not cut, because their leads would cut into a selected wall. A smaller lead radius, or no lead, would let them be cut.");
             }
 
             // Stable, so the pieces of one contour keep the order they were given in.
             return ordered.OrderBy(p => p.Key).Select(p => p.Value).ToList();
         }
+
+        /// <summary>
+        /// The lead-in and lead-out for a cutter path, as the settings ask for them.
+        /// </summary>
+        /// <param name="walls">
+        /// Every profile cut at these depths - a merged path runs beside more than one.
+        /// </param>
+        private static Leads LeadsFor(
+            Polyline cutterPath, IReadOnlyList<Polyline> walls, double radius, Contour2dSettings settings)
+        {
+            // Worked out from where the wall is, and used by both the entry and the exit.
+            bool turnLeft = LeadTurnsLeft(walls, cutterPath) != CutterHasCrossedOver(radius, settings);
+
+            LeadSettings leadIn = settings.LeadIn;
+            LeadSettings leadOut = settings.EffectiveLeadOut;
+
+            LeadArc? entry = leadIn.Enabled
+                             && leadIn.Radius > Precision.Epsilon
+                             && TryLeadIn(cutterPath, leadIn.Radius, turnLeft, out LeadArc a)
+                ? a
+                : (LeadArc?)null;
+
+            LeadArc? exit = leadOut.Enabled
+                            && leadOut.Radius > Precision.Epsilon
+                            && TryLeadOut(cutterPath, leadOut.Radius, turnLeft, out LeadArc b)
+                ? b
+                : (LeadArc?)null;
+
+            return new Leads(turnLeft, entry, exit);
+        }
+
+        /// <summary>
+        /// Whether the cutter, anywhere along either lead, would be inside
+        /// <paramref name="keepOut"/> - which is to say across a wall.
+        /// </summary>
+        /// <remarks>
+        /// A lead meets its cutter path tangentially, on the edge of the region, so a
+        /// grazing contact there is not a collision; <see cref="LeadGrazing"/> of lead
+        /// lost to the region is allowed for it. A real collision takes a bite.
+        /// </remarks>
+        private bool LeadsCollide(Polyline cutterPath, Leads leads, IReadOnlyList<Polyline> keepOut)
+        {
+            if (keepOut.Count == 0)
+            {
+                return false;
+            }
+
+            var arcs = new List<Polyline>();
+
+            if (leads.Entry.HasValue)
+            {
+                arcs.Add(LeadArcPath(leads.Entry.Value.Away, cutterPath[0], leads.Entry.Value.Centre, !leads.TurnLeft));
+            }
+
+            if (leads.Exit.HasValue)
+            {
+                arcs.Add(LeadArcPath(LastPointOf(cutterPath), leads.Exit.Value.Away, leads.Exit.Value.Centre, !leads.TurnLeft));
+            }
+
+            foreach (Polyline arc in arcs)
+            {
+                double kept = _offsetter.Outside(arc, keepOut).Sum(p => p.Length);
+
+                if (arc.Length - kept > LeadGrazing)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// A lead's quarter turn as points, close enough to the true arc for
+        /// <see cref="ArcTolerance"/>.
+        /// </summary>
+        private static Polyline LeadArcPath(Vec3 from, Vec3 to, Vec3 centre, bool clockwise)
+        {
+            double radius = new Vec3(from.X - centre.X, from.Y - centre.Y, 0).Length;
+            double start = Math.Atan2(from.Y - centre.Y, from.X - centre.X);
+            double end = Math.Atan2(to.Y - centre.Y, to.X - centre.X);
+
+            double sweep = end - start;
+
+            if (clockwise && sweep > 0)
+            {
+                sweep -= 2 * Math.PI;
+            }
+            else if (!clockwise && sweep < 0)
+            {
+                sweep += 2 * Math.PI;
+            }
+
+            // Chords no further than the arc tolerance inside the arc.
+            double step = radius > ArcTolerance ? 2 * Math.Acos(1 - (ArcTolerance / radius)) : Math.PI / 2;
+            int segments = Math.Max(4, (int)Math.Ceiling(Math.Abs(sweep) / step));
+
+            var points = new List<Vec3>(segments + 1);
+
+            for (int i = 0; i <= segments; i++)
+            {
+                double angle = start + (sweep * i / segments);
+                points.Add(new Vec3(
+                    centre.X + (radius * Math.Cos(angle)),
+                    centre.Y + (radius * Math.Sin(angle)),
+                    from.Z));
+            }
+
+            // Ends exactly where the lead does, not a rounding error away from it.
+            points[0] = from;
+            points[segments] = to;
+
+            return new Polyline(points);
+        }
+
+        /// <summary>
+        /// How much of a lead may lie inside a wall's reach before it counts as a
+        /// collision, mm - enough for the tangential contact where it meets the path.
+        /// </summary>
+        private const double LeadGrazing = 0.01;
 
         /// <summary>
         /// The contours grouped by the depths they are cut at, as indices, each group in
@@ -329,32 +497,21 @@ namespace GCam.Core.Strategies.Contour2d
             Toolpath path,
             Pass pass,
             double depth,
-            double radius,
-            Contour2dSettings settings,
             CuttingData cutting)
         {
-            Polyline cutterPath = pass.CutterPath;
             ResolvedHeights heights = pass.Heights;
+            Leads leads = pass.Leads;
 
-            Polyline atDepth = cutterPath.AtZ(depth);
+            Polyline atDepth = pass.CutterPath.AtZ(depth);
             Vec3 profileStart = atDepth.Points[0];
 
-            // Worked out once per pass from where the wall is, and used by both the entry
-            // and the exit arc.
-            bool turnLeft = LeadTurnsLeft(pass.Walls, cutterPath)
-                            != CutterHasCrossedOver(radius, settings);
-
-            LeadSettings leadIn = settings.LeadIn;
-            var entryArc = default(LeadArc);
-
-            bool leadingIn = leadIn.Enabled
-                             && leadIn.Radius > Precision.Epsilon
-                             && TryLeadIn(atDepth, leadIn.Radius, turnLeft, out entryArc);
+            LeadArc? entryArc = leads.Entry?.AtZ(depth);
+            LeadArc? exitArc = leads.Exit?.AtZ(depth);
 
             // **The tool goes down off the profile when there is a lead.** That is the
             // whole point of one: plunging onto the wall leaves the entry mark exactly
             // where the finished surface is.
-            Vec3 entry = leadingIn ? entryArc.Away : profileStart;
+            Vec3 entry = entryArc?.Away ?? profileStart;
 
             // Across at clearance, down to feed height, then into the material. Rapiding
             // straight to depth is how a cutter meets a clamp.
@@ -362,14 +519,14 @@ namespace GCam.Core.Strategies.Contour2d
             path.Add(Move.Rapid(new Vec3(entry.X, entry.Y, heights.Feed)));
             path.Add(Move.Plunge(entry, Feed(cutting.PlungeFeed, cutting.CuttingFeed)));
 
-            if (leadingIn)
+            if (entryArc.HasValue)
             {
                 // A quarter turn from the plunge point onto the profile, tangential where
                 // it arrives, so the cutter is already moving along the wall.
                 path.Add(Move.Lead(
                     profileStart,
                     Feed(cutting.EntryFeed, cutting.CuttingFeed),
-                    new ArcData(entryArc.Centre, clockwise: !turnLeft)));
+                    new ArcData(entryArc.Value.Centre, clockwise: !leads.TurnLeft)));
             }
 
             foreach (Move move in ProfileMoves(atDepth, cutting.CuttingFeed))
@@ -377,17 +534,12 @@ namespace GCam.Core.Strategies.Contour2d
                 path.Add(move);
             }
 
-            LeadSettings leadOut = settings.EffectiveLeadOut;
-            var exitArc = default(LeadArc);
-
-            if (leadOut.Enabled
-                && leadOut.Radius > Precision.Epsilon
-                && TryLeadOut(atDepth, leadOut.Radius, turnLeft, out exitArc))
+            if (exitArc.HasValue)
             {
                 path.Add(Move.Lead(
-                    exitArc.Away,
+                    exitArc.Value.Away,
                     Feed(cutting.ExitFeed, cutting.CuttingFeed),
-                    new ArcData(exitArc.Centre, clockwise: !turnLeft)));
+                    new ArcData(exitArc.Value.Centre, clockwise: !leads.TurnLeft)));
             }
 
             Vec3 end = path.Moves[path.Moves.Count - 1].End;
@@ -511,6 +663,12 @@ namespace GCam.Core.Strategies.Contour2d
             public Vec3 Away;
 
             public Vec3 Centre;
+
+            public LeadArc AtZ(double z) => new LeadArc
+            {
+                Away = new Vec3(Away.X, Away.Y, z),
+                Centre = new Vec3(Centre.X, Centre.Y, z),
+            };
         }
 
         /// <summary>
