@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using GCam.Core.Geometry;
 using GCam.Core.Geometry.Primitives;
@@ -68,6 +69,78 @@ namespace GCam.Core.Tests.Geometry
             Assert.True(flat.IsClosed);
             Assert.Equal(4, flat.Count);
         }
+
+        [Fact]
+        public void A_chain_is_raised_to_its_highest_point_wherever_the_pick_was()
+        {
+            // A floor edge, then the riser and top edge a propagated walk climbed onto.
+            // The pick was at Z 0; the whole chain decides, so it is cut at the top.
+            var pieces = new[]
+            {
+                new Polyline(new[] { P(0, 0, 0), P(10, 0, 0) }),
+                new Polyline(new[] { P(10, 0, 0), P(10, 0, 5) }),
+                new Polyline(new[] { P(10, 0, 5), P(20, 0, 5) }),
+            };
+
+            IReadOnlyList<Chaining.Chain> chains = Chaining.ChainWithSources(pieces);
+
+            Assert.Equal(new[] { 5.0 }, Flattening.Levels(chains, pieces, new int?[3]));
+        }
+
+        [Fact]
+        public void Separate_chains_each_take_their_own_highest_point()
+        {
+            var pieces = new[]
+            {
+                new Polyline(new[] { P(0, 0, 0), P(10, 0, 2) }),
+                new Polyline(new[] { P(0, 50, 7), P(10, 50, 3) }),
+            };
+
+            IReadOnlyList<Chaining.Chain> chains = Chaining.ChainWithSources(pieces);
+
+            Assert.Equal(new[] { 2.0, 7.0 }, Flattening.Levels(chains, pieces, new int?[2]));
+        }
+
+        [Fact]
+        public void Every_loop_of_a_face_rises_to_the_top_of_the_whole_face()
+        {
+            // A sloped face with a hole: the outer loop reaches Z 8, the hole only 4. Both
+            // are one pick, so both are cut at 8. A separate edge pick is left alone.
+            var pieces = new[]
+            {
+                Square(0, 0, 40, lowZ: 0, highZ: 8),
+                Square(15, 15, 10, lowZ: 3, highZ: 4),
+                new Polyline(new[] { P(100, 0, 1), P(110, 0, 1) }),
+            };
+
+            IReadOnlyList<Chaining.Chain> chains = Chaining.ChainWithSources(pieces);
+            IReadOnlyList<double> levels = Flattening.Levels(chains, pieces, new int?[] { 0, 0, null });
+
+            Assert.Equal(new[] { 8.0, 8.0, 1.0 }, levels);
+        }
+
+        [Fact]
+        public void A_chain_joined_to_part_of_a_face_rises_with_the_face()
+        {
+            // The first and last pieces are one face; the middle is an edge pick that
+            // chains on to the first, and so is cut with the face at its top of 9.
+            var pieces = new[]
+            {
+                new Polyline(new[] { P(0, 0, 0), P(10, 0, 2) }),
+                new Polyline(new[] { P(10, 0, 2), P(20, 0, 6) }),
+                new Polyline(new[] { P(50, 0, 9), P(60, 0, 9) }),
+            };
+
+            IReadOnlyList<Chaining.Chain> chains = Chaining.ChainWithSources(pieces);
+            IReadOnlyList<double> levels = Flattening.Levels(chains, pieces, new int?[] { 0, null, 0 });
+
+            Assert.Equal(new[] { 9.0, 9.0 }, levels);
+        }
+
+        private static Polyline Square(double x, double y, double size, double lowZ, double highZ) =>
+            new Polyline(
+                new[] { P(x, y, lowZ), P(x + size, y, lowZ), P(x + size, y + size, highZ), P(x, y + size, highZ) },
+                closed: true);
 
         [Fact]
         public void Lying_at_a_level_is_judged_on_every_point()

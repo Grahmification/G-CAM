@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using GCam.Core.Geometry.Offset;
@@ -47,7 +48,32 @@ namespace GCam.Core.Strategies.Contour2d
         /// the offset leaves nothing of that side - which a distance larger than the
         /// contour's own features can legitimately do.
         /// </summary>
+        /// <remarks>
+        /// The longest piece, when a pinched shape offsets into several: the one that is
+        /// recognisably the profile, which is all something pointing at it needs. The
+        /// strategy cuts every piece - see <see cref="OffsetAll"/>.
+        /// </remarks>
         public static Polyline Offset(
+            ResolvedContour profile,
+            bool climb,
+            double distance,
+            IContourOffsetter offsetter,
+            double arcTolerance) =>
+            OffsetAll(profile, climb, distance, offsetter, arcTolerance)
+                .OrderByDescending(p => p.Length)
+                .FirstOrDefault();
+
+        /// <summary>
+        /// Every piece the walked contour offsets into, each running the way the cutter
+        /// travels it. Empty when the offset leaves nothing.
+        /// </summary>
+        /// <remarks>
+        /// **A pinched shape offsets into several, and all of them are cut.** Only the
+        /// longest was until 2026-09-26, on the theory that the rest were slivers - but a
+        /// pocket with a narrow waist offsets into two real pockets, and dropping one left
+        /// it uncut without a word.
+        /// </remarks>
+        public static IReadOnlyList<Polyline> OffsetAll(
             ResolvedContour profile,
             bool climb,
             double distance,
@@ -58,26 +84,16 @@ namespace GCam.Core.Strategies.Contour2d
 
             if (!profile.Path.IsClosed)
             {
-                // No inside, so orientation says nothing and the side is named outright.
-                // Climb puts the material on the left of travel - a cutter turning
-                // clockwise seen from above then has its edge moving with the feed at the
-                // point of contact, which is what climb means - so the cutter centre goes
-                // to the right.
-                OffsetSide side = climb ? OffsetSide.Right : OffsetSide.Left;
-
                 // A closed contour takes a negative distance directly - it shrinks - but
                 // an open path has no area to shrink, and IContourOffsetter says so: its
                 // distance is always positive and the side is named. So the sign is read
                 // here, where it means what it means, and the cutter crosses over.
-                if (distance < 0)
-                {
-                    side = side == OffsetSide.Right ? OffsetSide.Left : OffsetSide.Right;
-                    distance = -distance;
-                }
-
-                return offsetter.OffsetOpen(walked, distance, side, arcTolerance)
+                Polyline side = offsetter
+                    .OffsetOpen(walked, Math.Abs(distance), OpenSide(climb, distance), arcTolerance)
                     .OrderByDescending(p => p.Length)
                     .FirstOrDefault();
+
+                return side == null ? new Polyline[0] : new[] { side };
             }
 
             // **Orientation does not decide the side here, the sign does.** Measured, not
@@ -89,23 +105,33 @@ namespace GCam.Core.Strategies.Contour2d
             // Outside for a climb cut run counter-clockwise, and for a conventional one
             // run clockwise: climb on the outside of a boss goes counter-clockwise, and
             // climb on the inside of a pocket goes clockwise.
-            bool outside = climb != profile.Reversed;
-            double outwards = outside ? distance : -distance;
+            double outwards = IsOutside(profile, climb) ? distance : -distance;
 
-            IReadOnlyList<Polyline> offset = offsetter.Offset(walked, outwards, arcTolerance);
-
-            if (offset.Count == 0)
-            {
-                return null;
-            }
-
-            // A pinched shape can offset into several. The longest is the one that is
-            // recognisably the profile; the rest are slivers left by the pinch.
-            return offset
-                .OrderByDescending(p => p.Length)
-                .First()
-                .WithDirection(!profile.Reversed);
+            // An outline runs the way Reverse says. A hole runs the other way: growing a
+            // C-shaped boss can close its mouth into one, and the cutter inside it has the
+            // wall on the other hand. The offsetter returns holes opposite to outlines, so
+            // which is which is read off the direction it gave.
+            return offsetter.Offset(walked, outwards, arcTolerance)
+                .Select(p => p.WithDirection(p.IsCounterClockwise ? !profile.Reversed : profile.Reversed))
+                .ToList();
         }
+
+        /// <summary>
+        /// Whether the cutter runs outside a closed contour - round a boss rather than
+        /// inside a pocket.
+        /// </summary>
+        public static bool IsOutside(ResolvedContour profile, bool climb) => climb != profile.Reversed;
+
+        /// <summary>Which side of an open contour's walk the cutter centre is on.</summary>
+        /// <remarks>
+        /// No inside, so orientation says nothing and the side is named outright. Climb
+        /// puts the material on the left of travel - a cutter turning clockwise seen from
+        /// above then has its edge moving with the feed at the point of contact, which is
+        /// what climb means - so the cutter centre goes to the right. A negative distance
+        /// carries it across to the other.
+        /// </remarks>
+        public static OffsetSide OpenSide(bool climb, double distance) =>
+            climb == (distance >= 0) ? OffsetSide.Right : OffsetSide.Left;
 
         /// <summary>
         /// True when <see cref="Walked"/> runs the opposite way round from the contour as

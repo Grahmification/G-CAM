@@ -7,7 +7,7 @@ namespace GCam.Core.Geometry
 {
     /// <summary>
     /// Projects a chain onto a single Z, which is what 2D work does to anything that is
-    /// not already flat.
+    /// not already flat, and says which Z that is.
     /// </summary>
     /// <remarks>
     /// A 2D strategy cuts every chain at one depth, and a height measured from the
@@ -21,6 +21,61 @@ namespace GCam.Core.Geometry
     /// </remarks>
     public static class Flattening
     {
+        /// <summary>
+        /// The Z each chain is cut at in 2D: the highest point of the chain, or of any
+        /// group one of its pieces belongs to.
+        /// </summary>
+        /// <remarks>
+        /// Highest, because that is what HSMWorks does, and it is judged on the whole
+        /// chain - so edges reached by propagation count as much as the one clicked.
+        ///
+        /// **A group rises together.** Pieces sharing a group - every edge of one picked
+        /// face - take the highest Z of all of them, so a hole in a sloped face is cut at
+        /// the same depth as the face's outer boundary rather than at its own top.
+        ///
+        /// The highest *tessellated* point, so on a curve whose top lies mid-span it is
+        /// within the chord tolerance of the curve's own.
+        /// </remarks>
+        /// <param name="chains">Chains from <see cref="Chaining.ChainWithSources"/>.</param>
+        /// <param name="pieces">The segments those chains were built from.</param>
+        /// <param name="groups">
+        /// Lined up with <paramref name="pieces"/>; null for a piece that stands alone.
+        /// </param>
+        public static IReadOnlyList<double> Levels(
+            IReadOnlyList<Chaining.Chain> chains,
+            IReadOnlyList<Polyline> pieces,
+            IReadOnlyList<int?> groups)
+        {
+            var groupTops = new Dictionary<int, double>();
+
+            for (int i = 0; i < pieces.Count && i < groups.Count; i++)
+            {
+                if (groups[i] is int group && pieces[i] != null && !pieces[i].IsEmpty)
+                {
+                    double top = Top(pieces[i]);
+                    groupTops[group] = groupTops.TryGetValue(group, out double other) ? Math.Max(top, other) : top;
+                }
+            }
+
+            return chains.Select(chain =>
+            {
+                double level = Top(chain.Path);
+
+                foreach (int i in chain.Sources)
+                {
+                    if (i < groups.Count && groups[i] is int group
+                        && groupTops.TryGetValue(group, out double top))
+                    {
+                        level = Math.Max(level, top);
+                    }
+                }
+
+                return level;
+            }).ToList();
+        }
+
+        private static double Top(Polyline path) => path.Points.Max(p => p.Z);
+
         /// <summary>
         /// True when every point of the chain is within <paramref name="tolerance"/> of
         /// <paramref name="z"/>.

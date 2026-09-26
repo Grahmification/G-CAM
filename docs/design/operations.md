@@ -404,18 +404,25 @@ stopped the walk dead at the corners propagation exists to get round.
 **Every chain comes out of 2D extraction at a single Z**, because it is cut at one depth
 and a height [measured from the contour](#heights-measured-from-the-contour) needs that
 depth to be one number. The blue highlight on the Geometry tab is drawn from the same
-chains, so it shows that Z. Two cases:
+chains, so it shows that Z.
 
-- **A propagated pick is flattened before chaining**, onto the Z where the picked edge
-  starts, because the walk may have climbed a riser that has to collapse — a piece that
-  flattens to nothing is dropped.
-- **Everything else is chained in 3D first**, and a chain that comes out not flat is then
-  projected onto the level of the first pick in it; for a face, where its first edge
-  starts. Flattening each such pick first instead would pull apart a profile built from
-  separate picks at different heights, which chains as one in 3D.
+**Everything is chained in 3D, then raised to the highest point of the chain** — HSMWorks'
+rule. The chain decides, not the pick: edges reached by propagation count as much as the one
+clicked, so a walk that climbs a riser is cut at the top of it. Risers collapse in the
+projection. A walk whose ends meet in plan but not in 3D, like a helical climb, stays an open
+profile.
 
-A chain that is purely vertical flattens to nothing and is dropped with a log line. The
-projection is `Core/Geometry/Flattening`. Flattening is a parameter of extraction rather
+**Every loop of a picked face rises to the top of the whole face**, so a hole in a sloped
+face is cut at the same depth as the outer boundary. Any chain that includes an edge of the
+face rises with it. The top is taken from the tessellated points, so it may fall short of a
+curve's true peak by up to the chord tolerance.
+
+Until 2026-09-26 the level was the start of the first pick in the chain, and for a face the
+start of whichever edge `GetEdges` listed first — arbitrary on a sloped face. Propagated
+picks were also flattened before chaining.
+
+A chain that is purely vertical flattens to nothing and is dropped with a log line.
+`Core/Geometry/Flattening` holds both the rule (`Levels`) and the projection (`Onto`). Flattening is a parameter of extraction rather
 than a rule inside the walk, so a 3D strategy can take the same chains where they actually
 lie.
 

@@ -44,7 +44,7 @@ namespace GCam.Core.Geometry.Offset
                 // Nothing to do. Returning the contour itself rather than running it
                 // through the library keeps "no offset" exact - a round trip through a
                 // fixed-point grid would move points by up to half a grid step.
-                results.Add(contour);
+                results.Add(contour.WithDirection(counterClockwise: true));
                 return results;
             }
 
@@ -62,12 +62,21 @@ namespace GCam.Core.Geometry.Offset
                 precision: Precision,
                 arcTolerance: Math.Max(arcTolerance, 1e-4));
 
+            // **Clipper2 hands back the orientation it was given**: a clockwise contour
+            // offsets to clockwise outlines with counter-clockwise holes. Measured on
+            // 2.0.0 - Butt and Joined ends, by contrast, always come back counter-clockwise.
+            // Turned round here so every region this returns has one convention, because a
+            // non-zero fill over outlines running opposite ways cancels where they overlap.
+            bool backwards = !contour.IsCounterClockwise;
+
             foreach (PathD result in offset)
             {
                 if (result.Count >= 3)
                 {
-                    results.Add(new Polyline(
-                        result.Select(p => new Vec3(p.x, p.y, z)), closed: true));
+                    var outline = new Polyline(
+                        result.Select(p => new Vec3(p.x, p.y, z)), closed: true);
+
+                    results.Add(backwards ? outline.Reversed() : outline);
                 }
             }
 
@@ -158,6 +167,154 @@ namespace GCam.Core.Geometry.Offset
 
             return results;
         }
+
+        public IReadOnlyList<Polyline> Band(Polyline path, double halfWidth, double arcTolerance)
+        {
+            var results = new List<Polyline>();
+
+            if (path == null || path.IsEmpty || halfWidth <= Precision_Epsilon)
+            {
+                return results;
+            }
+
+            double z = path.Points[0].Z;
+
+            // Round across an open path's ends, not Butt: see the interface. The band's
+            // side edges are the same either way, so the edge on the cutter's side is still
+            // exactly the path OffsetOpen returns, and a cutter path clipped by it ends on
+            // that one.
+            PathsD band = Clipper.InflatePaths(
+                new PathsD { new PathD(path.Points.Select(p => new PointD(p.X, p.Y))) },
+                halfWidth,
+                JoinType.Round,
+                path.IsClosed ? EndType.Joined : EndType.Round,
+                miterLimit: 2.0,
+                precision: Precision,
+                arcTolerance: Math.Max(arcTolerance, 1e-4));
+
+            foreach (PathD outline in band)
+            {
+                if (outline.Count >= 3)
+                {
+                    results.Add(new Polyline(outline.Select(p => new Vec3(p.x, p.y, z)), closed: true));
+                }
+            }
+
+            return results;
+        }
+
+        /// <remarks>
+        /// **The path goes in as an open subject even when it is closed**, with its first
+        /// point repeated to close it: Clipper2 clips open paths against closed regions and
+        /// returns the pieces as open paths, which is the question being asked. A closed
+        /// subject would be intersected as an area instead.
+        ///
+        /// Clipper2 makes no promise about which way round an open piece comes back, so
+        /// each is compared against the path it came from and turned round if needed -
+        /// direction of travel is climb or conventional, and losing it would be silent.
+        /// </remarks>
+        public IReadOnlyList<Polyline> Outside(Polyline path, IReadOnlyList<Polyline> region)
+        {
+            if (path == null || path.IsEmpty)
+            {
+                return new Polyline[0];
+            }
+
+            var clip = new PathsD(
+                (region ?? new Polyline[0])
+                .Where(r => r != null && r.Count >= 3)
+                .Select(r => new PathD(r.Points.Select(p => new PointD(p.X, p.Y)))));
+
+            if (clip.Count == 0)
+            {
+                return new[] { path };
+            }
+
+            double z = path.Points[0].Z;
+
+            var subject = new PathD(path.Points.Select(p => new PointD(p.X, p.Y)));
+
+            if (path.IsClosed)
+            {
+                subject.Add(subject[0]);
+            }
+
+            // Collinear points kept: every vertex that survives is one of the path's own,
+            // so an untouched stretch comes back exactly as it went in.
+            var clipper = new ClipperD(Precision) { PreserveCollinear = true };
+            clipper.AddOpenSubject(subject);
+            clipper.AddClip(clip);
+
+            var closedResult = new PathsD();
+            var openResult = new PathsD();
+            clipper.Execute(ClipType.Difference, FillRule.NonZero, closedResult, openResult);
+
+            List<Polyline> pieces = openResult
+                .Where(p => p.Count >= 2)
+                .Select(p => new Polyline(p.Select(q => new Vec3(q.x, q.y, z))))
+                .Where(p => p.Length > Precision_Epsilon)
+                .ToList();
+
+            if (pieces.Count == 1 && Math.Abs(pieces[0].Length - path.Length) <= UntouchedTolerance)
+            {
+                // Nothing was taken. The path itself rather than the copy: a closed one
+                // stays closed, and nothing is moved by the round trip to the grid.
+                return new[] { path };
+            }
+
+            return pieces.Select(p => RunsWith(path, p) ? p : p.Reversed()).ToList();
+        }
+
+        /// <summary>
+        /// Whether a piece clipped from a path runs the same way as it, judged on the
+        /// piece's longest segment against the nearest segment of the path.
+        /// </summary>
+        private static bool RunsWith(Polyline path, Polyline piece)
+        {
+            int longest = 0;
+            double best = -1;
+
+            for (int i = 0; i < piece.SegmentCount; i++)
+            {
+                double length = (piece.EndOfSegment(i) - piece[i]).Length;
+
+                if (length > best)
+                {
+                    best = length;
+                    longest = i;
+                }
+            }
+
+            Vec3 a = piece[longest];
+            Vec3 b = piece.EndOfSegment(longest);
+            var middle = new Vec3((a.X + b.X) / 2, (a.Y + b.Y) / 2, a.Z);
+
+            double nearest = double.MaxValue;
+            double along = 0;
+
+            for (int i = 0; i < path.SegmentCount; i++)
+            {
+                Vec3 p = path[i];
+                Vec3 q = path.EndOfSegment(i);
+
+                double distance = SquaredDistanceToSegment(p, q, middle, out _, out _);
+
+                if (distance < nearest)
+                {
+                    nearest = distance;
+                    along = ((b.X - a.X) * (q.X - p.X)) + ((b.Y - a.Y) * (q.Y - p.Y));
+                }
+            }
+
+            return along >= 0;
+        }
+
+        /// <summary>
+        /// How close a single clipped piece's length must be to the whole path's for
+        /// nothing to have been taken, mm. Ten grid steps: the round trip moves no vertex,
+        /// so anything more is a real piece gone.
+        /// </summary>
+        private const double UntouchedTolerance = 1e-3;
 
         /// <summary>
         /// Where the offset of <paramref name="side"/> begins or ends: an endpoint of the

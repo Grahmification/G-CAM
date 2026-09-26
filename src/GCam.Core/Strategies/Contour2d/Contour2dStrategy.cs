@@ -82,39 +82,27 @@ namespace GCam.Core.Strategies.Contour2d
                     $"'{context.Tool.DisplayName}' has no diameter, so its path cannot be offset.");
             }
 
-            // Depths are per contour: when the cutting heights are measured from the
-            // contour, two chains in one operation are cut at different depths. Clearance,
-            // retract and feed are never contour-relative, so the rapid in, the links
-            // between contours and the final retract all read the operation's heights.
-            var passes = new List<KeyValuePair<ResolvedContour, IReadOnlyList<double>>>();
+            List<ResolvedContour> extended = profiles
+                .Select(p => Extended(p, settings, context))
+                .Where(p => p != null)
+                .ToList();
 
-            foreach (ResolvedContour profile in profiles)
-            {
-                ResolvedContour extended = Extended(profile, settings, context);
-
-                if (extended != null)
-                {
-                    passes.Add(new KeyValuePair<ResolvedContour, IReadOnlyList<double>>(
-                        extended, PassDepths(settings, HeightsFor(extended, context))));
-                }
-            }
+            IReadOnlyList<Pass> passes = Passes(extended, radius, settings, context);
 
             var path = new Toolpath();
             Vec3 first = profiles[0].Path.Points[0];
             path.Add(Move.Rapid(new Vec3(first.X, first.Y, heights.Clearance)));
 
             int step = 0;
-            int total = Math.Max(1, passes.Sum(p => p.Value.Count));
+            int total = Math.Max(1, passes.Sum(p => p.Depths.Count));
 
-            foreach (KeyValuePair<ResolvedContour, IReadOnlyList<double>> pass in passes)
+            foreach (Pass pass in passes)
             {
-                foreach (double depth in pass.Value)
+                foreach (double depth in pass.Depths)
                 {
                     cancellation.ThrowIfCancellationRequested();
 
-                    CutOnePass(
-                        path, pass.Key, depth, radius, settings,
-                        HeightsFor(pass.Key, context), context.Cutting);
+                    CutOnePass(path, pass, depth, radius, settings, context.Cutting);
 
                     progress?.Report((double)++step / total);
                 }
@@ -128,6 +116,126 @@ namespace GCam.Core.Strategies.Contour2d
             }
 
             return path;
+        }
+
+        /// <summary>
+        /// One cutter path, with the depths it is cut at and the walls it runs beside.
+        /// </summary>
+        private sealed class Pass
+        {
+            public Pass(
+                Polyline cutterPath,
+                IReadOnlyList<Polyline> walls,
+                ResolvedHeights heights,
+                IReadOnlyList<double> depths)
+            {
+                CutterPath = cutterPath;
+                Walls = walls;
+                Heights = heights;
+                Depths = depths;
+            }
+
+            public Polyline CutterPath { get; }
+
+            /// <summary>
+            /// Every profile cut at these depths - a merged path runs beside more than one.
+            /// </summary>
+            public IReadOnlyList<Polyline> Walls { get; }
+
+            public ResolvedHeights Heights { get; }
+
+            public IReadOnlyList<double> Depths { get; }
+        }
+
+        /// <summary>
+        /// Every cutter path to cut, in the order of the contours they came from.
+        /// </summary>
+        /// <remarks>
+        /// **Contours cut at the same depths are offset together**, so that where their
+        /// paths would cut into one another they merge instead - see
+        /// <see cref="Contour2dMerging"/>. Depths are per contour: when the cutting heights
+        /// are measured from the contour, two chains at different Z are cut at different
+        /// depths, never meet, and are offset apart. Clearance, retract and feed are never
+        /// contour-relative, so the rapid in, the links between contours and the final
+        /// retract all read the operation's heights.
+        ///
+        /// Offset once per contour rather than once per depth, because every depth cuts
+        /// the same path.
+        ///
+        /// A contour the cutter does not fit, or whose path another's swallows, simply has
+        /// no pass. HSMWorks says nothing either.
+        /// </remarks>
+        private IReadOnlyList<Pass> Passes(
+            IReadOnlyList<ResolvedContour> contours,
+            double radius,
+            Contour2dSettings settings,
+            GenerationContext context)
+        {
+            var ordered = new List<KeyValuePair<int, Pass>>();
+
+            foreach (List<int> group in SameDepths(contours, context))
+            {
+                List<ResolvedContour> members = group.Select(i => contours[i]).ToList();
+                ResolvedHeights heights = HeightsFor(members[0], context);
+                IReadOnlyList<double> depths = PassDepths(settings, heights);
+                List<Polyline> walls = members.Select(c => c.Path).ToList();
+
+                IReadOnlyList<MergedCutterPath> paths = Contour2dMerging.CutterPaths(
+                    members,
+                    settings.Direction == CutDirection.Climb,
+                    CutterOffset(radius, settings),
+                    _offsetter,
+                    ArcTolerance);
+
+                foreach (MergedCutterPath merged in paths)
+                {
+                    Polyline cutterPath = StartAwayFromCorners(merged.Path);
+
+                    if (cutterPath != null && !cutterPath.IsEmpty)
+                    {
+                        ordered.Add(new KeyValuePair<int, Pass>(
+                            group[merged.Source], new Pass(cutterPath, walls, heights, depths)));
+                    }
+                }
+            }
+
+            // Stable, so the pieces of one contour keep the order they were given in.
+            return ordered.OrderBy(p => p.Key).Select(p => p.Value).ToList();
+        }
+
+        /// <summary>
+        /// The contours grouped by the depths they are cut at, as indices, each group in
+        /// the order the contours were given.
+        /// </summary>
+        /// <remarks>
+        /// Top and bottom decide it, because between them they decide every depth. Only
+        /// heights measured from the contour tell two chains apart, and then only when the
+        /// chains lie at different Z.
+        /// </remarks>
+        private static IEnumerable<List<int>> SameDepths(
+            IReadOnlyList<ResolvedContour> contours, GenerationContext context)
+        {
+            var groups = new List<KeyValuePair<ResolvedHeights, List<int>>>();
+
+            for (int i = 0; i < contours.Count; i++)
+            {
+                ResolvedHeights heights = HeightsFor(contours[i], context);
+
+                int found = groups.FindIndex(g =>
+                    Math.Abs(g.Key.Top - heights.Top) <= Precision.Epsilon
+                    && Math.Abs(g.Key.Bottom - heights.Bottom) <= Precision.Epsilon);
+
+                if (found < 0)
+                {
+                    groups.Add(new KeyValuePair<ResolvedHeights, List<int>>(heights, new List<int> { i }));
+                }
+                else
+                {
+                    groups[found].Value.Add(i);
+                }
+            }
+
+            return groups.Select(g => g.Value);
         }
 
         /// <summary>
@@ -217,28 +325,23 @@ namespace GCam.Core.Strategies.Contour2d
             return depths;
         }
 
-        private void CutOnePass(
+        private static void CutOnePass(
             Toolpath path,
-            ResolvedContour profile,
+            Pass pass,
             double depth,
             double radius,
             Contour2dSettings settings,
-            ResolvedHeights heights,
             CuttingData cutting)
         {
-            Polyline cutterPath = StartAwayFromCorners(OffsetForCutter(profile, radius, settings));
-
-            if (cutterPath == null || cutterPath.IsEmpty)
-            {
-                return;
-            }
+            Polyline cutterPath = pass.CutterPath;
+            ResolvedHeights heights = pass.Heights;
 
             Polyline atDepth = cutterPath.AtZ(depth);
             Vec3 profileStart = atDepth.Points[0];
 
             // Worked out once per pass from where the wall is, and used by both the entry
             // and the exit arc.
-            bool turnLeft = LeadTurnsLeft(profile.Path, cutterPath)
+            bool turnLeft = LeadTurnsLeft(pass.Walls, cutterPath)
                             != CutterHasCrossedOver(radius, settings);
 
             LeadSettings leadIn = settings.LeadIn;
@@ -293,32 +396,14 @@ namespace GCam.Core.Strategies.Contour2d
                 Feed(cutting.RetractFeed, cutting.CuttingFeed)));
         }
 
-        /// <summary>
-        /// The profile moved sideways so the cutter's edge runs along it.
-        /// </summary>
-        /// <remarks>
-        /// The offset is the cutter's radius plus whatever is being left on the wall.
-        ///
-        /// <b>Travel is <see cref="ResolvedContour.Reversed"/>'s; the side is
-        /// climb/conventional's.</b> With the direction of travel fixed, which side the
-        /// cutter runs on is exactly what climb and conventional mean.
-        ///
-        /// All of it lives in <see cref="Contour2dOffsetting"/> rather than here, because
-        /// the cut-direction arrows on the Geometry tab have to land on the same side as
-        /// this does. Only the distance is decided here.
-        /// </remarks>
-        private Polyline OffsetForCutter(
-            ResolvedContour profile, double radius, Contour2dSettings settings)
-        {
-            return Contour2dOffsetting.Offset(
-                profile,
-                settings.Direction == CutDirection.Climb,
-                CutterOffset(radius, settings),
-                _offsetter,
-                ArcTolerance);
-        }
-
         /// <summary>How far the cutter centre runs from the profile, and on which side.</summary>
+        /// <remarks>
+        /// The cutter's radius plus whatever is being left on the wall. Which side, and
+        /// which way round, is <see cref="Contour2dOffsetting"/>'s: <b>travel is
+        /// <see cref="ResolvedContour.Reversed"/>'s; the side is climb/conventional's</b>,
+        /// and it lives there because the cut-direction arrows on the Geometry tab have to
+        /// land on the same side as the cut. Only the distance is decided here.
+        /// </remarks>
         private static double CutterOffset(double radius, Contour2dSettings settings) =>
             radius + settings.EffectiveStockToLeave;
 
@@ -514,18 +599,24 @@ namespace GCam.Core.Strategies.Contour2d
         /// This was wrong until 2026-09-13: the arc centre was hard-coded one radius to the
         /// left of travel, so on every outside profile the lead swung into the part and cut
         /// a bite out of it on the way in.
+        ///
+        /// The nearest of several walls, for a path merged from more than one contour:
+        /// the wall a path starts beside is the one its first stretch was offset from.
         /// </remarks>
-        private static bool LeadTurnsLeft(Polyline profile, Polyline cutterPath)
+        private static bool LeadTurnsLeft(IReadOnlyList<Polyline> walls, Polyline cutterPath)
         {
             Vec3 at = cutterPath[0];
             Vec3 along = Direction(at, cutterPath[1 % cutterPath.Count]);
 
-            if (along.Length <= Precision.Epsilon)
+            if (along.Length <= Precision.Epsilon || walls.Count == 0)
             {
                 return false;
             }
 
-            Vec3 wall = profile.NearestPointXy(at);
+            Vec3 wall = walls
+                .Select(w => w.NearestPointXy(at))
+                .OrderBy(p => ((p.X - at.X) * (p.X - at.X)) + ((p.Y - at.Y) * (p.Y - at.Y)))
+                .First();
 
             double cross = (along.X * (wall.Y - at.Y)) - (along.Y * (wall.X - at.X));
 

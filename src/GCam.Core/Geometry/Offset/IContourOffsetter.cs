@@ -18,6 +18,10 @@ namespace GCam.Core.Geometry.Offset
     /// single contour can come back as several, or as none at all.
     ///
     /// Works in XY at a single Z. Three-axis contouring only ever offsets in plan.
+    ///
+    /// **Clipping a path against a region is here too**, although it is not an offset: it
+    /// is the other half of what lets several contours' cutter paths merge where they meet
+    /// (see <c>Contour2dMerging</c>), and it is the same library doing it.
     /// </remarks>
     public interface IContourOffsetter
     {
@@ -42,6 +46,9 @@ namespace GCam.Core.Geometry.Offset
         /// What is left after self-intersections are removed: usually one contour,
         /// sometimes several where a shape pinches in two, and none where the offset
         /// swallows the shape entirely. An empty result is an answer, not a failure.
+        ///
+        /// Outlines run counter-clockwise and holes clockwise, whichever way round the
+        /// contour ran - so the result is a region <see cref="Outside"/> can take.
         /// </returns>
         IReadOnlyList<Polyline> Offset(Polyline contour, double distance, double arcTolerance);
 
@@ -71,5 +78,39 @@ namespace GCam.Core.Geometry.Offset
         /// </returns>
         IReadOnlyList<Polyline> OffsetOpen(
             Polyline path, double distance, OffsetSide side, double arcTolerance);
+
+        /// <summary>
+        /// The band <paramref name="halfWidth"/> either side of a path: everywhere a
+        /// cutter centre would put the cutter across it.
+        /// </summary>
+        /// <remarks>
+        /// **Round across the ends of an open path.** A selected edge does not end in air:
+        /// it ends at a corner of the part, where the wall carries on round, and a cutter
+        /// centred just past the end cuts that corner. The band was square across the
+        /// ends until 2026-09-26, and the facing edges of two bosses closer together than
+        /// the cutter were cut wherever one overhung the other. A closed path gives a
+        /// ring.
+        /// </remarks>
+        /// <returns>
+        /// A region, as closed outlines: holes run the other way round from the outlines
+        /// they are in, which is what <see cref="Outside"/> expects.
+        /// </returns>
+        IReadOnlyList<Polyline> Band(Polyline path, double halfWidth, double arcTolerance);
+
+        /// <summary>
+        /// What is left of a path after removing whatever lies inside a region.
+        /// </summary>
+        /// <param name="path">Open or closed.</param>
+        /// <param name="region">
+        /// Closed outlines, filled non-zero - so overlapping outlines are one region, and a
+        /// hole is an outline running the other way round inside another, as
+        /// <see cref="Offset"/> and <see cref="Band"/> return them.
+        /// </param>
+        /// <returns>
+        /// The pieces left, each running the same way as <paramref name="path"/>. The path
+        /// itself, unchanged, when the region takes nothing from it; empty when it takes
+        /// everything.
+        /// </returns>
+        IReadOnlyList<Polyline> Outside(Polyline path, IReadOnlyList<Polyline> region);
     }
 }
