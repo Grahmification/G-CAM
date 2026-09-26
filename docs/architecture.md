@@ -21,7 +21,7 @@ way to find out how that part hangs together and which projects it spans.
 | `Core/Model` — Job, Stock, JobDocument, the part's tool list | Done, and persisted | [Jobs](design/jobs.md) |
 | `Core/Geometry/Primitives` — Vec3, Bounds, Matrix4, Polyline | Started — what stock, rendering and contouring need | |
 | `Core/Geometry` — `Chaining`, `EdgePropagation` (how far a pick runs, over an `IEdgeTopology` the SolidWorks project implements) | Done for contouring | [Operations](design/operations.md) |
-| `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done. Closed contours by the sign of the distance — orientation does not affect the side; one side of an open path by extracting it from Clipper's ribbon | [Operations](design/operations.md) |
+| `Core/Geometry/Offset` — 2D offsetting behind an interface, via Clipper2 | Done. Closed contours by the sign of the distance — orientation does not affect the side; one side of an open path by extracting it from Clipper's ribbon. Also the region work merging needs: bands, clipping a path against a region, subtraction | [Operations](design/operations.md) |
 | `Core/Rendering` — scene, layers, batches, colour, BoxMesh, ConeMesh, AxisTriad, ToolpathMesh, HeightPlaneMesh, ScreenArrow, PreviewSelection | Done for what exists to draw | [Jobs](design/jobs.md) |
 | `Core/Selection` — `MultiSelection<T>`, the click / Ctrl-click / Shift-click rules | Done | [Jobs](design/jobs.md) |
 | `UI` — job tree: a part row at the root holding every job, rename in place, a context menu per node kind, double-click and Enter to edit. Operations delete, duplicate, rename, suppress and generate from it, and show their state as a badge on the icon. Several rows select at once, and what is selected is what the 3D view draws. Rows drag to reorder — operations within a job or into another one, jobs among themselves | Done; multiple selection and drag-reordering verified on 2025 SP3, the **part row not yet** | [Jobs](design/jobs.md), [UI shells](design/ui-shells.md) |
@@ -30,7 +30,7 @@ way to find out how that part hangs together and which projects it spans.
 | `SolidWorks/Rendering` — GL interop, state guard, scene renderer, view hooks, job preview (stock box, origin triad, toolpaths), contour highlights, cut-direction arrows and the view scale that sizes them, height planes | Done | [Jobs](design/jobs.md) |
 | `SolidWorks/Extraction` — transforms, model extent, contour tessellation, edge topology, generation context | Done; a contour generates from selected edges on a real part (2025 SP3). Open chains are cut, not discarded, and a pick runs as far as its own modifiers say | [Operations](design/operations.md), [Edge tessellation](solidworks-api/edge-tessellation.md) |
 | `Core/Model` — Operation, heights, geometry references, Toolpath | Done | [Operations](design/operations.md) |
-| `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates; face, adaptive and drill are designed only | [Operations](design/operations.md) |
+| `Core/Strategies` — id, settings base, catalogue, context, Contour2d | Contour2d generates, merging contours at one depth where their paths meet and dropping a pass whose lead would collide; merging tried on 2025 SP3, the lead check **not yet**. Face, adaptive and drill are designed only | [Operations](design/operations.md), [ADR 0011](decisions/0011-merge-contours-by-clipping.md) |
 | `Core/Generation` — queue, progress, staleness rules | Done; runs on the STA thread until an `SwDispatcher` exists | [Operations](design/operations.md) |
 | `SolidWorks/Events` — `PartRebuildWatcher`, one per part | Done; **not yet verified on 2025 SP3** | [Rebuild notifications](solidworks-api/rebuild-notifications.md) |
 | `Core/Persistence` — the stored document format and the toolpath bytes | Done, round-tripped headlessly | [Operations](design/operations.md) |
@@ -55,6 +55,7 @@ way to find out how that part hangs together and which projects it spans.
 | Operation editing | SOLIDWORKS-native PropertyManager pages |
 | Operation parameters | Typed values, not HSM's expressions — see [0006](decisions/0006-operation-parameters-are-values.md); strategy parameters are typed classes — see [0007](decisions/0007-typed-strategy-settings.md) |
 | Tooling in a part | One tool list per part, shared by operations; feeds per operation — see [0008](decisions/0008-document-tool-list.md) |
+| Several contours at one depth | Each path clipped against what the others forbid, then joined — see [0011](decisions/0011-merge-contours-by-clipping.md) |
 | Tree tab / tool library | WPF hosted in a COM-visible WinForms shell |
 | Posts | Data-driven XML templates now, script engine later behind the same interface |
 | Undo | Own command stack in Core, doubling as recompute dirty-tracking |

@@ -547,13 +547,17 @@ is cut as three, each with its own lead-in, lead-out and retract, in the order t
 came out. The tool does not stay down to link between them: HSMWorks' `stayDownDistance`
 family decides when a link is short enough to keep the cutter in the material, and that is
 a gouge-checking question rather than a linking one — a link that crosses stock cuts it.
+Contours cut at the same depths are offset together first, and merge where their paths
+would cut into one another; see [Several contours at one depth](#several-contours-at-one-depth).
 
 **A lead must swing away from the wall, and which side that is has to be measured.** The
 arc centre used to be hard-coded one radius to the *left* of travel, so on an outside
 profile — the common case — every lead swung into the part and bit the finished wall on the
 way in. It is now read off the geometry: the wall is wherever the profile lies relative to
 the cutter path that was offset from it, and the lead turns the other way, with the arc
-swept counter-clockwise for a centre on the left and clockwise for one on the right.
+swept counter-clockwise for a centre on the left and clockwise for one on the right. A path
+merged from several contours runs beside several walls; the nearest one to where it starts
+is the one its first stretch was offset from, so that is the one measured.
 
 Deriving that side from the settings instead would mean restating three rules —
 climb/conventional, reversed or not, and the explicit side an open path carries — and
@@ -584,6 +588,13 @@ Three things in it are worth knowing before changing it:
   for `climb != Reversed` — climb on the outside of a boss is a counter-clockwise run and
   climb on the inside of a pocket is a clockwise one — and inward otherwise, which is how
   a pocket is cut.
+- **Every piece of a pinched offset is cut.** A pocket with a waist narrower than the
+  cutter offsets into two pockets, and both are cut. Until 2026-09-26 only the longest
+  piece was, on the theory that the rest were slivers, and the other room was left uncut
+  without a word. The same change cuts the cavity a grown C-shaped boss closes off: it is
+  a hole in the offset, so it runs the other way round from the outline, like any pocket.
+  The cut-direction arrow still uses the longest piece, which is all pointing at a contour
+  needs.
 - **An open path has no inside, so its side is named outright** — right of travel for a
   climb cut, since a cutter turning clockwise seen from above then has its edge moving
   *with* the feed where it touches. Travel does not turn round with `Direction`, so the
@@ -616,10 +627,107 @@ the self-intersections a naive parallel curve produces wherever the offset excee
 local curvature, and those are what gouge a part. A test asserts the property directly: no
 point of the result is closer to the path than the offset distance.
 
+**Clipper2 hands back the orientation it was given.** Offsetting a clockwise contour gives
+clockwise outlines with counter-clockwise holes; inflating an open path, or a closed one
+with `EndType.Joined`, always gives counter-clockwise outlines. **Verified** on Clipper2
+2.0.0 with a probe test. `Clipper2Offsetter.Offset` turns the result round when the
+contour ran clockwise, so every region it returns has outlines counter-clockwise and holes
+clockwise. That matters twice: a non-zero fill over two regions whose outlines run
+opposite ways cancels where they overlap, and `Contour2dOffsetting` tells a hole from an
+outline by its direction. Before the fix a pocket's own outline read as a hole.
+
+`IContourOffsetter` also does the region work merging needs, with Clipper2 again:
+`Band` (the strip either side of a path, rounded past an open path's ends), `Outside`
+(a path clipped against a region, each piece still running the path's way, since Clipper2
+promises nothing about the direction of an open piece) and `Subtract`.
+
 What the strategy deliberately does **not** do yet, left as gaps rather than as wrong
 numbers: ramped entry, arbitrary lead sweeps and perpendicular approach (a quarter-turn arc
 is what comes out), multiple finishing passes, tabs, chamfering, rest machining, and
 staying down between fragments.
+
+### Several contours at one depth
+
+**Contours cut at the same depths are offset together, and their paths merge where they
+would cut into one another** — `Core/Strategies/Contour2d/Contour2dMerging`. This is
+HSMWorks' behaviour. The user checked each of these against HSMWorks before it was built:
+
+- **Two concentric bosses:** only the outer is cut. The inner path runs through the
+  material inside the outer boss, so it goes — which looks like a dropped path and is a
+  merge.
+- **Two overlapping bosses:** one path round the outside of both.
+- **Two overlapping pockets:** one path round the inside of their union.
+- **An island too close to its pocket wall** for the cutter: the pocket path detours round
+  the island and the gap is left.
+- **Crossing open profiles:** one path round the outside corner they share.
+
+**"The same depths" means the same resolved top and bottom.** Only heights measured
+[from the contour](#heights-measured-from-the-contour) tell two chains apart, and then only
+when the chains lie at different Z. A shared height mode, or chains at the same Z, merge.
+
+**The rule: a cutter path is cut only where no other contour forbids it**, and what is left
+is joined up where the pieces meet. What each contour forbids the others:
+
+| Contour | Forbids |
+| --- | --- |
+| Closed, cut outside (a boss) | Its whole grown shape — the region its own path encloses |
+| Closed, cut inside (a pocket) | To another pocket, its whole shrunk shape, so pockets merge into their union. To anything else, a band either side of its wall |
+| Open | A band either side of it, rounded past its ends |
+
+A band is the offset distance wide on each side: a cutter centre inside it puts the cutter
+across the wall.
+
+- **A pocket forbids only a band to a boss or an open contour**, not everything outside
+  it. Otherwise a boss elsewhere on the part, outside the pocket, would never be cut.
+  **Assumed**, not checked against HSMWorks.
+- **An open contour has no inside, so a band is all it can say.** A path well away from it
+  on its material side is still cut. HSMWorks, as the user described it, "looks for the
+  toolpaths to intersect", which is the same limit.
+- **An open contour's band is rounded past its ends**, because a picked edge ends at a
+  corner of the part, not in air. It was square across the ends at first, and the hand test
+  found why that is wrong: the facing edges of two bosses 3 mm apart, cut with a Ø6 tool,
+  each put the cutter on the other's wall, and wherever the longer edge overhung the
+  shorter one it was cut — into the shorter boss's corners. Round ends leave nothing in that
+  case, which is what the user expected.
+
+**The pieces join head to tail.** Every path keeps the material on the same hand — on the
+left of travel for climb, the right for conventional — so where one path stops at another,
+the other carries on in the same direction and the result is the combined outline. The
+joining never reverses a piece; a piece that would only fit backwards is not part of the
+same outline. That is why it is not `Chaining`, whose pieces have no direction yet.
+
+**The order of cutting follows the selection**: each merged path is cut in the position of
+the earliest contour it came from.
+
+**Not merged when stock to leave carries the cutter across the wall** (an offset of zero or
+less): the cutter is in the material on purpose, so there is nothing to keep it out of.
+
+**No warning when a contour is merged away**, and none when the cutter does not fit it at
+all. HSMWorks says nothing either, and the user asked for the same.
+
+A contour nothing comes near is left exactly as it was offset — the others are skipped on
+their bounding boxes before any region is built — so an operation whose contours do not
+interact cuts what it cut before. The alternatives, and why this shape won, are in
+[ADR 0011](../decisions/0011-merge-contours-by-clipping.md).
+
+#### A lead that collides drops its pass
+
+**A pass whose lead-in or lead-out would cut into a selected wall is not cut at all**, at
+any depth, and the operation gets one warning that counts how many were dropped. The user
+checked this against HSMWorks, having first remembered it as switching the lead off.
+
+- **Every selected wall at those depths counts, the pass's own included** — a lead-in in a
+  narrow pocket can swing into the wall opposite. So a single-contour operation is checked
+  too; one that gouged without a word before is now dropped with a warning.
+- **Walls merged away do not count.** The region checked is `MergedContours.KeepOut`: each
+  boss's shape, each open contour's band, and each pocket's band minus the other pockets'
+  shapes, because where two pockets overlap the wall between them is air.
+- **A lead meets its path tangentially, on the edge of that region**, so up to 0.01 mm of
+  lead inside it is grazing and allowed. A real collision takes a bite.
+- **Unselected geometry is not checked.** Nothing in Core knows about it.
+
+The leads are worked out once per pass, not once per depth, so the arcs checked are the
+arcs cut.
 
 ### What makes an operation stale
 
@@ -1165,6 +1273,7 @@ while they are still cheap to change.
 | 14 | `PartRebuildWatcher` — the rebuild that nothing was listening for | Slice 13 made staleness visible, which is what exposed it: `Staleness.ModelRebuilt` had been written and tested since slice 5 with no caller anywhere, so editing a dimension invalidated nothing | **Done** — 2026-09-16, 3 tests. **Not yet verified on 2025 SP3** |
 | 15 | The contour modifiers: `EdgePropagation` + `ModelEdgeTopology`, the two checkboxes, and travel/side split the way HSMWorks does it | The modifiers had been stored since slice 2 and honoured by nothing, so a selection meant one edge however it was picked. Doing it properly forced the cut-side rules into HSMWorks' shape, because a Reverse that changes what is *in* the chain cannot also be the only way to change the side | **Done** — 2026-09-20, 8 tests, verified by hand on 2025 SP3 after three bugs it exposed: see below |
 | 16 | Heights that follow other things: `FromContour` (and 2D contour's default bottom), `FromTop` for feed, `FromRetract` for clearance, and a retract below feed lifted rather than refused | Every height was a property of the operation alone, so a part with profiles at several levels needed an operation per level | **Done** — 2026-09-23, 43 tests; the contour mode verified by hand on 2025 SP3 |
+| 17 | Contours at one depth merge (`Contour2dMerging`), every piece of a pinched offset is cut, and a pass whose lead collides is dropped with a warning | Each contour was offset on its own, so the inner of two concentric bosses was cut through the outer one, a pinched pocket lost every room but the largest, and a lead too big for its pocket gouged the far wall without a word | **Done** — 2026-09-26, 32 tests. Merging tried by hand on 2025 SP3, which found the bug below; the fix for it and the lead check are **not yet verified** |
 
 **The hole this order had.** Putting the property page last assumed generation could be
 verified some other way. It could not: the page is the only thing that can create an
@@ -1195,6 +1304,15 @@ edge:
   contours the user had removed and would have committed them on OK.
 - A junction with one tangent continuation and one edge merely at the same height was
   read as a branch, which stopped the walk at exactly the fillets it exists to cross.
+
+**Slice 17's hand test found one fault, and it was in an assumption rather than the
+code.** An open contour's band was square across its ends, on the theory that past the end
+of a wall there is no wall to cross. Two bosses 3 mm apart with their facing edges picked,
+cut with a Ø6 tool, showed otherwise: the longer edge's path survived wherever it overhung
+the shorter one, and would have cut the shorter boss's corners. A picked edge ends at a
+corner of the part, so the band is now rounded past its ends. Two tests model that part
+and failed against the square ends first. See
+[Several contours at one depth](#several-contours-at-one-depth).
 
 The pattern is worth naming: **a slice's real test is the slice after it.** Marking one
 done because its own tests pass says nothing about whether it is right, and the three

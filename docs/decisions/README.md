@@ -18,3 +18,4 @@ Number files in order: `0001-short-title.md`. Copy `TEMPLATE.md` to start. Decis
 - [0008. One tool list per part, shared by operations](0008-document-tool-list.md) — where the embedded tool copy from 0003 actually lives, and why geometry is shared while feeds are not.
 - [0009. Generated toolpaths are stored in the SOLIDWORKS document](0009-persist-toolpaths-in-the-document.md) — why a reopened part shows its paths without recomputing, and what defends against a stale one.
 - [0010. Selection is what the 3D view shows, one row at a time](0010-selection-is-what-the-3d-view-shows.md) — why a job no longer drags every toolpath onto the screen, and what multiple selection cost to get.
+- [0011. Merge contours by clipping each path against what the others forbid](0011-merge-contours-by-clipping.md) — why several contours at one depth are clipped one at a time rather than cut from one combined region, and what a pocket forbids.
